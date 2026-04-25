@@ -2,137 +2,135 @@
 
 > `CLAUDE.md` is a symlink to this file. Do not edit `CLAUDE.md` directly -- edit `AGENTS.md` instead.
 
+Bibilili is a Chrome Manifest V3 extension for Bilibili watch pages. The extension is currently a no-build project made of `manifest.json`, `src/content.js`, `src/content.css`, and `DESIGN.md`.
 
-Above all: consolidate key understandings and new findings as inline Rust documentation
-(`//!` module docs and `///` item docs) close to the relevant code.
-Inline Rust documentation is the canonical documentation source for this repository.
-Write `/// Note: ` to explain why unusual design choices / compromises are made.
+Above all: keep the implementation aligned with `DESIGN.md` and keep design knowledge close to the code that implements it. Use concise JSDoc comments for classes, methods, object shapes, and unusual DOM compromises. Write `Note: ` in a comment when a selector, fallback, or lifecycle rule exists because of Bilibili page behavior rather than local design preference.
 
-Prioritize a clean codebase and elegant design over compatibility or migration work.
-Do not keep transitional layers, compatibility shims, or legacy interfaces unless they are
-explicitly required by the task. If compatibility or migration concerns conflict with a
-clearer design, prefer the clearer design.
-
-Before and after any edit to DESIGN.md, evaluate the document as a reader.
-- Is the structure clear and logically ordered?
-- Does the prose read like it was written by a knowledgeable practitioner, not like generated text?
-- Are there redundant or overlapping sections that should be merged or reordered?
-Apply these standards to every edit.
+Prefer a clean implementation over compatibility layers. Do not add migration shims, build tooling, frameworks, package managers, or generated artifacts unless the task explicitly requires them.
 
 ## Documentation and Language
 
-Actively write documentation for the program. Make sure *all* public APIs are documented.
-All written documentation must be concise, clear, and accurate.
-No emojis unless strictly necessary.
-Add bold text only if it emphasizes truly valuable information.
-All documentation should be written in English unless explicitly stated.
+Actively document the program. Public extension concepts, object shapes, controller classes, and lifecycle methods should have concise JSDoc.
+
+All written documentation must be clear, accurate, and in English unless explicitly stated. No emojis unless strictly necessary. Add bold text only when it emphasizes truly valuable information.
+
 Prefer direct definitions over defensive framing.
 - Define what the system does before explaining limits or exclusions.
 - Keep definition-by-negation to a minimum; use it only when a nearby confusion is likely and the contrast is genuinely clarifying.
 - Avoid prose that reads like a rebuttal, disclaimer, or argument with an imaginary reviewer.
 - When documenting a constraint, state the positive rule first, then the consequence if needed.
 
-When writing DESIGN.md, follow these style guidelines:
+### Canonical Documentation
+
+- `DESIGN.md` defines product and architecture intent.
+- `src/content.js` JSDoc documents implementation concepts, invariants, and lifecycle details.
+- `src/content.css` should stay readable through clear selectors and stable class names rather than large comment blocks.
+- Do not add a standalone `docs/` tree as the canonical source unless the project scope changes.
+
+## DESIGN.md
+
+Before and after any edit to `DESIGN.md`, evaluate the document as a reader.
+- Is the structure clear and logically ordered?
+- Does the prose read like it was written by a knowledgeable practitioner, not like generated text?
+- Are there redundant or overlapping sections that should be merged or reordered?
+
+When writing `DESIGN.md`, use this style:
 - Declarative, dry, precise.
 - Each paragraph does one thing: introduces a concept, states its properties, and stops.
-- No motivational framing, no rhetoric, no "this is important because."
+- No motivational framing, rhetoric, or implementation diary.
 - Terms are introduced once and then trusted to carry themselves.
-- The voice is impersonal but not bureaucratic so that it reads closer to
-  a concise mathematical text than to a software README.
+- The voice is impersonal but not bureaucratic.
 - Sentences are structurally simple, favoring short main clauses over nested subordination.
-- Analogies appear sparingly and only to established PL concepts (well-typedness, nominal binding),
-  never to everyday metaphors.
+- Analogies appear sparingly and only to established programming-language concepts, never to everyday metaphors.
 
-### Canonical Documentation Location
+## Extension Architecture
 
-- Prefer inline Rust documentation in `src/**/*.rs`.
-- Keep design rationale near the owning modules and types.
-- Do not rely on a standalone `docs/` tree as the canonical source.
+The content script is the extension runtime. It discovers page-owned regions, moves the player and comments into extension-owned panes, extracts video-list data, and renders the bottom dock.
 
-## Rust Code Style Guideline
+Respect DOM ownership:
+- Bibilili owns the layout root, stage, panes, source bar, list rail, video cards, extension classes, and bookkeeping attributes.
+- Bilibili owns the player, comments, list roots, links, controls, and network-backed page content.
+- The extension may move page-owned player and comment nodes into extension containers.
+- The extension must not replace player controls, comment controls, playback logic, or Bilibili navigation logic.
+- The extension removes only nodes it owns.
 
-Panic fast. If some edge case is not specified by design, log and panic.
-Never attempt to recover from an error path if it's not absolutely correct.
+Represent source kinds as a closed set. Use the existing source-kind constants and stable ordering instead of free-form labels or ad hoc strings.
 
-Prefer declaration instead of manual implementation. For example,
-- Utilize `thiserror` crate for error messages instead of manual implementations.
-- Encode invariants into Rust's type system, so that they are enforced by the compiler.
-  - Write documentation about invariants per struct, field, function, and method.
-  - Use "constructor" or "builder" pattern for creating instances that satisfy the invariants.
-- Prefer `serde` for serialization and deserialization instead of manual parsing and pretty printing.
-- Prefer derive-style `clap` for command-line argument parsing.
+Extract list data into typed records before rendering. Required video item fields are target URL and title; skip items missing either field.
 
-Always prefer typed data structures over strings + parsers, and
-Prefer introducing a named type over reusing a generic one (e.g., `String`, `HashMap`)
-when the type carries domain meaning.
-For examples,
-- Include specific types of errors when creating an error type, not just strings.
-- User input should be parsed to be structured data as soon as possible.
-- Never use strings to represent states in the software's state machine.
-- Never pass strings between internal components when the message could be typed.
-- Whenever a hashmap of strings is created, consider whether the keys represent
-  a closed set of fields -- if so, replace it with a struct or a trait object.
+Keep reconciliation explicit. Mutation handling, same-tab navigation handling, moved-node restoration, and source-root hiding must remain easy to reason about.
 
-Prefer to use structs to pack a group of useful functions; prefer methods over functions.
-Rust structs have better namespace-ish features than Rust modules.
-Prefer methods on a struct over free functions. Free functions are acceptable only for
-trait implementations, entry points (`main`), or cases where no meaningful receiver exists.
-When defining methods, abide by the following rules:
-- Mention `self` in the signature if the methods are built around the struct type.
-  - Take ownership (`self`) if being the elimination form of the struct type,
-    namely consuming the struct.
-  - Take reference (`&self` or `&mut self`) if the struct only needs to be borrowed.
-- Use associated functions (similar to static methods) when the struct is purely a namespace;
-  specifically, write `fn new` for "constructors" with no perspective,
-  and `fn with_*` for "constructors" that hints how the struct is created.
+## JavaScript Style
 
-For builder patterns, pick receivers based on whether the finalizer must move owned fields out.
-If build/finish consumes,
-- Use `fn build(self) -> T` for the builder.
-- Make all setter methods take and return self `fn with_*(mut self, ...) -> Self` for easy chaining.
-If build can borrow,
-- Prefer setters `fn set_*(&mut self, ...) -> &mut Self`, and
-- Prefer a finalizer `fn build(&self) -> T` so the builder can be reused.
-Expose an associated entry point `fn new(required, ...)`,
-and use `with_*/set_*` names consistently for optional configuration.
+Use plain browser JavaScript that runs directly as a Manifest V3 content script.
 
-Add concise yet critical documentation for structs, fields, and methods.
-Ensure that documentation is clear, concise, and accurate. No emojis unless strictly necessary.
+- Prefer classes with documented methods for stateful concepts such as discovery, adapters, layout ownership, and controllers.
+- Prefer constants for selector lists, source ordering, attribute names, class names, and timing values.
+- Prefer small methods with clear receivers over large free functions.
+- Avoid stringly typed state when a closed set or named record shape is available.
+- Keep DOM queries scoped and de-duplicate candidates before acting on them.
+- Treat broad Bilibili selectors as fallbacks. Prefer stable IDs and named classes first.
+- Do not add runtime dependencies unless the task explicitly requires them.
+- Do not introduce TypeScript, bundlers, transpilers, or package scripts unless the project intentionally moves to a build step.
 
-When adding new features, record and observe details with the `tracing` crate.
-Use `trace` level at the beginning and end of major interface calls to record arguments.
-Use `debug` for task-specific debug output, and remove them when the problem is solved.
+Fail visibly for programmer errors during development, but avoid breaking the host page for expected Bilibili variation. Missing player means the extension does not mount. Missing comments or valid list items means that component stays absent until reconciliation finds it.
 
-Run `cargo clippy` and `cargo fmt` before committing.
+## CSS Style
 
-Avoid using nested `super::` imports. Use absolute paths in that case.
+The stylesheet owns the transformed viewport layout.
+
+- Keep extension selectors under `#bibilili-layout-root` or `.bibilili-*` where possible.
+- Use stable dimensions for panes, docks, rails, cards, buttons, and thumbnails so late-loading metadata does not resize the player.
+- Keep the document body from becoming the primary scroll surface after mount.
+- The comment pane owns vertical scrolling.
+- The list rail owns horizontal scrolling.
+- Hide page-owned source roots only through the extension bookkeeping attribute.
+- Avoid decorative-only styling that competes with Bilibili content.
+
+## Testing
+
+Run lightweight local checks after content-script or manifest changes:
+
+```sh
+node --check src/content.js
+node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
+```
+
+Manual browser testing is required for behavior changes because the extension depends on live Bilibili DOM:
+- Load `/Users/arctic/Arc/bibilili` as an unpacked extension in `chrome://extensions`.
+- Refresh a `https://www.bilibili.com/video/*` page after reloading the extension.
+- Verify that the player remains playable, comments scroll on the right when available, and valid video lists render in the bottom dock.
+- Toggle each visible source button and confirm ordinary DOM mutations do not reset disabled sources.
+- Navigate to another Bilibili video in the same tab and confirm the layout rebuilds for the new page.
+
+If browser testing cannot be performed, state that clearly in the final response.
 
 ## Version Control
 
-This project uses git. Use git to operate.
+This project uses git. Use git to inspect and communicate changes.
 
 ### Commit Message Convention
 
 Format: `prefix: lowercase description`
 
 No capitalization after the colon. No trailing period. One line.
-The description should say *what changed*, not *why* (the diff shows what; the description names it).
+The description should say what changed, not why.
 
 #### Prefix Vocabulary
 
 | Prefix | When to use |
 |--------|-------------|
-| `feat`  | A user-visible capability that did not exist before. |
-| `incr`  | Incremental progress on an existing feature: bug fixes, polish, tuning, small additions. |
-| `sisy`  | Mechanical changes: formatting, linting, renaming passes, internal restructuring with no behavior change. |
-| `vibe`  | Exploratory, prototype-quality work. Expect rough edges; may be revised or replaced. |
-| `repo`  | Repository housekeeping: migrations, dependency changes, formatter config, file reorganization, one-off maintenance. |
-| `docs`  | Documentation-only changes (AGENTS.md, README, inline Rust docs/comments). |
-| `test`  | Adding or updating tests without changing production code. |
+| `feat` | A user-visible capability that did not exist before. |
+| `incr` | Incremental progress on an existing feature: bug fixes, polish, tuning, small additions. |
+| `sisy` | Mechanical changes: formatting, linting, renaming passes, internal restructuring with no behavior change. |
+| `vibe` | Exploratory, prototype-quality work. Expect rough edges; may be revised or replaced. |
+| `repo` | Repository housekeeping: dependency changes, formatter config, file reorganization, one-off maintenance. |
+| `docs` | Documentation-only changes, including `AGENTS.md`, `DESIGN.md`, and JSDoc comments. |
+| `test` | Adding or updating tests without changing production code. |
 
 #### Guidelines
 
-- One logical change per commit. If two things can be reverted independently, they are two commits.
-- Pair implementation files with their tests in the same commit.
-- Order commits by dependency level: types and utilities first, then logic, then UI, then config.
-- Prefer many small commits over one large commit. Rule of thumb: a reviewer should understand a commit in under 30 seconds.
+- One logical change per commit.
+- Pair implementation files with related tests or manual-test notes in the same commit.
+- Order commits by dependency level: data shapes and utilities first, then discovery and reconciliation, then rendering and CSS, then config.
+- Prefer many small commits over one large commit. A reviewer should understand a commit in under 30 seconds.
