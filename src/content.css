@@ -281,7 +281,7 @@
   color: var(--bibilili-text);
 }
 
-.bibilili-source-button[aria-pressed="true"] {
+.bibilili-source-button[aria-current="true"] {
   border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
   background: var(--bibilili-selected-bg);
@@ -412,8 +412,7 @@
   font-weight: 700;
 }
 
-.bibilili-card-duration,
-.bibilili-card-source {
+.bibilili-card-duration {
   position: absolute;
   right: 6px;
   max-width: calc(100% - 12px);
@@ -430,12 +429,6 @@
 .bibilili-card-duration {
   bottom: 5px;
   padding: 0 5px;
-}
-
-.bibilili-card-source {
-  top: 5px;
-  padding: 0 6px;
-  background: var(--bibilili-source-badge-bg);
 }
 
 .bibilili-card-title,

@@ -22,7 +22,7 @@ The comment region contains the page-owned comment tree. Bibilili moves this
 tree into a right-side scroll container.
 
 Video-list sources contain page-owned list data. Bibilili reads them into
-uniform list items and renders them in the bottom dock.
+uniform list items and routes one source at a time into the bottom dock.
 
 ## Layout Root
 
@@ -123,44 +123,43 @@ field.
 
 ## List Dock
 
-The list dock is the bottom container for every video-list source. It contains
-the source bar and list rail, and it is the canonical visual placement for
-recommendations, collections, watch-later entries, queues, and later
+The list dock is the bottom container for the selected video-list source. It
+contains the source bar and list rail, and it is the canonical visual placement
+for recommendations, collections, watch-later entries, queues, and later
 video-list kinds.
 
 The list dock has bounded height. It owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
 
 The list dock has two enabled states. It is expanded when at least one
-discovered source is active. It is controls-only when discovered sources exist
-and every source is disabled.
+discovered source can be selected. It is controls-only when no discovered
+source yields valid video items.
 
-In controls-only state, the list dock keeps the activation control and source
-bar visible and hides the list rail. The stage receives the viewport height
-minus the source bar height.
+In controls-only state, the list dock keeps the activation control visible and
+hides the list rail. The stage receives the viewport height minus the source
+bar height.
 
 ## Source Bar
 
 The source bar is the control row inside the enabled list dock.
 
-It begins with the activation control, then contains one toggle button per
+It begins with the activation control, then contains one route button per
 discovered source kind. The initial source buttons are Recommendations,
 Collection, Watch Later, and Queue when those sources are available.
 
-The buttons are not exclusive tabs. More than one source can be active at the
-same time.
+The buttons are list routers. Selecting a source replaces the list rail with
+that source's video items. Source buttons do not toggle a source off and do not
+combine multiple sources in one rail.
 
-The default active set contains all discovered sources. Disabling a source
-removes that source's group from the list rail. Enabling it restores the group
-at its stable position.
+The selected route defaults to the first available source in source-kind order.
+Reconciliation preserves the current route while its source remains available.
+When the route disappears, the first available source becomes selected.
 
-Each source button exposes selected state with `aria-pressed`. A source with no
+Each source button exposes selected state with `aria-current`. A source with no
 valid video items is omitted from the source bar.
 
 The source bar is rendered whenever the enabled list dock is present. With no
-available source, it contains the activation control alone. Disabled source
-state is stored for the page session, so later reconciliation preserves
-user-disabled choices.
+available source, it contains the activation control alone.
 
 Source buttons are keyed by source kind. Reconciliation updates keyed buttons in
 place, orders them after the activation control, and removes buttons for absent
@@ -171,14 +170,14 @@ interaction while Bilibili mutates the page.
 
 The list rail is the horizontal scroll surface inside the list dock.
 
-It renders one group for each active source. Groups appear in source-kind
-order: queue, collection, watch later, recommendations.
+It renders one group for the selected source. Source route fallback uses
+source-kind order: queue, collection, watch later, recommendations.
 
 Every group uses the same card layout. Native Bilibili list styling has no role
 in the bottom presentation.
 
-The rail scrolls horizontally across groups and cards. Source groups remain in
-one rail so multiple active lists are visible in one bottom view.
+The rail scrolls horizontally across the selected source's cards. Route changes
+replace the group in place.
 
 ## Video Card
 
@@ -190,9 +189,6 @@ the rail height stable.
 The card links to the item's target URL. Activating it uses normal page
 navigation unless the browser or Bilibili intercepts the link.
 
-The card may display a compact source mark when multiple source kinds are
-active.
-
 ## Reconciler
 
 The reconciler maintains the transformed layout after initial mount.
@@ -202,7 +198,8 @@ theme marker changes. When the watched video changes, it starts a new page
 session and rebuilds discovered regions.
 
 Reconciliation requests carry a priority and a source-reset flag. The reset
-flag clears page-session source choices when the visible video session changes.
+flag clears the page-session source route when the visible video session
+changes.
 
 Reconciliation has two priorities. Urgent requests come from activation,
 initial startup, and same-tab navigation. Lazy requests come from page
@@ -222,7 +219,7 @@ moves page-owned player and comment nodes only when their owning region
 changes.
 
 When a source root changes, that source is re-extracted and the list rail is
-re-rendered from the current active source set.
+re-rendered from the current source route.
 
 When the comment region changes, the comment pane receives the current
 page-owned comment tree.
@@ -277,9 +274,6 @@ If the watch title is unavailable, the player title overlay is not shown.
 
 If no video-list source yields valid video items, the list dock is shown only
 as the enabled activation surface.
-
-If valid video-list sources exist but none is active, the list dock is
-controls-only until the user selects a source.
 
 If a later mutation provides comments or valid list items, the missing component
 is mounted during reconciliation.

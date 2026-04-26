@@ -160,13 +160,6 @@
     [SourceKind.RECOMMENDATIONS]: "Recommendations"
   });
 
-  const SOURCE_MARKS = Object.freeze({
-    [SourceKind.QUEUE]: "Queue",
-    [SourceKind.COLLECTION]: "Set",
-    [SourceKind.WATCH_LATER]: "Later",
-    [SourceKind.RECOMMENDATIONS]: "Rec"
-  });
-
   /**
    * Closed theme modes applied to extension-owned surfaces.
    */
@@ -215,12 +208,12 @@
     /**
      * Creates a scheduler that invokes one reconciliation callback.
      *
-     * @param {(resetActiveSources: boolean) => void} onRun
+     * @param {(resetSourceRoute: boolean) => void} onRun
      */
     constructor(onRun) {
       this.onRun = onRun;
       this.pending = false;
-      this.pendingResetActiveSources = false;
+      this.pendingResetSourceRoute = false;
       this.urgentTimer = null;
       this.delayTimer = null;
       this.idleHandle = null;
@@ -229,13 +222,13 @@
     /**
      * Requests a reconciliation pass.
      *
-     * @param {boolean} [resetActiveSources]
+     * @param {boolean} [resetSourceRoute]
      * @param {string} [priority]
      */
-    request(resetActiveSources = false, priority = ReconcilePriority.LAZY) {
+    request(resetSourceRoute = false, priority = ReconcilePriority.LAZY) {
       this.pending = true;
-      this.pendingResetActiveSources =
-        this.pendingResetActiveSources || resetActiveSources;
+      this.pendingResetSourceRoute =
+        this.pendingResetSourceRoute || resetSourceRoute;
 
       if (priority === ReconcilePriority.URGENT) {
         this.scheduleUrgent();
@@ -253,7 +246,7 @@
       this.clearDelayTimer();
       this.clearIdleCallback();
       this.pending = false;
-      this.pendingResetActiveSources = false;
+      this.pendingResetSourceRoute = false;
     }
 
     /**
@@ -328,10 +321,10 @@
         return;
       }
 
-      const resetActiveSources = this.pendingResetActiveSources;
+      const resetSourceRoute = this.pendingResetSourceRoute;
       this.pending = false;
-      this.pendingResetActiveSources = false;
-      this.onRun(resetActiveSources);
+      this.pendingResetSourceRoute = false;
+      this.onRun(resetSourceRoute);
     }
 
     /**
@@ -1812,8 +1805,8 @@
       this.rail = null;
       this.playerNode = null;
       this.commentNode = null;
-      this.activeKinds = new Set();
-      this.disabledKinds = new Set();
+      this.selectedSourceKind = null;
+      this.renderedSourceKind = null;
       this.sourceButtons = new Map();
       this.currentSources = [];
       this.currentActivationControl = null;
@@ -1825,17 +1818,17 @@
      * Mounts or updates the transformed layout from discovered regions.
      *
      * @param {DiscoveredRegions} regions
-     * @param {boolean} resetActiveSources
+     * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
      */
-    render(regions, resetActiveSources, activationControl) {
+    render(regions, resetSourceRoute, activationControl) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
       this.setTheme(ThemeResolver.resolve(this.document));
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
       this.setComments(regions.comments);
-      this.setSources(regions.sources, resetActiveSources, activationControl);
+      this.setSources(regions.sources, resetSourceRoute, activationControl);
     }
 
     /**
@@ -1862,8 +1855,8 @@
       this.dock = null;
       this.sourceBar = null;
       this.rail = null;
-      this.activeKinds.clear();
-      this.disabledKinds.clear();
+      this.selectedSourceKind = null;
+      this.renderedSourceKind = null;
       this.sourceButtons.clear();
       this.currentSources = [];
       this.currentActivationControl = null;
@@ -2026,10 +2019,10 @@
      * Renders visible source controls and the bottom rail.
      *
      * @param {VideoListSource[]} sources
-     * @param {boolean} resetActiveSources
+     * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
      */
-    setSources(sources, resetActiveSources, activationControl) {
+    setSources(sources, resetSourceRoute, activationControl) {
       if (!this.root || !this.sourceBar || !this.rail) {
         return;
       }
@@ -2037,21 +2030,13 @@
       this.currentSources = sources;
       this.currentActivationControl = activationControl;
       this.markSourceRoots(sources);
-
-      if (resetActiveSources) {
-        this.disabledKinds.clear();
-      }
-
-      const availableKinds = new Set(sources.map((source) => source.kind));
-      this.activeKinds = new Set(
-        [...availableKinds].filter((kind) => !this.disabledKinds.has(kind))
-      );
+      this.selectedSourceKind = this.resolveSourceRoute(sources, resetSourceRoute);
 
       this.renderSourceDock(sources, activationControl);
     }
 
     /**
-     * Renders or collapses the list dock from the current active source set.
+     * Renders or collapses the list dock from the current source route.
      *
      * @param {VideoListSource[]} sources
      * @param {ActivationControl} activationControl
@@ -2061,21 +2046,27 @@
         return;
       }
 
-      const hasActiveSources = this.activeKinds.size > 0;
+      const selectedSource = this.selectedSource(sources);
+      const hasSelectedSource = Boolean(selectedSource);
 
-      this.root.classList.toggle("bibilili-has-dock", hasActiveSources);
-      this.root.classList.toggle("bibilili-has-controls-dock", !hasActiveSources);
+      this.root.classList.toggle("bibilili-has-dock", hasSelectedSource);
+      this.root.classList.toggle("bibilili-has-controls-dock", !hasSelectedSource);
       this.renderSourceBar(sources, activationControl);
 
-      if (hasActiveSources) {
-        this.renderRail(sources);
+      if (selectedSource) {
+        this.renderRail(
+          selectedSource,
+          selectedSource.kind !== this.renderedSourceKind
+        );
+        this.renderedSourceKind = selectedSource.kind;
       } else {
+        this.renderedSourceKind = null;
         this.rail.replaceChildren();
       }
     }
 
     /**
-     * Renders toggle buttons for discovered source kinds.
+     * Renders route buttons for discovered source kinds.
      *
      * @param {VideoListSource[]} sources
      * @param {ActivationControl} activationControl
@@ -2089,7 +2080,10 @@
         const button = this.sourceButtonFor(source.kind);
         availableKinds.add(source.kind);
         button.textContent = source.label;
-        button.setAttribute("aria-pressed", String(this.activeKinds.has(source.kind)));
+        button.setAttribute(
+          "aria-current",
+          String(this.selectedSourceKind === source.kind)
+        );
 
         const reference = previous.nextSibling;
         if (reference !== button) {
@@ -2126,7 +2120,7 @@
     }
 
     /**
-     * Toggles one source kind from a keyed source button.
+     * Routes the list rail to one keyed source button.
      *
      * @param {string} kind
      */
@@ -2135,7 +2129,7 @@
         return;
       }
 
-      this.toggleSource(kind);
+      this.routeSource(kind);
       this.renderSourceDock(this.currentSources, this.currentActivationControl);
     }
 
@@ -2156,34 +2150,34 @@
     }
 
     /**
-     * Renders active source groups in a single horizontal rail.
+     * Renders the selected source group in the horizontal rail.
      *
-     * @param {VideoListSource[]} sources
+     * @param {VideoListSource} source
+     * @param {boolean} resetScroll
      */
-    renderRail(sources) {
+    renderRail(source, resetScroll) {
       this.rail.replaceChildren();
 
-      const activeSources = sources.filter((source) => this.activeKinds.has(source.kind));
-      const showSourceMarks = activeSources.length > 1;
+      const group = this.document.createElement("section");
+      group.className = "bibilili-source-group";
+      group.dataset.sourceKind = source.kind;
 
-      for (const source of activeSources) {
-        const group = this.document.createElement("section");
-        group.className = "bibilili-source-group";
-        group.dataset.sourceKind = source.kind;
+      const title = this.document.createElement("h2");
+      title.className = "bibilili-source-title";
+      title.textContent = source.label;
 
-        const title = this.document.createElement("h2");
-        title.className = "bibilili-source-title";
-        title.textContent = source.label;
+      const row = this.document.createElement("div");
+      row.className = "bibilili-card-row";
 
-        const row = this.document.createElement("div");
-        row.className = "bibilili-card-row";
+      for (const item of source.items) {
+        row.append(this.videoCard(item));
+      }
 
-        for (const item of source.items) {
-          row.append(this.videoCard(item, showSourceMarks));
-        }
+      group.append(title, row);
+      this.rail.append(group);
 
-        group.append(title, row);
-        this.rail.append(group);
+      if (resetScroll) {
+        this.rail.scrollLeft = 0;
       }
     }
 
@@ -2191,10 +2185,9 @@
      * Creates one extension-owned video card.
      *
      * @param {VideoItem} item
-     * @param {boolean} showSourceMark
      * @returns {HTMLAnchorElement}
      */
-    videoCard(item, showSourceMark) {
+    videoCard(item) {
       const card = this.document.createElement("a");
       card.className = "bibilili-video-card";
       card.href = item.targetUrl;
@@ -2224,13 +2217,6 @@
         thumb.append(duration);
       }
 
-      if (showSourceMark) {
-        const mark = this.document.createElement("span");
-        mark.className = "bibilili-card-source";
-        mark.textContent = SOURCE_MARKS[item.sourceKind] ?? SOURCE_LABELS[item.sourceKind];
-        thumb.append(mark);
-      }
-
       const title = this.document.createElement("span");
       title.className = "bibilili-card-title";
       title.textContent = item.title;
@@ -2244,17 +2230,46 @@
     }
 
     /**
-     * Toggles a source kind while allowing an empty active set.
+     * Resolves the source route for current discovery results.
+     *
+     * @param {VideoListSource[]} sources
+     * @param {boolean} resetSourceRoute
+     * @returns {string | null}
+     */
+    resolveSourceRoute(sources, resetSourceRoute) {
+      const availableKinds = new Set(sources.map((source) => source.kind));
+
+      if (
+        !resetSourceRoute &&
+        this.selectedSourceKind &&
+        availableKinds.has(this.selectedSourceKind)
+      ) {
+        return this.selectedSourceKind;
+      }
+
+      return sources[0]?.kind ?? null;
+    }
+
+    /**
+     * Returns the source for the current route.
+     *
+     * @param {VideoListSource[]} sources
+     * @returns {VideoListSource | null}
+     */
+    selectedSource(sources) {
+      return (
+        sources.find((source) => source.kind === this.selectedSourceKind) ?? null
+      );
+    }
+
+    /**
+     * Routes the rail to one available source kind.
      *
      * @param {string} kind
      */
-    toggleSource(kind) {
-      if (this.activeKinds.has(kind)) {
-        this.activeKinds.delete(kind);
-        this.disabledKinds.add(kind);
-      } else {
-        this.activeKinds.add(kind);
-        this.disabledKinds.delete(kind);
+    routeSource(kind) {
+      if (this.currentSources.some((source) => source.kind === kind)) {
+        this.selectedSourceKind = kind;
       }
     }
 
@@ -2346,8 +2361,8 @@
         this.setEnabled(enabled);
       });
       this.observer = null;
-      this.reconcileScheduler = new ReconcileScheduler((resetActiveSources) => {
-        this.reconcile(resetActiveSources);
+      this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute) => {
+        this.reconcile(resetSourceRoute);
       });
       this.urlTimer = null;
       this.themePreference = null;
@@ -2409,14 +2424,14 @@
     /**
      * Schedules a coalesced reconciliation pass.
      *
-     * @param {boolean} [resetActiveSources]
+     * @param {boolean} [resetSourceRoute]
      * @param {string} [priority]
      */
     scheduleReconcile(
-      resetActiveSources = false,
+      resetSourceRoute = false,
       priority = ReconcilePriority.LAZY
     ) {
-      this.reconcileScheduler.request(resetActiveSources, priority);
+      this.reconcileScheduler.request(resetSourceRoute, priority);
     }
 
     /**
@@ -2429,9 +2444,9 @@
     /**
      * Rebuilds the transformed layout from current DOM regions.
      *
-     * @param {boolean} resetActiveSources
+     * @param {boolean} resetSourceRoute
      */
-    reconcile(resetActiveSources) {
+    reconcile(resetSourceRoute) {
       if (!this.isWatchPage()) {
         DiagnosticLog.info("reconcile skipped outside watch page", {
           url: window.location.href
@@ -2471,9 +2486,9 @@
         pageKey: this.pageKey,
         hasComments: Boolean(regions.comments),
         sourceKinds: regions.sources.map((source) => source.kind),
-        resetActiveSources
+        resetSourceRoute
       };
-      this.layout.render(regions, resetActiveSources, this.activationControl);
+      this.layout.render(regions, resetSourceRoute, this.activationControl);
       this.logRenderedLayout(renderDetails);
     }
 
@@ -2577,7 +2592,7 @@
     /**
      * Logs changed render state without flooding routine reconciliation.
      *
-     * @param {{ pageKey: string, hasComments: boolean, sourceKinds: string[], resetActiveSources: boolean }} details
+     * @param {{ pageKey: string, hasComments: boolean, sourceKinds: string[], resetSourceRoute: boolean }} details
      */
     logRenderedLayout(details) {
       const key = JSON.stringify(details);
