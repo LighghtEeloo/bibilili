@@ -8,6 +8,7 @@
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
+  const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
   const RECONCILE_DELAY_MS = 160;
   const COMMENT_PRIME_DELAY_MS = 650;
@@ -63,13 +64,55 @@
     "h1[title]"
   ];
 
-  const VIDEO_LINK_SELECTOR = [
-    "a[href*='/video/']",
-    "a[href*='//www.bilibili.com/video/']",
-    "a[href*='/bangumi/play/']"
+  const VIDEO_LINK_SELECTOR = "a[href]";
+
+  const VIDEO_TARGET_DATA_SELECTOR = [
+    "[data-bvid]",
+    "[data-bv-id]",
+    "[data-bv]",
+    "[data-aid]",
+    "[data-avid]",
+    "[data-url]",
+    "[data-href]",
+    "[data-link]",
+    "[data-arcurl]",
+    "[data-key]"
   ].join(",");
 
+  const VIDEO_POD_ITEM_CLASS_SELECTOR = [
+    ".video-pod__item",
+    "[class*='video-pod__item']",
+    ".video-pod-item",
+    "[class*='video-pod-item']",
+    ".pod-item",
+    "[class*='pod-item']",
+    ".simple-base-item",
+    "[class*='simple-base-item']",
+    ".normal-base-item",
+    "[class*='normal-base-item']",
+    ".page-item",
+    "[class*='page-item']",
+    ".singlep-list-item-inner",
+    ".multip-list-item"
+  ].join(",");
+
+  const VIDEO_POD_ITEM_SELECTOR = [
+    VIDEO_POD_ITEM_CLASS_SELECTOR,
+    "li"
+  ].join(",");
+
+  const VIDEO_URL_DATA_ATTRS = [
+    "data-url",
+    "data-href",
+    "data-link",
+    "data-arcurl"
+  ];
+  const BVID_DATA_ATTRS = ["data-bvid", "data-bv-id", "data-bv", "data-key"];
+  const AID_DATA_ATTRS = ["data-aid", "data-avid"];
+  const PAGE_DATA_ATTRS = ["data-page", "data-p", "data-part"];
+
   const TITLE_SELECTORS = [
+    ".title-txt",
     ".title",
     ".info-title",
     ".video-title",
@@ -97,12 +140,14 @@
     "#reco_list",
     ".anthology-list",
     ".base-video-sections",
+    ".player-auxiliary-playlist",
     ".player-auxiliary-playlist-list",
     ".playlist-container",
+    ".video-queue",
     ".recommend-list",
     ".recommend-list-v1",
     ".recommend-video-card-list",
-    ".video-pod",
+    VIDEO_POD_SELECTOR,
     ".video-sections",
     ".video-sections-content-list",
     ".watch-later-list",
@@ -146,7 +191,6 @@
    * Closed source kinds used by discovery, state, rendering, and DOM markers.
    */
   const SourceKind = Object.freeze({
-    QUEUE: "queue",
     COLLECTION: "collection",
     WATCH_LATER: "watch_later",
     HISTORY: "history",
@@ -154,7 +198,6 @@
   });
 
   const SOURCE_ORDER = Object.freeze([
-    SourceKind.QUEUE,
     SourceKind.COLLECTION,
     SourceKind.RECOMMENDATIONS,
     SourceKind.WATCH_LATER,
@@ -162,7 +205,6 @@
   ]);
 
   const ENGLISH_SOURCE_LABELS = Object.freeze({
-    [SourceKind.QUEUE]: "Queue",
     [SourceKind.COLLECTION]: "Collection",
     [SourceKind.WATCH_LATER]: "Watch Later",
     [SourceKind.HISTORY]: "History",
@@ -183,14 +225,12 @@
   const SOURCE_LABELS_BY_LANGUAGE = Object.freeze({
     [UiLanguage.ENGLISH]: ENGLISH_SOURCE_LABELS,
     [UiLanguage.SIMPLIFIED_CHINESE]: Object.freeze({
-      [SourceKind.QUEUE]: "队列",
       [SourceKind.COLLECTION]: "合集",
       [SourceKind.WATCH_LATER]: "稍后再看",
       [SourceKind.HISTORY]: "历史",
       [SourceKind.RECOMMENDATIONS]: "推荐"
     }),
     [UiLanguage.TRADITIONAL_CHINESE]: Object.freeze({
-      [SourceKind.QUEUE]: "佇列",
       [SourceKind.COLLECTION]: "合輯",
       [SourceKind.WATCH_LATER]: "稍後再看",
       [SourceKind.HISTORY]: "歷史",
@@ -458,31 +498,24 @@
    */
   const SOURCE_DEFINITIONS = Object.freeze([
     {
-      kind: SourceKind.QUEUE,
-      selectors: [
-        ".player-auxiliary-playlist-list",
-        ".playlist-container",
-        ".video-queue",
-        "[class*='playlist']",
-        "[class*='queue']"
-      ],
-      pattern:
-        /(?:\u961f\u5217|\u64ad\u653e\u5217\u8868|queue|playlist)/i
-    },
-    {
       kind: SourceKind.COLLECTION,
       selectors: [
         "#multi_page",
+        // Note: Bilibili renders its visible ordered video list as a video-pod.
+        VIDEO_POD_SELECTOR,
+        ".player-auxiliary-playlist",
+        ".player-auxiliary-playlist-list",
+        ".player-auxiliary-playlist .playlist-container",
+        ".video-queue",
         ".base-video-sections",
         ".video-sections",
         ".video-sections-content-list",
-        ".video-pod",
         ".anthology-list",
         "[class*='video-section']",
         "[class*='anthology']"
       ],
       pattern:
-        /(?:\u5408\u96c6|\u5206\u96c6|\u89c6\u9891\u9009\u96c6|collection|section|anthology)/i
+        /(?:\u5408\u96c6|\u5206\u96c6|\u89c6\u9891\u9009\u96c6|\u961f\u5217|collection|section|anthology|queue|playlist)/i
     },
     {
       kind: SourceKind.WATCH_LATER,
@@ -1424,14 +1457,16 @@
       const items = [];
       const seen = new Set();
 
-      for (const anchor of this.videoAnchors()) {
-        const item = this.itemFromAnchor(anchor);
+      const targets = this.videoTargets();
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const item = this.itemFromTarget(targets[index], index);
 
         if (!item) {
           continue;
         }
 
-        const key = `${item.targetUrl}\n${item.title}`;
+        const key = SourceAdapter.itemKey(item);
         if (seen.has(key)) {
           continue;
         }
@@ -1448,46 +1483,145 @@
     }
 
     /**
-     * Finds video anchors that belong to the page-owned source root.
+     * Finds video target elements that belong to the page-owned source root.
      *
-     * @returns {HTMLAnchorElement[]}
+     * @returns {Element[]}
      */
-    videoAnchors() {
-      return SourceAdapter.videoAnchorsIn(this.root);
+    videoTargets() {
+      return SourceAdapter.videoTargetsIn(this.root);
     }
 
     /**
-     * Finds video anchors below an arbitrary page-owned source root.
+     * Finds video target elements below an arbitrary page-owned source root.
      *
      * @param {Element} root
-     * @returns {HTMLAnchorElement[]}
+     * @returns {Element[]}
      */
-    static videoAnchorsIn(root) {
+    static videoTargetsIn(root) {
+      const targets = [
+        ...SourceAdapter.anchorTargetsIn(root),
+        ...SourceAdapter.dataTargetsIn(root),
+        ...SourceAdapter.videoPodItemTargetsIn(root)
+      ];
+
+      return DomProbe.unique(targets)
+        .filter((target) => !DomProbe.isOwned(target))
+        .filter((target, index) =>
+          Boolean(SourceAdapter.targetUrlFor(target, index))
+        );
+    }
+
+    /**
+     * Finds playable anchor targets under a source root.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static anchorTargetsIn(root) {
       return DomProbe.queryAll(root, VIDEO_LINK_SELECTOR)
         .filter((element) => element instanceof HTMLAnchorElement)
-        .filter((anchor) => !DomProbe.isOwned(anchor))
         .filter((anchor) => Boolean(SourceAdapter.normalizedUrl(anchor)));
     }
 
     /**
-     * Converts one anchor and its closest card-like ancestor to a video item.
+     * Finds row or card targets that expose a Bilibili URL or video id in data.
      *
-     * @param {HTMLAnchorElement} anchor
+     * Note: Bilibili video-pod rows commonly store the BV id in `data-key`.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static dataTargetsIn(root) {
+      return DomProbe.queryAll(root, VIDEO_TARGET_DATA_SELECTOR)
+        .filter((element) => !SourceAdapter.hasPlayableAnchorAncestor(element))
+        .filter((element) => Boolean(SourceAdapter.targetUrlFor(element)));
+    }
+
+    /**
+     * Finds click-only rows in Bilibili's video-pod surface.
+     *
+     * Note: Some video-pod rows are page-owned click targets without stable
+     * anchors. The adapter treats them as collection entries and derives a
+     * route when no explicit URL or video id is present.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static videoPodItemTargetsIn(root) {
+      if (!root.matches(VIDEO_POD_SELECTOR)) {
+        return [];
+      }
+
+      return DomProbe.queryAll(root, VIDEO_POD_ITEM_SELECTOR)
+        .filter((element) => !SourceAdapter.hasPlayableAnchorAncestor(element))
+        .filter((element) => !element.closest(VIDEO_TARGET_DATA_SELECTOR))
+        .filter((element) => SourceAdapter.isVideoPodItemElement(element))
+        .filter((element) => !SourceAdapter.hasNestedVideoPodItem(element))
+        .filter((element) => Boolean(DomProbe.compactText(element)));
+    }
+
+    /**
+     * Tests whether an element has the shape of one video-pod row.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static isVideoPodItemElement(element) {
+      return (
+        element.matches(VIDEO_POD_ITEM_SELECTOR) &&
+        Boolean(
+          element.matches(VIDEO_POD_ITEM_CLASS_SELECTOR) ||
+            SourceAdapter.textsFromSelectors(element, TITLE_SELECTORS).length > 0 ||
+            SourceAdapter.durationToken(DomProbe.compactText(element))
+        )
+      );
+    }
+
+    /**
+     * Returns true when a candidate contains more specific pod item rows.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static hasNestedVideoPodItem(element) {
+      return DomProbe.queryAll(element, VIDEO_POD_ITEM_SELECTOR).some(
+        (child) =>
+          child !== element && SourceAdapter.isVideoPodItemElement(child)
+      );
+    }
+
+    /**
+     * Converts one target element and its closest card-like ancestor to a video
+     * item.
+     *
+     * @param {Element} target
+     * @param {number} index
      * @returns {VideoItem | null}
      */
-    itemFromAnchor(anchor) {
-      const targetUrl = SourceAdapter.normalizedUrl(anchor);
-      const card = SourceAdapter.cardForAnchor(anchor);
-      const title = SourceAdapter.titleFor(anchor, card);
+    itemFromTarget(target, index) {
+      const targetUrl = SourceAdapter.targetUrlFor(target, index);
+      if (!targetUrl) {
+        return null;
+      }
 
-      if (!targetUrl || !title) {
+      if (
+        this.kind === SourceKind.RECOMMENDATIONS &&
+        SourceAdapter.isCurrentWatchUrl(targetUrl)
+      ) {
+        return null;
+      }
+
+      const card = SourceAdapter.cardForTarget(target);
+      const title = SourceAdapter.titleFor(target, card);
+
+      if (!title) {
         return null;
       }
 
       return {
         targetUrl,
         title,
-        thumbnailUrl: SourceAdapter.thumbnailFor(anchor, card),
+        thumbnailUrl: SourceAdapter.thumbnailFor(target, card),
         sourceKind: this.kind,
         duration: SourceAdapter.durationFor(card),
         author: SourceAdapter.metadataFor(card, "author"),
@@ -1497,20 +1631,88 @@
     }
 
     /**
-     * Finds the nearest card-like element for a source anchor.
+     * Finds the nearest card-like element for a source target.
      *
-     * @param {HTMLAnchorElement} anchor
+     * @param {Element} target
      * @returns {Element}
      */
-    static cardForAnchor(anchor) {
+    static cardForTarget(target) {
       for (const selector of CARD_SELECTORS) {
-        const card = anchor.closest(selector);
+        const card = target.closest(selector);
         if (card && !DomProbe.isOwned(card)) {
           return card;
         }
       }
 
-      return anchor;
+      return target;
+    }
+
+    /**
+     * Returns the normalized URL for a source target.
+     *
+     * @param {Element} target
+     * @param {number} [index]
+     * @returns {string | null}
+     */
+    static targetUrlFor(target, index = 0) {
+      for (const anchor of SourceAdapter.anchorsForTarget(target)) {
+        const url = SourceAdapter.normalizedUrl(anchor);
+
+        if (url) {
+          return url;
+        }
+      }
+
+      for (const value of SourceAdapter.dataValues(target, VIDEO_URL_DATA_ATTRS)) {
+        const url = SourceAdapter.normalizedVideoUrl(value);
+
+        if (url) {
+          return url;
+        }
+      }
+
+      const bvid = SourceAdapter.firstDataValue(target, BVID_DATA_ATTRS);
+      if (bvid) {
+        return SourceAdapter.videoUrl({ bvid, page: SourceAdapter.pageFor(target) });
+      }
+
+      const aid = SourceAdapter.firstDataValue(target, AID_DATA_ATTRS);
+      if (aid) {
+        return SourceAdapter.videoUrl({ aid, page: SourceAdapter.pageFor(target) });
+      }
+
+      return SourceAdapter.videoPodPageUrl(target, index);
+    }
+
+    /**
+     * Returns candidate anchors from a target without requiring them to be
+     * playable.
+     *
+     * @param {Element} target
+     * @returns {HTMLAnchorElement[]}
+     */
+    static anchorsForTarget(target) {
+      const anchors =
+        target instanceof HTMLAnchorElement
+          ? [target]
+          : DomProbe.queryAll(target, VIDEO_LINK_SELECTOR);
+
+      return anchors.filter((anchor) => anchor instanceof HTMLAnchorElement);
+    }
+
+    /**
+     * Returns true when an element is inside a playable anchor target.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static hasPlayableAnchorAncestor(element) {
+      const anchor = element.closest(VIDEO_LINK_SELECTOR);
+
+      return (
+        anchor instanceof HTMLAnchorElement &&
+        Boolean(SourceAdapter.normalizedUrl(anchor))
+      );
     }
 
     /**
@@ -1522,6 +1724,16 @@
     static normalizedUrl(anchor) {
       const rawHref = anchor.getAttribute("href") || anchor.href;
 
+      return SourceAdapter.normalizedVideoUrl(rawHref);
+    }
+
+    /**
+     * Returns the normalized playable URL from raw URL-like text.
+     *
+     * @param {string | null | undefined} rawHref
+     * @returns {string | null}
+     */
+    static normalizedVideoUrl(rawHref) {
       if (!rawHref || rawHref.startsWith("javascript:")) {
         return null;
       }
@@ -1533,6 +1745,10 @@
           return null;
         }
 
+        if (!SourceAdapter.isPlayableUrl(url)) {
+          return null;
+        }
+
         return url.href;
       } catch (_error) {
         return null;
@@ -1540,20 +1756,237 @@
     }
 
     /**
+     * Builds a canonical Bilibili archive URL.
+     *
+     * @param {{ bvid?: string, aid?: string, page?: number | null }} params
+     * @returns {string | null}
+     */
+    static videoUrl(params) {
+      const bvid = SourceAdapter.cleanBvid(params.bvid);
+      const aid = SourceAdapter.cleanAid(params.aid);
+
+      if (!bvid && !aid) {
+        return null;
+      }
+
+      const path = bvid ? `/video/${bvid}` : `/video/av${aid}`;
+      const url = new URL(path, BILIBILI_WEB_ORIGIN);
+
+      if (params.page && params.page > 1) {
+        url.searchParams.set("p", String(params.page));
+      }
+
+      return url.href;
+    }
+
+    /**
+     * Builds a same-video page URL for click-only video-pod rows.
+     *
+     * @param {Element} target
+     * @param {number} index
+     * @returns {string | null}
+     */
+    static videoPodPageUrl(target, index) {
+      if (!target.closest(VIDEO_POD_SELECTOR)) {
+        return null;
+      }
+
+      const identity = SourceAdapter.playableIdentityForUrl(window.location.href);
+      if (!identity?.startsWith("video:")) {
+        return null;
+      }
+
+      const page = SourceAdapter.pageFor(target) ?? index + 1;
+      const url = new URL(window.location.href);
+      url.searchParams.set("p", String(page));
+
+      return url.href;
+    }
+
+    /**
+     * Reads candidate data attribute values from a target and its descendants.
+     *
+     * @param {Element} target
+     * @param {string[]} attributes
+     * @returns {string[]}
+     */
+    static dataValues(target, attributes) {
+      const values = [];
+      const holders = [
+        target,
+        ...DomProbe.queryAll(
+          target,
+          attributes.map((attribute) => `[${attribute}]`).join(",")
+        )
+      ];
+
+      for (const holder of holders) {
+        for (const attribute of attributes) {
+          const value = holder.getAttribute(attribute);
+
+          if (value) {
+            values.push(value);
+          }
+        }
+      }
+
+      return values;
+    }
+
+    /**
+     * Returns the first matching data attribute value.
+     *
+     * @param {Element} target
+     * @param {string[]} attributes
+     * @returns {string | null}
+     */
+    static firstDataValue(target, attributes) {
+      return SourceAdapter.dataValues(target, attributes)[0] ?? null;
+    }
+
+    /**
+     * Reads a one-based video page number from a target.
+     *
+     * @param {Element} target
+     * @returns {number | null}
+     */
+    static pageFor(target) {
+      for (const value of SourceAdapter.dataValues(target, PAGE_DATA_ATTRS)) {
+        const page = Number.parseInt(value, 10);
+
+        if (Number.isSafeInteger(page) && page > 0) {
+          return page;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Normalizes Bilibili BV ids from data attributes.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static cleanBvid(value) {
+      const text = (value ?? "").trim();
+      return /^BV[0-9A-Za-z]+$/u.test(text) ? text : null;
+    }
+
+    /**
+     * Normalizes Bilibili numeric archive ids from data attributes.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static cleanAid(value) {
+      const text = (value ?? "").trim().replace(/^av/i, "");
+      return /^\d+$/u.test(text) ? text : null;
+    }
+
+    /**
+     * Returns true for Bilibili routes that open a playable watch target.
+     *
+     * Note: Bilibili sidebars can include account or profile links with
+     * "video" in their path. Those links are navigation chrome, not video
+     * items for the bottom dock.
+     *
+     * @param {URL} url
+     * @returns {boolean}
+     */
+    static isPlayableUrl(url) {
+      return (
+        url.hostname === "www.bilibili.com" &&
+        Boolean(SourceAdapter.playableIdentityForUrl(url))
+      );
+    }
+
+    /**
+     * Returns a stable identity for a playable Bilibili URL.
+     *
+     * @param {string | URL} value
+     * @returns {string | null}
+     */
+    static playableIdentityForUrl(value) {
+      try {
+        const url =
+          value instanceof URL ? value : new URL(value, window.location.href);
+
+        if (url.hostname !== "www.bilibili.com") {
+          return null;
+        }
+
+        const path = url.pathname.replace(/\/+$/u, "");
+        const videoMatch = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/i);
+
+        if (videoMatch) {
+          const videoId = videoMatch[1];
+          const normalizedId =
+            /^av/i.test(videoId) ? videoId.toLowerCase() : videoId;
+
+          return `video:${normalizedId}`;
+        }
+
+        const bangumiMatch = path.match(
+          /^\/bangumi\/play\/((?:ep|ss|md)\d+)$/i
+        );
+
+        if (bangumiMatch) {
+          return `bangumi:${bangumiMatch[1].toLowerCase()}`;
+        }
+
+        return null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Returns true when a target points at the current watch route.
+     *
+     * Note: Bilibili can surface the current video inside recommendation
+     * markup during lazy sidebar updates. Recommendations omit that duplicate.
+     *
+     * @param {string} targetUrl
+     * @returns {boolean}
+     */
+    static isCurrentWatchUrl(targetUrl) {
+      const currentIdentity = SourceAdapter.playableIdentityForUrl(
+        window.location.href
+      );
+      const targetIdentity = SourceAdapter.playableIdentityForUrl(targetUrl);
+
+      return Boolean(
+        currentIdentity && targetIdentity && currentIdentity === targetIdentity
+      );
+    }
+
+    /**
+     * Builds a de-duplication key for extracted page-owned video items.
+     *
+     * @param {VideoItem} item
+     * @returns {string}
+     */
+    static itemKey(item) {
+      const identity = SourceAdapter.playableIdentityForUrl(item.targetUrl);
+      return `${identity ?? item.targetUrl}\n${item.title}`;
+    }
+
+    /**
      * Extracts a required video title.
      *
-     * @param {HTMLAnchorElement} anchor
+     * @param {Element} target
      * @param {Element} card
      * @returns {string | null}
      */
-    static titleFor(anchor, card) {
+    static titleFor(target, card) {
       const candidates = [
-        anchor.getAttribute("title"),
-        anchor.getAttribute("aria-label"),
-        ...SourceAdapter.textsFromSelectors(anchor, TITLE_SELECTORS),
+        target.getAttribute("title"),
+        target.getAttribute("aria-label"),
+        ...SourceAdapter.textsFromSelectors(target, TITLE_SELECTORS),
         ...SourceAdapter.textsFromSelectors(card, TITLE_SELECTORS),
-        SourceAdapter.imageAltFor(anchor),
-        DomProbe.compactText(anchor)
+        SourceAdapter.imageAltFor(target),
+        DomProbe.compactText(target)
       ];
 
       for (const candidate of candidates) {
@@ -1570,12 +2003,12 @@
     /**
      * Finds a thumbnail URL from images or CSS background images.
      *
-     * @param {HTMLAnchorElement} anchor
+     * @param {Element} target
      * @param {Element} card
      * @returns {string | null}
      */
-    static thumbnailFor(anchor, card) {
-      const image = card.querySelector("img") || anchor.querySelector("img");
+    static thumbnailFor(target, card) {
+      const image = card.querySelector("img") || target.querySelector("img");
       const imageUrl = image
         ? SourceAdapter.assetUrl(
             image.currentSrc ||
@@ -1678,13 +2111,13 @@
     }
 
     /**
-     * Returns the first image alt text below an anchor.
+     * Returns the first image alt text below a target element.
      *
-     * @param {HTMLAnchorElement} anchor
+     * @param {Element} target
      * @returns {string | null}
      */
-    static imageAltFor(anchor) {
-      const image = anchor.querySelector("img");
+    static imageAltFor(target) {
+      const image = target.querySelector("img");
       return image?.getAttribute("alt") ?? null;
     }
 
@@ -2707,7 +3140,7 @@
 
       let current = element;
       let best =
-        SourceAdapter.videoAnchorsIn(current).length > 0 ? current : null;
+        SourceAdapter.videoTargetsIn(current).length > 0 ? current : null;
 
       if (best && this.isSourceBoundary(best)) {
         return best;
@@ -2720,8 +3153,8 @@
           break;
         }
 
-        const currentCount = best ? SourceAdapter.videoAnchorsIn(best).length : 0;
-        const parentCount = SourceAdapter.videoAnchorsIn(parent).length;
+        const currentCount = best ? SourceAdapter.videoTargetsIn(best).length : 0;
+        const parentCount = SourceAdapter.videoTargetsIn(parent).length;
 
         const upperBound =
           currentCount <= 2 ? 120 : Math.max(currentCount + 20, currentCount * 3);
@@ -2813,7 +3246,7 @@
         return false;
       }
 
-      return SourceAdapter.videoAnchorsIn(root).length > 0;
+      return SourceAdapter.videoTargetsIn(root).length > 0;
     }
 
     /**
@@ -2830,6 +3263,15 @@
 
       if (definition.pattern.test(text)) {
         score += 12;
+      }
+
+      if (
+        definition.kind === SourceKind.COLLECTION &&
+        root.matches(VIDEO_POD_SELECTOR)
+      ) {
+        // Note: Bilibili's video-pod is the visible ordered video list and
+        // should beat broader collection-looking roots with more links.
+        score += 120;
       }
 
       if (root.id) {

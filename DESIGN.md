@@ -115,8 +115,8 @@ comment region, while comment controls remain page-owned markup.
 A video list source is a Bilibili list that can produce video items.
 
 The source kind is a closed set represented as an enum. The initial kinds are
-queue, collection, recommendations, watch later, and history. A source kind is
-shown when page markup or an account list exposes matching content.
+collection, recommendations, watch later, and history. A source kind is shown
+when page markup or an account list exposes matching content.
 
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items.
@@ -151,12 +151,23 @@ optional metadata such as duration, author, view count, or progress.
 The target URL and title are required. Source adapters skip items missing either
 field.
 
+For page-owned sources, the target URL resolves to a playable Bilibili watch
+route. Video archive routes and bangumi play routes are valid targets. Profile,
+submission, and sidebar navigation routes do not produce video items.
+
+Page-owned source adapters may derive targets from anchors, URL or id data
+attributes, and Bilibili video-pod rows. Derived targets are normalized before
+the renderer receives them.
+
+Recommendation sources omit the current watch video. Collection sources
+preserve Bilibili's ordered list entries.
+
 ## List Dock
 
 The list dock is the bottom container for the selected video-list source. It
 contains the source bar and list rail, and it is the canonical visual placement
-for recommendations, collections, watch-later entries, history entries, queues,
-and later video-list kinds.
+for collections, recommendations, watch-later entries, history entries, and
+later video-list kinds.
 
 The list dock has bounded height. It owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
@@ -174,7 +185,7 @@ the viewport height minus the source bar height.
 The source bar is the control row inside the enabled list dock.
 
 It begins with the activation control, then contains one route button per
-discovered source kind. The initial source buttons represent queue, collection,
+discovered source kind. The initial source buttons represent collection,
 recommendations, watch later, and history when those sources are available.
 Their labels use the current UI language.
 
@@ -206,7 +217,7 @@ interaction while Bilibili mutates the page.
 The list rail is the horizontal scroll surface inside the list dock.
 
 It renders one group for the selected source. Source route fallback uses
-source-kind order: queue, collection, recommendations, watch later, history.
+source-kind order: collection, recommendations, watch later, history.
 
 Every group uses the same card layout. Native Bilibili list styling has no role
 in the bottom presentation.
