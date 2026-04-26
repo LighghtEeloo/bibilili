@@ -13,7 +13,7 @@ The watch page is the Bilibili document for one visible video. Bibilili treats
 it as discovered regions: player, comments, and video-list sources.
 
 The player region contains the video player and immediate playback controls.
-Bibilili moves its surrounding layout context without replacing playback logic.
+Bibilili moves its surrounding layout context while preserving playback logic.
 
 The video title is page-owned watch metadata. Bibilili may read it for
 extension-owned presentation surfaces.
@@ -33,10 +33,9 @@ comment pane; the list dock sits below the stage.
 The layout root owns viewport-level sizing. It assigns bounded height to the
 list dock and gives the remaining height to the stage.
 
-The layout root owns extension theme state. It first follows explicit Bilibili
-appearance markers. If none exist, it infers the mode from computed page
-colors. If that is inconclusive, it follows the browser color-scheme
-preference.
+The layout root owns extension theme state. It reads explicit Bilibili
+appearance markers first, then computed page colors, then the browser
+color-scheme preference.
 
 Extension-owned surfaces use theme tokens for backgrounds, borders, text, and
 controls. Page-owned player, comment, and source roots keep native styling.
@@ -52,8 +51,8 @@ The control has two placements. When Bibilili is disabled, it floats at the
 bottom-left of the page. When Bibilili is enabled, it is the leftmost control in
 the bottom dock.
 
-The control uses the extension logo asset, not visible text. Its accessible
-name and title state whether activating it turns Bibilili on or off.
+The control presents the extension logo asset as its visible mark. Its
+accessible name and title state whether activating it turns Bibilili on or off.
 
 Disabling Bibilili restores page-owned player and comment nodes to their page
 locations, removes the layout root, and leaves the floating activation control
@@ -65,18 +64,19 @@ navigation and page reloads when browser storage is available.
 ## Player Pane
 
 The player pane contains the Bilibili player region. It occupies the main column
-of the stage. Its width is reduced only by the comment pane; its height is
-reduced only by the list dock.
+of the stage. The comment pane determines its width reduction; the list dock
+determines its height reduction.
 
-Bibilili does not intercept player controls, player events, or playback state.
+Bibilili leaves player controls, player events, and playback state under
+Bilibili ownership.
 
 The player pane may contain an extension-owned title overlay. The overlay reads
 the watch title and appears at the top of the player pane when the pane is
 hovered or focused.
 
 The title overlay uses a vertical opacity gradient so the title remains legible
-without covering the player as an opaque bar. It is pointer-transparent and does
-not receive playback events.
+while the player stays visible. It is pointer-transparent, leaving playback
+events to the player.
 
 ## Comment Pane
 
@@ -85,21 +85,21 @@ height as the player pane and owns vertical scrolling. Scrolling inside it does
 not move the player or list dock.
 
 The comment pane contains page-owned comment nodes. Bibilili may wrap the
-comment region, but it must not replace comment controls with extension markup.
+comment region, while comment controls remain page-owned markup.
 
 ## Video List Source
 
 A video list source is a Bilibili list that can produce video items.
 
-The source kind is a closed set. The initial kinds are recommendations,
-collection, watch later, and queue. A source kind is shown only when the page
-exposes matching content, and implementation represents it as a closed enum.
+The source kind is a closed set represented as an enum. The initial kinds are
+recommendations, collection, watch later, and queue. A source kind is shown when
+the page exposes matching content.
 
 Each source has a label, stable source kind, page-owned root node, and ordered
 set of extracted video items.
 
-Source adapters convert page-owned list markup into video items. Adapter output
-is the only input used by the bottom dock renderer.
+Source adapters convert page-owned list markup into video items. The bottom
+dock renderer consumes adapter output.
 
 ## Video Item
 
@@ -114,12 +114,12 @@ field.
 ## List Dock
 
 The list dock is the bottom container for every video-list source. It contains
-the source bar and list rail, and it is the only visual placement for
+the source bar and list rail, and it is the canonical visual placement for
 recommendations, collections, watch-later entries, queues, and later
 video-list kinds.
 
 The list dock has bounded height. It owns horizontal scrolling through the list
-rail and does not cause the document, player pane, or comment pane to scroll.
+rail. Document, player-pane, and comment-pane scrolling remain independent.
 
 The list dock has two enabled states. It is expanded when at least one
 discovered source is active. It is controls-only when discovered sources exist
@@ -147,10 +147,10 @@ at its stable position.
 Each source button exposes selected state with `aria-pressed`. A source with no
 valid video items is omitted from the source bar.
 
-The source bar is rendered whenever the enabled list dock is present. If no
-source is available, it contains only the activation control. Disabled source
-state remains stored during the page session so later reconciliation does not
-reselect a user-disabled source.
+The source bar is rendered whenever the enabled list dock is present. With no
+available source, it contains the activation control alone. Disabled source
+state is stored for the page session, so later reconciliation preserves
+user-disabled choices.
 
 ## List Rail
 
@@ -159,8 +159,8 @@ The list rail is the horizontal scroll surface inside the list dock.
 It renders one group for each active source. Groups appear in source-kind
 order: queue, collection, watch later, recommendations.
 
-Every group uses the same card layout. Native Bilibili list styling does not
-determine the bottom presentation.
+Every group uses the same card layout. Native Bilibili list styling has no role
+in the bottom presentation.
 
 The rail scrolls horizontally across groups and cards. Source groups remain in
 one rail so multiple active lists are visible in one bottom view.
@@ -169,8 +169,8 @@ one rail so multiple active lists are visible in one bottom view.
 
 A video card is the extension-owned rendering of one video item.
 
-It uses a fixed card width and stable thumbnail aspect ratio. Card content must
-not change the rail height.
+It uses a fixed card width and stable thumbnail aspect ratio. Card content keeps
+the rail height stable.
 
 The card links to the item's target URL. Activating it uses normal page
 navigation unless the browser or Bilibili intercepts the link.
@@ -186,8 +186,11 @@ It observes same-tab navigation, lazy region insertion, list updates, and page
 theme marker changes. When the watched video changes, it starts a new page
 session and rebuilds discovered regions.
 
-When a source root changes, only that source is re-extracted and the list rail
-is re-rendered from the current active source set.
+Reconciliation requests are coalesced into the next pass. Page mutations cannot
+indefinitely postpone activation or same-tab navigation.
+
+When a source root changes, that source is re-extracted and the list rail is
+re-rendered from the current active source set.
 
 When the comment region changes, the comment pane receives the current
 page-owned comment tree.
@@ -223,12 +226,11 @@ The stage height is the viewport height minus the list dock height. The player
 pane and comment pane share the stage height.
 
 The comment pane has vertical overflow. The list rail has horizontal overflow.
-The document body should not become the primary scroll surface for transformed
-content.
+The transformed content uses pane-level scroll surfaces instead of document-body
+scrolling.
 
-The expanded list dock height is large enough for one row of cards and the
-source bar. The height is fixed or clamped so late metadata does not resize the
-player.
+The expanded list dock height fits one row of cards and the source bar. The
+height is fixed or clamped, keeping late metadata from resizing the player.
 
 The controls-only list dock height is the source bar height. When the list dock
 is absent, its height contribution is zero.

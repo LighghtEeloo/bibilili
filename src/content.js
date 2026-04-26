@@ -713,8 +713,6 @@
         return false;
       }
 
-      this.primedPageKeys.add(pageKey);
-
       const startX = window.scrollX;
       const startY = window.scrollY;
       const target = this.targetElement();
@@ -734,6 +732,7 @@
         return false;
       }
 
+      this.primedPageKeys.add(pageKey);
       window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => {
         window.scrollTo({ left: startX, top: startY });
@@ -2055,6 +2054,7 @@
       });
       this.observer = null;
       this.reconcileTimer = null;
+      this.pendingResetActiveSources = false;
       this.urlTimer = null;
       this.themePreference = null;
       this.themeChangeHandler = null;
@@ -2086,6 +2086,7 @@
         window.clearTimeout(this.reconcileTimer);
         this.reconcileTimer = null;
       }
+      this.pendingResetActiveSources = false;
 
       if (this.urlTimer) {
         window.clearInterval(this.urlTimer);
@@ -2119,14 +2120,28 @@
      * @param {boolean} [resetActiveSources]
      */
     scheduleReconcile(resetActiveSources = false) {
+      this.pendingResetActiveSources =
+        this.pendingResetActiveSources || resetActiveSources;
+
       if (this.reconcileTimer) {
-        window.clearTimeout(this.reconcileTimer);
+        return;
       }
 
       this.reconcileTimer = window.setTimeout(() => {
         this.reconcileTimer = null;
-        this.reconcile(resetActiveSources);
+        this.reconcile(this.takePendingResetActiveSources());
       }, RECONCILE_DELAY_MS);
+    }
+
+    /**
+     * Consumes the pending source-state reset flag for a reconciliation pass.
+     *
+     * @returns {boolean}
+     */
+    takePendingResetActiveSources() {
+      const resetActiveSources = this.pendingResetActiveSources;
+      this.pendingResetActiveSources = false;
+      return resetActiveSources;
     }
 
     /**
