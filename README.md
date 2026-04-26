@@ -4,6 +4,7 @@
     <img alt="Bibilili" src="assets/bibilili-logo.svg" width="128">
   </picture>
 </div>
+<br>
 
 Bibilili is a Chrome Manifest V3 extension for Bilibili watch pages. It transposes the watch layout so comments sit to the right of the player and video lists sit in a bounded dock below it.
 
