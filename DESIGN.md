@@ -33,9 +33,10 @@ comment pane; the list dock sits below the stage.
 The layout root owns viewport-level sizing. It assigns bounded height to the
 list dock and gives the remaining height to the stage.
 
-The layout root owns extension theme state. It follows the active Bilibili
-appearance mode when the document exposes one; otherwise it follows the browser
-color-scheme preference.
+The layout root owns extension theme state. It first follows explicit Bilibili
+appearance markers. If none exist, it infers the mode from computed page
+colors. If that is inconclusive, it follows the browser color-scheme
+preference.
 
 Extension-owned surfaces use theme tokens for backgrounds, borders, text, and
 controls. Page-owned player, comment, and source roots keep native styling.
@@ -181,9 +182,9 @@ active.
 
 The reconciler maintains the transformed layout after initial mount.
 
-It observes same-tab navigation, lazy region insertion, and list updates. When
-the watched video changes, it starts a new page session and rebuilds discovered
-regions.
+It observes same-tab navigation, lazy region insertion, list updates, and page
+theme marker changes. When the watched video changes, it starts a new page
+session and rebuilds discovered regions.
 
 When a source root changes, only that source is re-extracted and the list rail
 is re-rendered from the current active source set.
