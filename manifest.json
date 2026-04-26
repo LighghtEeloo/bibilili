@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Bibilili",
+  "version": "0.1.0",
+  "description": "Transposes Bilibili watch pages by placing comments beside the player and video lists below it.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/list/watchlater*"
+      ],
+      "css": ["src/content.css"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
