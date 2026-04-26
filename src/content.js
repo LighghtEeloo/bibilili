@@ -12,6 +12,9 @@
   const COMMENT_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
+  const IDLE_RECONCILE_TIMEOUT_MS = 900;
+  const URGENT_RECONCILE_DELAY_MS = 0;
+  const LOG_PREFIX = "[bibilili]";
 
   const PLAYER_SELECTORS = [
     "#bilibili-player",
@@ -171,6 +174,204 @@
     LIGHT: "light",
     DARK: "dark"
   });
+
+  /**
+   * Closed priorities for reconciliation requests.
+   */
+  const ReconcilePriority = Object.freeze({
+    URGENT: "urgent",
+    LAZY: "lazy"
+  });
+
+  /**
+   * Emits concise diagnostics for activation and reconciliation.
+   */
+  class DiagnosticLog {
+    /**
+     * Writes an informational diagnostic.
+     *
+     * @param {string} message
+     * @param {object} [details]
+     */
+    static info(message, details = {}) {
+      console.info(LOG_PREFIX, message, details);
+    }
+
+    /**
+     * Writes a diagnostic for a blocked transformed layout.
+     *
+     * @param {string} message
+     * @param {object} [details]
+     */
+    static warn(message, details = {}) {
+      console.warn(LOG_PREFIX, message, details);
+    }
+  }
+
+  /**
+   * Coalesces reconciliation requests into urgent and lazy execution lanes.
+   */
+  class ReconcileScheduler {
+    /**
+     * Creates a scheduler that invokes one reconciliation callback.
+     *
+     * @param {(resetActiveSources: boolean) => void} onRun
+     */
+    constructor(onRun) {
+      this.onRun = onRun;
+      this.pending = false;
+      this.pendingResetActiveSources = false;
+      this.urgentTimer = null;
+      this.delayTimer = null;
+      this.idleHandle = null;
+    }
+
+    /**
+     * Requests a reconciliation pass.
+     *
+     * @param {boolean} [resetActiveSources]
+     * @param {string} [priority]
+     */
+    request(resetActiveSources = false, priority = ReconcilePriority.LAZY) {
+      this.pending = true;
+      this.pendingResetActiveSources =
+        this.pendingResetActiveSources || resetActiveSources;
+
+      if (priority === ReconcilePriority.URGENT) {
+        this.scheduleUrgent();
+        return;
+      }
+
+      this.scheduleLazy();
+    }
+
+    /**
+     * Clears all queued reconciliation work.
+     */
+    cancel() {
+      this.clearUrgentTimer();
+      this.clearDelayTimer();
+      this.clearIdleCallback();
+      this.pending = false;
+      this.pendingResetActiveSources = false;
+    }
+
+    /**
+     * Schedules an urgent pass after the current browser task.
+     */
+    scheduleUrgent() {
+      this.clearDelayTimer();
+      this.clearIdleCallback();
+
+      if (this.urgentTimer !== null) {
+        return;
+      }
+
+      this.urgentTimer = window.setTimeout(() => {
+        this.urgentTimer = null;
+        this.run();
+      }, URGENT_RECONCILE_DELAY_MS);
+    }
+
+    /**
+     * Schedules a lazy pass through debounce and idle time.
+     */
+    scheduleLazy() {
+      if (
+        this.urgentTimer !== null ||
+        this.delayTimer !== null ||
+        this.idleHandle !== null
+      ) {
+        return;
+      }
+
+      this.delayTimer = window.setTimeout(() => {
+        this.delayTimer = null;
+        this.scheduleIdle();
+      }, RECONCILE_DELAY_MS);
+    }
+
+    /**
+     * Schedules the pending lazy pass during idle time or a bounded timeout.
+     */
+    scheduleIdle() {
+      if (!this.pending) {
+        return;
+      }
+
+      if (typeof window.requestIdleCallback === "function") {
+        this.idleHandle = window.requestIdleCallback(
+          () => {
+            this.idleHandle = null;
+            this.run();
+          },
+          { timeout: IDLE_RECONCILE_TIMEOUT_MS }
+        );
+        return;
+      }
+
+      this.delayTimer = window.setTimeout(() => {
+        this.delayTimer = null;
+        this.run();
+      }, RECONCILE_DELAY_MS);
+    }
+
+    /**
+     * Runs the pending reconciliation callback.
+     */
+    run() {
+      this.clearUrgentTimer();
+      this.clearDelayTimer();
+      this.clearIdleCallback();
+
+      if (!this.pending) {
+        return;
+      }
+
+      const resetActiveSources = this.pendingResetActiveSources;
+      this.pending = false;
+      this.pendingResetActiveSources = false;
+      this.onRun(resetActiveSources);
+    }
+
+    /**
+     * Clears the urgent timer.
+     */
+    clearUrgentTimer() {
+      if (this.urgentTimer === null) {
+        return;
+      }
+
+      window.clearTimeout(this.urgentTimer);
+      this.urgentTimer = null;
+    }
+
+    /**
+     * Clears the lazy debounce timer.
+     */
+    clearDelayTimer() {
+      if (this.delayTimer === null) {
+        return;
+      }
+
+      window.clearTimeout(this.delayTimer);
+      this.delayTimer = null;
+    }
+
+    /**
+     * Clears the idle callback.
+     */
+    clearIdleCallback() {
+      if (this.idleHandle === null) {
+        return;
+      }
+
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(this.idleHandle);
+      }
+      this.idleHandle = null;
+    }
+  }
 
   /**
    * Static source adapter configuration.
@@ -557,13 +758,16 @@
     /**
      * Places the activation button as a floating page control.
      *
-     * @param {boolean} enabled
      * @param {string} theme
      */
-    mountFloating(enabled, theme) {
+    mountFloating(theme) {
       this.ensureFloatingRoot(theme);
-      this.setEnabled(enabled);
-      this.floatingRoot.replaceChildren(this.ensureButton());
+      this.setEnabled(false);
+      const button = this.ensureButton();
+
+      if (button.parentElement !== this.floatingRoot) {
+        this.floatingRoot.replaceChildren(button);
+      }
     }
 
     /**
@@ -571,15 +775,21 @@
      *
      * @param {Element} container
      * @param {boolean} enabled
+     * @returns {HTMLButtonElement}
      */
     mountDocked(container, enabled) {
       const button = this.ensureButton();
       this.setEnabled(enabled);
-      container.append(button);
+
+      if (button.parentElement !== container || container.firstElementChild !== button) {
+        container.insertBefore(button, container.firstChild);
+      }
 
       if (this.floatingRoot?.isConnected) {
         this.floatingRoot.remove();
       }
+
+      return button;
     }
 
     /**
@@ -627,10 +837,28 @@
       this.button.className = "bibilili-toggle-button";
       this.button.append(ActivationControl.logoMark(this.document));
       this.button.addEventListener("click", () => {
-        this.onToggle(this.button.getAttribute("aria-pressed") !== "true");
+        const nextEnabled = this.button.getAttribute("aria-pressed") !== "true";
+        DiagnosticLog.info("activation click", {
+          nextEnabled,
+          placement: this.placement()
+        });
+        this.onToggle(nextEnabled);
       });
 
       return this.button;
+    }
+
+    /**
+     * Returns the current visual placement of the activation button.
+     *
+     * @returns {string}
+     */
+    placement() {
+      if (this.button && this.floatingRoot?.contains(this.button)) {
+        return "floating";
+      }
+
+      return "docked";
     }
 
     /**
@@ -702,11 +930,11 @@
     }
 
     /**
-     * Scrolls to the native comment area before the transformed layout mounts.
+     * Requests one native scroll pass so Bilibili can instantiate lazy comments.
      *
      * @param {string} pageKey
      * @param {() => void} afterPrime
-     * @returns {boolean}
+     * @returns {boolean} true when a prime pass was scheduled
      */
     prime(pageKey, afterPrime) {
       if (this.hasPrimed(pageKey)) {
@@ -1586,6 +1814,9 @@
       this.commentNode = null;
       this.activeKinds = new Set();
       this.disabledKinds = new Set();
+      this.sourceButtons = new Map();
+      this.currentSources = [];
+      this.currentActivationControl = null;
       this.movedNodes = new Map();
       this.markedSourceRoots = new Set();
     }
@@ -1633,6 +1864,9 @@
       this.rail = null;
       this.activeKinds.clear();
       this.disabledKinds.clear();
+      this.sourceButtons.clear();
+      this.currentSources = [];
+      this.currentActivationControl = null;
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
 
@@ -1800,6 +2034,8 @@
         return;
       }
 
+      this.currentSources = sources;
+      this.currentActivationControl = activationControl;
       this.markSourceRoots(sources);
 
       if (resetActiveSources) {
@@ -1845,20 +2081,77 @@
      * @param {ActivationControl} activationControl
      */
     renderSourceBar(sources, activationControl) {
-      this.sourceBar.replaceChildren();
-      activationControl.mountDocked(this.sourceBar, true);
+      const activationButton = activationControl.mountDocked(this.sourceBar, true);
+      const availableKinds = new Set();
+      let previous = activationButton;
 
       for (const source of sources) {
-        const button = this.document.createElement("button");
-        button.type = "button";
-        button.className = "bibilili-source-button";
+        const button = this.sourceButtonFor(source.kind);
+        availableKinds.add(source.kind);
         button.textContent = source.label;
         button.setAttribute("aria-pressed", String(this.activeKinds.has(source.kind)));
-        button.addEventListener("click", () => {
-          this.toggleSource(source.kind);
-          this.renderSourceDock(sources, activationControl);
-        });
-        this.sourceBar.append(button);
+
+        const reference = previous.nextSibling;
+        if (reference !== button) {
+          this.sourceBar.insertBefore(button, reference);
+        }
+
+        previous = button;
+      }
+
+      this.removeStaleSourceButtons(availableKinds);
+    }
+
+    /**
+     * Returns the keyed source button for a source kind.
+     *
+     * @param {string} kind
+     * @returns {HTMLButtonElement}
+     */
+    sourceButtonFor(kind) {
+      const existing = this.sourceButtons.get(kind);
+      if (existing) {
+        return existing;
+      }
+
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.className = "bibilili-source-button";
+      button.dataset.sourceKind = kind;
+      button.addEventListener("click", () => {
+        this.handleSourceButtonClick(kind);
+      });
+      this.sourceButtons.set(kind, button);
+      return button;
+    }
+
+    /**
+     * Toggles one source kind from a keyed source button.
+     *
+     * @param {string} kind
+     */
+    handleSourceButtonClick(kind) {
+      if (!this.currentActivationControl) {
+        return;
+      }
+
+      this.toggleSource(kind);
+      this.renderSourceDock(this.currentSources, this.currentActivationControl);
+    }
+
+    /**
+     * Removes keyed source buttons for sources absent from the current page.
+     *
+     * @param {Set<string>} availableKinds
+     */
+    removeStaleSourceButtons(availableKinds) {
+      for (const [kind, button] of this.sourceButtons) {
+        if (availableKinds.has(kind)) {
+          continue;
+        }
+
+        button.remove();
+        this.sourceButtons.delete(kind);
       }
     }
 
@@ -2053,14 +2346,17 @@
         this.setEnabled(enabled);
       });
       this.observer = null;
-      this.reconcileTimer = null;
-      this.pendingResetActiveSources = false;
+      this.reconcileScheduler = new ReconcileScheduler((resetActiveSources) => {
+        this.reconcile(resetActiveSources);
+      });
       this.urlTimer = null;
       this.themePreference = null;
       this.themeChangeHandler = null;
       this.popstateHandler = null;
       this.hashchangeHandler = null;
       this.pageKey = "";
+      this.lastPlayerWaitDiagnostic = "";
+      this.lastRenderDiagnostic = "";
     }
 
     /**
@@ -2072,7 +2368,7 @@
       this.observeNavigation();
       this.observeThemePreference();
       this.renderFloatingActivation();
-      this.scheduleReconcile();
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
     }
 
     /**
@@ -2082,11 +2378,7 @@
       this.observer?.disconnect();
       this.observer = null;
 
-      if (this.reconcileTimer) {
-        window.clearTimeout(this.reconcileTimer);
-        this.reconcileTimer = null;
-      }
-      this.pendingResetActiveSources = false;
+      this.cancelScheduledReconcile();
 
       if (this.urlTimer) {
         window.clearInterval(this.urlTimer);
@@ -2115,33 +2407,23 @@
     }
 
     /**
-     * Schedules a debounced reconciliation pass.
+     * Schedules a coalesced reconciliation pass.
      *
      * @param {boolean} [resetActiveSources]
+     * @param {string} [priority]
      */
-    scheduleReconcile(resetActiveSources = false) {
-      this.pendingResetActiveSources =
-        this.pendingResetActiveSources || resetActiveSources;
-
-      if (this.reconcileTimer) {
-        return;
-      }
-
-      this.reconcileTimer = window.setTimeout(() => {
-        this.reconcileTimer = null;
-        this.reconcile(this.takePendingResetActiveSources());
-      }, RECONCILE_DELAY_MS);
+    scheduleReconcile(
+      resetActiveSources = false,
+      priority = ReconcilePriority.LAZY
+    ) {
+      this.reconcileScheduler.request(resetActiveSources, priority);
     }
 
     /**
-     * Consumes the pending source-state reset flag for a reconciliation pass.
-     *
-     * @returns {boolean}
+     * Clears any queued reconciliation pass.
      */
-    takePendingResetActiveSources() {
-      const resetActiveSources = this.pendingResetActiveSources;
-      this.pendingResetActiveSources = false;
-      return resetActiveSources;
+    cancelScheduledReconcile() {
+      this.reconcileScheduler.cancel();
     }
 
     /**
@@ -2151,12 +2433,18 @@
      */
     reconcile(resetActiveSources) {
       if (!this.isWatchPage()) {
+        DiagnosticLog.info("reconcile skipped outside watch page", {
+          url: window.location.href
+        });
         this.layout.destroy();
         this.activationControl.destroy();
         return;
       }
 
       if (!this.enabled) {
+        DiagnosticLog.info("reconcile skipped while disabled", {
+          pageKey: this.pageKey
+        });
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -2165,22 +2453,28 @@
       const regions = this.discovery.discover();
 
       if (!regions.player) {
+        this.logWaitingForPlayer();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
       }
 
+      this.lastPlayerWaitDiagnostic = "";
+
       if (!regions.comments && !this.layout.root) {
-        const didPrime = this.commentPrimer.prime(this.pageKey, () => {
+        this.commentPrimer.prime(this.pageKey, () => {
           this.scheduleReconcile();
         });
-
-        if (didPrime) {
-          return;
-        }
       }
 
+      const renderDetails = {
+        pageKey: this.pageKey,
+        hasComments: Boolean(regions.comments),
+        sourceKinds: regions.sources.map((source) => source.kind),
+        resetActiveSources
+      };
       this.layout.render(regions, resetActiveSources, this.activationControl);
+      this.logRenderedLayout(renderDetails);
     }
 
     /**
@@ -2192,7 +2486,7 @@
         const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwned(mutation.target));
 
         if (hasPageMutation) {
-          this.scheduleReconcile();
+          this.scheduleReconcile(false, ReconcilePriority.LAZY);
         }
       });
 
@@ -2233,7 +2527,9 @@
      */
     observeThemePreference() {
       this.themePreference = window.matchMedia(BROWSER_DARK_SCHEME_QUERY);
-      this.themeChangeHandler = () => this.scheduleReconcile();
+      this.themeChangeHandler = () => {
+        this.scheduleReconcile(false, ReconcilePriority.LAZY);
+      };
       this.themePreference.addEventListener("change", this.themeChangeHandler);
     }
 
@@ -2249,7 +2545,7 @@
 
       this.pageKey = nextPageKey;
       this.layout.destroy();
-      this.scheduleReconcile(true);
+      this.scheduleReconcile(true, ReconcilePriority.URGENT);
     }
 
     /**
@@ -2258,21 +2554,63 @@
      * @param {boolean} enabled
      */
     setEnabled(enabled) {
+      DiagnosticLog.info("activation state request", {
+        enabled,
+        layoutMounted: Boolean(this.layout.root?.isConnected),
+        pageKey: this.pageKey
+      });
       this.enabled = enabled;
       ActivationPreference.writeEnabled(enabled);
+      this.cancelScheduledReconcile();
 
       if (!enabled) {
+        this.lastRenderDiagnostic = "";
+        this.commentPrimer.stop();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
       }
 
-      this.renderFloatingActivation();
-      this.scheduleReconcile(true);
+      this.scheduleReconcile(true, ReconcilePriority.URGENT);
     }
 
     /**
-     * Renders the activation button in its floating placement.
+     * Logs changed render state without flooding routine reconciliation.
+     *
+     * @param {{ pageKey: string, hasComments: boolean, sourceKinds: string[], resetActiveSources: boolean }} details
+     */
+    logRenderedLayout(details) {
+      const key = JSON.stringify(details);
+
+      if (key === this.lastRenderDiagnostic) {
+        return;
+      }
+
+      this.lastRenderDiagnostic = key;
+      DiagnosticLog.info("reconcile rendered layout", details);
+    }
+
+    /**
+     * Logs a changed missing-player diagnostic without flooding lazy page loads.
+     */
+    logWaitingForPlayer() {
+      const details = {
+        pageKey: this.pageKey,
+        playerCandidates: this.discovery.candidatesForSelectors(PLAYER_SELECTORS, true).length,
+        layoutMounted: Boolean(this.layout.root?.isConnected)
+      };
+      const key = JSON.stringify(details);
+
+      if (key === this.lastPlayerWaitDiagnostic) {
+        return;
+      }
+
+      this.lastPlayerWaitDiagnostic = key;
+      DiagnosticLog.warn("reconcile waiting for player region", details);
+    }
+
+    /**
+     * Renders the activation button as a floating start or retry control.
      */
     renderFloatingActivation() {
       if (!this.isWatchPage()) {
@@ -2281,7 +2619,6 @@
       }
 
       this.activationControl.mountFloating(
-        this.enabled,
         ThemeResolver.resolve(this.document)
       );
     }

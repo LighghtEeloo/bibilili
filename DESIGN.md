@@ -47,19 +47,29 @@ muted text, selected controls, and badges in light and dark modes.
 The activation control is the global button for enabling and disabling the
 transformed layout.
 
-The control has two placements. When Bibilili is disabled, it floats at the
-bottom-left of the page. When Bibilili is enabled, it is the leftmost control in
-the bottom dock.
+The control has two placements. When the transformed layout is not mounted, it
+floats at the bottom-left of the page and acts as a start or retry control.
+When the transformed layout is mounted, it is the leftmost control in the
+bottom dock and acts as the off control.
 
 The control presents the extension logo asset as its visible mark. Its
 accessible name and title state whether activating it turns Bibilili on or off.
 
+The activation control keeps one DOM button for the page session.
+Reconciliation updates that button in place and moves it between floating and
+docked placements only when its placement changes.
+
 Disabling Bibilili restores page-owned player and comment nodes to their page
 locations, removes the layout root, and leaves the floating activation control
-mounted. Enabling Bibilili starts a new transformed page session.
+mounted. Enabling Bibilili starts or retries a transformed page session.
 
-The activation state is a Bilibili-page preference. It persists across same-tab
-navigation and page reloads when browser storage is available.
+Activation applies through an urgent reconciliation request after the current
+input task when the player region is already available. Lazy reconciliation and
+comment priming must not gate the first visible transformed layout.
+
+The activation state is a Bilibili-page preference recording the requested
+state. It persists across same-tab navigation and page reloads when browser
+storage is available.
 
 ## Player Pane
 
@@ -152,6 +162,11 @@ available source, it contains the activation control alone. Disabled source
 state is stored for the page session, so later reconciliation preserves
 user-disabled choices.
 
+Source buttons are keyed by source kind. Reconciliation updates keyed buttons in
+place, orders them after the activation control, and removes buttons for absent
+sources. Stable button identity preserves in-progress pointer and keyboard
+interaction while Bilibili mutates the page.
+
 ## List Rail
 
 The list rail is the horizontal scroll surface inside the list dock.
@@ -186,8 +201,25 @@ It observes same-tab navigation, lazy region insertion, list updates, and page
 theme marker changes. When the watched video changes, it starts a new page
 session and rebuilds discovered regions.
 
-Reconciliation requests are coalesced into the next pass. Page mutations cannot
-indefinitely postpone activation or same-tab navigation.
+Reconciliation requests carry a priority and a source-reset flag. The reset
+flag clears page-session source choices when the visible video session changes.
+
+Reconciliation has two priorities. Urgent requests come from activation,
+initial startup, and same-tab navigation. Lazy requests come from page
+mutations, theme changes, and comment priming.
+
+Urgent requests run asynchronously after the current browser task. They cancel
+pending lazy scheduling, keep the reset flag if any pending request set it, and
+preserve input event delivery.
+
+Lazy requests are debounced, then run during browser idle time or a fixed
+timeout. Additional page mutations merge into the pending lazy request. They do
+not restart the debounce or postpone the pending pass indefinitely.
+
+Each pass discovers page-owned regions, then applies an idempotent render to
+extension-owned surfaces. The render path updates stable controls in place and
+moves page-owned player and comment nodes only when their owning region
+changes.
 
 When a source root changes, that source is re-extracted and the list rail is
 re-rendered from the current active source set.
