@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Bibilili",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Transposes Bilibili watch pages by placing comments beside the player and video lists below it.",
+  "icons": {
+    "16": "assets/bibilili-logo-16.png",
+    "32": "assets/bibilili-logo-32.png",
+    "48": "assets/bibilili-logo-48.png",
+    "128": "assets/bibilili-logo-128.png"
+  },
   "host_permissions": ["https://api.bilibili.com/*"],
   "web_accessible_resources": [
     {
