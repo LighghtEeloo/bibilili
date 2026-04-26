@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="85 -67 768 768" role="img" aria-labelledby="title desc">
+  <title id="title">Bibilili matrix transpose logo, white</title>
+  <desc id="desc">A white square matrix of stylish handwritten bi and li entries with a superscript T transpose symbol.</desc>
+  <style>
+    .matrix-entry {
+      fill: #ffffff;
+      font-family: "Snell Roundhand", "Apple Chancery", "Zapfino", cursive;
+      font-size: 204px;
+      font-style: normal;
+      font-weight: 400;
+      letter-spacing: 0;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .matrix-line {
+      fill: none;
+      stroke: #ffffff;
+      stroke-linecap: square;
+      stroke-linejoin: miter;
+      stroke-width: 7.5;
+      opacity: 0.78;
+    }
+
+    .transpose-symbol {
+      fill: #ffffff;
+      font-family: "STIX Two Math", "STIXGeneral", "STIX Two Text", "Cambria Math", "Times New Roman", Georgia, serif;
+      font-size: 256px;
+      font-style: normal;
+      font-weight: 100;
+      letter-spacing: 0;
+      text-anchor: middle;
+      dominant-baseline: central;
+      opacity: 0.9;
+    }
+  </style>
+
+  <path class="matrix-line" d="M160 116H116V652H160" />
+  <path class="matrix-line" d="M608 116H652V652H608" />
+
+  <text class="transpose-symbol" x="752" y="80">T</text>
+  <text class="matrix-entry" x="280" y="254">bi</text>
+  <text class="matrix-entry" x="488" y="254">li</text>
+  <text class="matrix-entry" x="280" y="514">bi</text>
+  <text class="matrix-entry" x="488" y="514">li</text>
+</svg>
