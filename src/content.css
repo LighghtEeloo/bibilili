@@ -290,35 +290,44 @@
 .bibilili-toggle-button {
   flex: 0 0 auto;
   height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--bibilili-button-border);
+  width: 34px;
+  padding: 0;
+  border: 1px solid var(--bibilili-selected-border);
   border-radius: 6px;
-  color: var(--bibilili-control-text);
-  background: var(--bibilili-control-bg);
+  color: #ffffff;
+  background: #008fc2;
   box-shadow: 0 6px 18px var(--bibilili-shadow);
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 28px;
-  white-space: nowrap;
+  line-height: 1;
   cursor: pointer;
   pointer-events: auto;
 }
 
 .bibilili-toggle-button:hover {
-  border-color: var(--bibilili-button-hover-border);
-  color: var(--bibilili-text);
+  border-color: #19b7e8;
+  color: #ffffff;
+  background: #007aa6;
 }
 
 .bibilili-toggle-button[aria-pressed="true"] {
   border-color: var(--bibilili-selected-border);
-  color: var(--bibilili-selected-text);
-  background: var(--bibilili-selected-bg);
+  color: #ffffff;
+  background: #006f96;
 }
 
 .bibilili-source-bar > .bibilili-toggle-button {
   margin-right: 4px;
   box-shadow: none;
+}
+
+.bibilili-logo {
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: auto;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 .bibilili-list-rail {

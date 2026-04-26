@@ -3,6 +3,12 @@
   "name": "Bibilili",
   "version": "0.1.0",
   "description": "Transposes Bilibili watch pages by placing comments beside the player and video lists below it.",
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/bibilili-logo-white.svg"],
+      "matches": ["https://www.bilibili.com/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [

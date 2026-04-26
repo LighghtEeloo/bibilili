@@ -51,6 +51,9 @@ The control has two placements. When Bibilili is disabled, it floats at the
 bottom-left of the page. When Bibilili is enabled, it is the leftmost control in
 the bottom dock.
 
+The control uses the extension logo asset, not visible text. Its accessible
+name and title state whether activating it turns Bibilili on or off.
+
 Disabling Bibilili restores page-owned player and comment nodes to their page
 locations, removes the layout root, and leaves the floating activation control
 mounted. Enabling Bibilili starts a new transformed page session.

@@ -6,6 +6,7 @@
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
+  const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
   const RECONCILE_DELAY_MS = 160;
   const COMMENT_PRIME_DELAY_MS = 650;
@@ -538,6 +539,7 @@
       this.button = this.document.createElement("button");
       this.button.type = "button";
       this.button.className = "bibilili-toggle-button";
+      this.button.append(ActivationControl.logoMark(this.document));
       this.button.addEventListener("click", () => {
         this.onToggle(this.button.getAttribute("aria-pressed") !== "true");
       });
@@ -546,14 +548,44 @@
     }
 
     /**
-     * Updates button state, text, and accessible pressed state.
+     * Creates the extension logo image used by the activation button.
+     *
+     * @param {Document} document
+     * @returns {HTMLImageElement}
+     */
+    static logoMark(document) {
+      const logo = document.createElement("img");
+      logo.className = "bibilili-logo";
+      logo.src = ActivationControl.logoAssetUrl();
+      logo.decoding = "async";
+      logo.draggable = false;
+      logo.alt = "";
+      logo.setAttribute("aria-hidden", "true");
+      return logo;
+    }
+
+    /**
+     * Returns the browser URL for the packaged logo asset.
+     *
+     * @returns {string}
+     */
+    static logoAssetUrl() {
+      if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+        return chrome.runtime.getURL(LOGO_ASSET_PATH);
+      }
+
+      return LOGO_ASSET_PATH;
+    }
+
+    /**
+     * Updates button state, accessible name, and pressed state.
      *
      * @param {boolean} enabled
      */
     setEnabled(enabled) {
       const button = this.ensureButton();
-      button.textContent = enabled ? "Bibilili On" : "Bibilili Off";
       button.title = enabled ? "Turn Bibilili off" : "Turn Bibilili on";
+      button.setAttribute("aria-label", button.title);
       button.setAttribute("aria-pressed", String(enabled));
     }
   }
