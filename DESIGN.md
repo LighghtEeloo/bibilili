@@ -149,13 +149,13 @@ and later video-list kinds.
 The list dock has bounded height. It owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
 
-The list dock has two enabled states. It is expanded when at least one
-discovered source can be selected. It is controls-only when no discovered
-source yields valid video items.
+The list dock has two enabled states. It is open when a selected source is
+showing its rail. It is controls-only when no discovered source yields valid
+video items or when the selected source route is closed.
 
-In controls-only state, the list dock keeps the activation control visible and
-hides the list rail. The stage receives the viewport height minus the source
-bar height.
+In controls-only state, the list dock keeps the activation control and any
+available source buttons visible, and closes the list rail. The stage receives
+the viewport height minus the source bar height.
 
 ## Source Bar
 
@@ -166,15 +166,19 @@ discovered source kind. The initial source buttons are Queue, Collection,
 Recommendations, Watch Later, and History when those sources are available.
 
 The buttons are list routers. Selecting a source replaces the list rail with
-that source's video items. Source buttons do not toggle a source off and do not
+that source's video items. Clicking the selected source while the rail is open
+closes the rail without clearing the route. Clicking the selected source while
+closed reopens the rail. Source buttons do not toggle a source off and do not
 combine multiple sources in one rail.
 
 The selected route defaults to the first available source in source-kind order.
 Reconciliation preserves the current route while its source remains available.
 When the route disappears, the first available source becomes selected.
 
-Each source button exposes selected state with `aria-current`. A source with no
-valid video items is omitted from the source bar.
+The selected source button keeps `aria-current` for the remembered route. It
+exposes the rail open state with `aria-expanded`. The selected visual treatment
+applies only while `aria-expanded` is `true`. A source with no valid video items
+is omitted from the source bar.
 
 The source bar is rendered whenever the enabled list dock is present. With no
 available source, it contains the activation control alone.
@@ -195,7 +199,8 @@ Every group uses the same card layout. Native Bilibili list styling has no role
 in the bottom presentation.
 
 The rail scrolls horizontally across the selected source's cards. Route changes
-replace the group in place.
+replace the group in place and reopen the rail. Closing the rail preserves the
+selected route for later expansion.
 
 ## Video Card
 

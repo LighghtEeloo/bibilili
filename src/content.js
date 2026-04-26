@@ -3,6 +3,7 @@
 
   const OWNED_ROOT_ID = "bibilili-layout-root";
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
+  const LIST_RAIL_ID = "bibilili-list-rail";
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
@@ -2444,6 +2445,7 @@
       this.playerNode = null;
       this.commentNode = null;
       this.selectedSourceKind = null;
+      this.isRailOpen = false;
       this.renderedSourceKind = null;
       this.sourceButtons = new Map();
       this.currentSources = [];
@@ -2494,6 +2496,7 @@
       this.sourceBar = null;
       this.rail = null;
       this.selectedSourceKind = null;
+      this.isRailOpen = false;
       this.renderedSourceKind = null;
       this.sourceButtons.clear();
       this.currentSources = [];
@@ -2539,6 +2542,7 @@
       this.sourceBar.setAttribute("role", "toolbar");
 
       this.rail = this.document.createElement("div");
+      this.rail.id = LIST_RAIL_ID;
       this.rail.className = "bibilili-list-rail";
 
       this.stage.append(this.playerPane, this.commentPane);
@@ -2668,13 +2672,16 @@
       this.currentSources = sources;
       this.currentActivationControl = activationControl;
       this.markSourceRoots(sources);
+
+      const previousSourceKind = this.selectedSourceKind;
       this.selectedSourceKind = this.resolveSourceRoute(sources, resetSourceRoute);
+      this.resolveRailOpenState(previousSourceKind, resetSourceRoute);
 
       this.renderSourceDock(sources, activationControl);
     }
 
     /**
-     * Renders or collapses the list dock from the current source route.
+     * Renders the list dock from the current source route and rail open state.
      *
      * @param {VideoListSource[]} sources
      * @param {ActivationControl} activationControl
@@ -2686,12 +2693,13 @@
 
       const selectedSource = this.selectedSource(sources);
       const hasSelectedSource = Boolean(selectedSource);
+      const hasOpenRail = hasSelectedSource && this.isRailOpen;
 
-      this.root.classList.toggle("bibilili-has-dock", hasSelectedSource);
-      this.root.classList.toggle("bibilili-has-controls-dock", !hasSelectedSource);
+      this.root.classList.toggle("bibilili-has-dock", hasOpenRail);
+      this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
 
-      if (selectedSource) {
+      if (selectedSource && this.isRailOpen) {
         this.renderRail(
           selectedSource,
           selectedSource.kind !== this.renderedSourceKind
@@ -2722,6 +2730,13 @@
           "aria-current",
           String(this.selectedSourceKind === source.kind)
         );
+        button.setAttribute("aria-controls", LIST_RAIL_ID);
+
+        if (this.selectedSourceKind === source.kind) {
+          button.setAttribute("aria-expanded", String(this.isRailOpen));
+        } else {
+          button.removeAttribute("aria-expanded");
+        }
 
         const reference = previous.nextSibling;
         if (reference !== button) {
@@ -2758,7 +2773,7 @@
     }
 
     /**
-     * Routes the list rail to one keyed source button.
+     * Routes to a source or opens/closes the rail for the current route.
      *
      * @param {string} kind
      */
@@ -2767,7 +2782,16 @@
         return;
       }
 
-      this.routeSource(kind);
+      if (!this.currentSources.some((source) => source.kind === kind)) {
+        return;
+      }
+
+      if (this.selectedSourceKind === kind) {
+        this.isRailOpen = !this.isRailOpen;
+      } else {
+        this.routeSource(kind);
+      }
+
       this.renderSourceDock(this.currentSources, this.currentActivationControl);
     }
 
@@ -2889,6 +2913,23 @@
     }
 
     /**
+     * Preserves closed rail state for the same route and opens new routes.
+     *
+     * @param {string | null} previousSourceKind
+     * @param {boolean} resetSourceRoute
+     */
+    resolveRailOpenState(previousSourceKind, resetSourceRoute) {
+      if (!this.selectedSourceKind) {
+        this.isRailOpen = false;
+        return;
+      }
+
+      if (resetSourceRoute || previousSourceKind !== this.selectedSourceKind) {
+        this.isRailOpen = true;
+      }
+    }
+
+    /**
      * Returns the source for the current route.
      *
      * @param {VideoListSource[]} sources
@@ -2901,13 +2942,14 @@
     }
 
     /**
-     * Routes the rail to one available source kind.
+     * Routes the rail to one available source kind and opens it.
      *
      * @param {string} kind
      */
     routeSource(kind) {
       if (this.currentSources.some((source) => source.kind === kind)) {
         this.selectedSourceKind = kind;
+        this.isRailOpen = true;
       }
     }
 

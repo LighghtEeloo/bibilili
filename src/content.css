@@ -281,7 +281,7 @@
   color: var(--bibilili-text);
 }
 
-.bibilili-source-button[aria-current="true"] {
+.bibilili-source-button[aria-current="true"][aria-expanded="true"] {
   border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
   background: var(--bibilili-selected-bg);
