@@ -43,6 +43,18 @@ controls. Page-owned player, comment, and source roots keep native styling.
 Theme tokens define clear foreground and background pairs for primary text,
 muted text, selected controls, and badges in light and dark modes.
 
+## UI Language
+
+The UI language is the language used by extension-owned labels and accessible
+names. Bibilili resolves it from Bilibili document language markers, storage or
+cookie locale markers, localized page chrome, and then the browser language.
+
+Source kinds stay language-neutral. The renderer maps source kinds to localized
+button text and rail headings during reconciliation.
+
+Bibilili-generated account metadata uses the UI language. Page-owned titles,
+authors, and metadata remain in the language and wording provided by Bilibili.
+
 ## Activation Control
 
 The activation control is the global button for enabling and disabling the
@@ -106,8 +118,8 @@ The source kind is a closed set represented as an enum. The initial kinds are
 queue, collection, recommendations, watch later, and history. A source kind is
 shown when page markup or an account list exposes matching content.
 
-Each source has a label, stable source kind, optional page-owned root node, and
-ordered set of extracted video items.
+Each source has a stable source kind, optional page-owned root node, and ordered
+set of extracted video items.
 
 Source adapters convert page-owned list markup and Bilibili account API payloads
 into video items. The bottom dock renderer consumes adapter output.
@@ -162,8 +174,9 @@ the viewport height minus the source bar height.
 The source bar is the control row inside the enabled list dock.
 
 It begins with the activation control, then contains one route button per
-discovered source kind. The initial source buttons are Queue, Collection,
-Recommendations, Watch Later, and History when those sources are available.
+discovered source kind. The initial source buttons represent queue, collection,
+recommendations, watch later, and history when those sources are available.
+Their labels use the current UI language.
 
 The buttons are list routers. Selecting a source replaces the list rail with
 that source's video items. Clicking the selected source while the rail is open

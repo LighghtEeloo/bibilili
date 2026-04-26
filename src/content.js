@@ -161,12 +161,86 @@
     SourceKind.HISTORY
   ]);
 
-  const SOURCE_LABELS = Object.freeze({
+  const ENGLISH_SOURCE_LABELS = Object.freeze({
     [SourceKind.QUEUE]: "Queue",
     [SourceKind.COLLECTION]: "Collection",
     [SourceKind.WATCH_LATER]: "Watch Later",
     [SourceKind.HISTORY]: "History",
     [SourceKind.RECOMMENDATIONS]: "Recommendations"
+  });
+
+  /**
+   * Closed UI languages rendered by extension-owned controls.
+   */
+  const UiLanguage = Object.freeze({
+    ENGLISH: "en",
+    SIMPLIFIED_CHINESE: "zh-Hans",
+    TRADITIONAL_CHINESE: "zh-Hant"
+  });
+
+  const DEFAULT_UI_LANGUAGE = UiLanguage.ENGLISH;
+
+  const SOURCE_LABELS_BY_LANGUAGE = Object.freeze({
+    [UiLanguage.ENGLISH]: ENGLISH_SOURCE_LABELS,
+    [UiLanguage.SIMPLIFIED_CHINESE]: Object.freeze({
+      [SourceKind.QUEUE]: "队列",
+      [SourceKind.COLLECTION]: "合集",
+      [SourceKind.WATCH_LATER]: "稍后再看",
+      [SourceKind.HISTORY]: "历史",
+      [SourceKind.RECOMMENDATIONS]: "推荐"
+    }),
+    [UiLanguage.TRADITIONAL_CHINESE]: Object.freeze({
+      [SourceKind.QUEUE]: "佇列",
+      [SourceKind.COLLECTION]: "合輯",
+      [SourceKind.WATCH_LATER]: "稍後再看",
+      [SourceKind.HISTORY]: "歷史",
+      [SourceKind.RECOMMENDATIONS]: "推薦"
+    })
+  });
+
+  /**
+   * Localized extension-owned UI strings keyed by resolved Bilibili language.
+   */
+  const UI_STRINGS = Object.freeze({
+    [UiLanguage.ENGLISH]: Object.freeze({
+      layoutLabel: "Bibilili watch layout",
+      playerLabel: "Player",
+      commentsLabel: "Comments",
+      videoListsLabel: "Video lists",
+      turnOnLabel: "Turn Bibilili on",
+      turnOffLabel: "Turn Bibilili off",
+      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.ENGLISH],
+      numberLocale: "en",
+      viewCount: (count) => `${count} views`,
+      finishedProgress: "Finished",
+      watchedProgress: (duration) => `Watched ${duration}`
+    }),
+    [UiLanguage.SIMPLIFIED_CHINESE]: Object.freeze({
+      layoutLabel: "Bibilili 观看布局",
+      playerLabel: "播放器",
+      commentsLabel: "评论",
+      videoListsLabel: "视频列表",
+      turnOnLabel: "开启 Bibilili",
+      turnOffLabel: "关闭 Bibilili",
+      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.SIMPLIFIED_CHINESE],
+      numberLocale: "zh-CN",
+      viewCount: (count) => `${count} 次播放`,
+      finishedProgress: "已看完",
+      watchedProgress: (duration) => `已观看 ${duration}`
+    }),
+    [UiLanguage.TRADITIONAL_CHINESE]: Object.freeze({
+      layoutLabel: "Bibilili 觀看佈局",
+      playerLabel: "播放器",
+      commentsLabel: "評論",
+      videoListsLabel: "影片列表",
+      turnOnLabel: "開啟 Bibilili",
+      turnOffLabel: "關閉 Bibilili",
+      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.TRADITIONAL_CHINESE],
+      numberLocale: "zh-TW",
+      viewCount: (count) => `${count} 次觀看`,
+      finishedProgress: "已看完",
+      watchedProgress: (duration) => `已觀看 ${duration}`
+    })
   });
 
   /**
@@ -539,6 +613,317 @@
   }
 
   /**
+   * Provides localized text for extension-owned UI surfaces.
+   */
+  class UiStrings {
+    /**
+     * Returns a supported UI language or the default language.
+     *
+     * @param {string | null | undefined} language
+     * @returns {string}
+     */
+    static normalizeLanguage(language) {
+      return UI_STRINGS[language] ? language : DEFAULT_UI_LANGUAGE;
+    }
+
+    /**
+     * Returns the localized string bundle for a UI language.
+     *
+     * @param {string | null | undefined} language
+     * @returns {LocalizedUiStrings}
+     */
+    static for(language) {
+      return UI_STRINGS[UiStrings.normalizeLanguage(language)];
+    }
+
+    /**
+     * Returns the localized label for a closed source kind.
+     *
+     * @param {string} kind
+     * @param {string} language
+     * @returns {string}
+     */
+    static sourceLabel(kind, language) {
+      return UiStrings.for(language).sourceLabels[kind] ?? kind;
+    }
+
+    /**
+     * Formats a Bilibili account view count in the current UI language.
+     *
+     * @param {string} count
+     * @param {string} language
+     * @returns {string}
+     */
+    static viewCount(count, language) {
+      return UiStrings.for(language).viewCount(count);
+    }
+
+    /**
+     * Formats a completed account progress label in the current UI language.
+     *
+     * @param {string} language
+     * @returns {string}
+     */
+    static finishedProgress(language) {
+      return UiStrings.for(language).finishedProgress;
+    }
+
+    /**
+     * Formats a partial account progress label in the current UI language.
+     *
+     * @param {string} duration
+     * @param {string} language
+     * @returns {string}
+     */
+    static watchedProgress(duration, language) {
+      return UiStrings.for(language).watchedProgress(duration);
+    }
+
+    /**
+     * Returns the Intl locale used for compact numeric account labels.
+     *
+     * @param {string} language
+     * @returns {string}
+     */
+    static numberLocale(language) {
+      return UiStrings.for(language).numberLocale;
+    }
+  }
+
+  /**
+   * Resolves extension UI language from Bilibili page language state.
+   */
+  class LanguageResolver {
+    /**
+     * Returns the current UI language for extension-owned controls.
+     *
+     * @param {Document} document
+     * @returns {string}
+     */
+    static resolve(document) {
+      return (
+        LanguageResolver.documentLanguage(document) ??
+        LanguageResolver.storedLanguage("localStorage") ??
+        LanguageResolver.storedLanguage("sessionStorage") ??
+        LanguageResolver.cookieLanguage(document.cookie) ??
+        LanguageResolver.pageChromeLanguage(document) ??
+        LanguageResolver.browserLanguage() ??
+        DEFAULT_UI_LANGUAGE
+      );
+    }
+
+    /**
+     * Reads language tokens exposed by the Bilibili document.
+     *
+     * @param {Document} document
+     * @returns {string | null}
+     */
+    static documentLanguage(document) {
+      const roots = [document.documentElement, document.body].filter(Boolean);
+
+      for (const root of roots) {
+        const language = LanguageResolver.languageToken(
+          [
+            root.getAttribute("lang"),
+            root.getAttribute("xml:lang"),
+            root.getAttribute("data-locale"),
+            root.getAttribute("data-language"),
+            root.getAttribute("data-lang"),
+            root.getAttribute("data-i18n-locale")
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+
+        if (language) {
+          return language;
+        }
+      }
+
+      const meta = document.querySelector(
+        "meta[http-equiv='content-language'], meta[name='language'], meta[name='locale'], meta[property='og:locale']"
+      );
+
+      if (meta instanceof HTMLMetaElement) {
+        return LanguageResolver.languageToken(meta.content);
+      }
+
+      return null;
+    }
+
+    /**
+     * Reads locale-like values from web storage.
+     *
+     * Note: Bilibili has used different frontend stacks over time, so language
+     * preference keys are treated as probes instead of a single contract.
+     *
+     * @param {"localStorage" | "sessionStorage"} storageName
+     * @returns {string | null}
+     */
+    static storedLanguage(storageName) {
+      try {
+        const storage = window[storageName];
+
+        for (let index = 0; index < storage.length; index += 1) {
+          const key = storage.key(index) ?? "";
+
+          if (!/(?:locale|lang|language|i18n)/i.test(key)) {
+            continue;
+          }
+
+          const language = LanguageResolver.languageToken(storage.getItem(key));
+
+          if (language) {
+            return language;
+          }
+        }
+      } catch (_error) {
+        return null;
+      }
+
+      return null;
+    }
+
+    /**
+     * Reads locale-like values from Bilibili cookies.
+     *
+     * @param {string} cookieText
+     * @returns {string | null}
+     */
+    static cookieLanguage(cookieText) {
+      for (const cookie of cookieText.split(";")) {
+        const separator = cookie.indexOf("=");
+        const name = separator === -1 ? cookie : cookie.slice(0, separator);
+
+        if (!/(?:locale|lang|language|i18n)/i.test(name)) {
+          continue;
+        }
+
+        const value = separator === -1 ? "" : cookie.slice(separator + 1);
+        const language = LanguageResolver.languageToken(
+          LanguageResolver.decodeCookieValue(value)
+        );
+
+        if (language) {
+          return language;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Infers language from stable Bilibili navigation and sidebar chrome.
+     *
+     * Note: This is a fallback for pages that render localized UI text without
+     * updating the document language attribute.
+     *
+     * @param {Document} document
+     * @returns {string | null}
+     */
+    static pageChromeLanguage(document) {
+      const selectors = [
+        "header",
+        "nav",
+        ".bili-header",
+        ".international-header",
+        ".mini-header",
+        ".right-container",
+        "#right-container",
+        "aside"
+      ];
+      const text = DomProbe.unique(
+        selectors.flatMap((selector) => DomProbe.queryAll(document, selector))
+      )
+        .filter((element) => !DomProbe.isOwned(element))
+        .map((element) => DomProbe.compactText(element).slice(0, 600))
+        .join(" ")
+        .slice(0, 5000);
+
+      if (!text) {
+        return null;
+      }
+
+      if (/(?:繁體|傳統|稍後再看|歷史|推薦|觀看|評論|關閉|開啟)/u.test(text)) {
+        return UiLanguage.TRADITIONAL_CHINESE;
+      }
+
+      if (/(?:简体|稍后再看|历史|推荐|观看|评论|关闭|开启)/u.test(text)) {
+        return UiLanguage.SIMPLIFIED_CHINESE;
+      }
+
+      if (/\b(?:watch later|history|recommendations?|comments?|language|queue|collection)\b/i.test(text)) {
+        return UiLanguage.ENGLISH;
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns the browser language only after Bilibili page signals are absent.
+     *
+     * @returns {string | null}
+     */
+    static browserLanguage() {
+      const languages = navigator.languages?.length
+        ? navigator.languages
+        : [navigator.language];
+
+      for (const language of languages) {
+        const resolved = LanguageResolver.languageToken(language);
+
+        if (resolved) {
+          return resolved;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Maps a locale token to a supported UI language.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static languageToken(value) {
+      const text = (value ?? "").trim().toLowerCase().replace(/_/g, "-");
+
+      if (!text) {
+        return null;
+      }
+
+      if (/(?:zh-hant|zh-tw|zh-hk|zh-mo|繁體|繁体|traditional)/u.test(text)) {
+        return UiLanguage.TRADITIONAL_CHINESE;
+      }
+
+      if (/(?:zh-hans|zh-cn|zh-sg|\bzh\b|简体|簡體|中文|chinese)/u.test(text)) {
+        return UiLanguage.SIMPLIFIED_CHINESE;
+      }
+
+      if (/(?:^|[^a-z])en(?:-[a-z]+)?(?:$|[^a-z])|english/u.test(text)) {
+        return UiLanguage.ENGLISH;
+      }
+
+      return null;
+    }
+
+    /**
+     * Decodes a cookie value without letting malformed values break discovery.
+     *
+     * @param {string} value
+     * @returns {string}
+     */
+    static decodeCookieValue(value) {
+      try {
+        return decodeURIComponent(value);
+      } catch (_error) {
+        return value;
+      }
+    }
+  }
+
+  /**
    * Resolves the extension theme from Bilibili state, page colors, or browser preference.
    */
   class ThemeResolver {
@@ -755,14 +1140,17 @@
       this.onToggle = onToggle;
       this.button = null;
       this.floatingRoot = null;
+      this.language = DEFAULT_UI_LANGUAGE;
     }
 
     /**
      * Places the activation button as a floating page control.
      *
      * @param {string} theme
+     * @param {string} language
      */
-    mountFloating(theme) {
+    mountFloating(theme, language) {
+      this.setLanguage(language);
       this.ensureFloatingRoot(theme);
       this.setEnabled(false);
       const button = this.ensureButton();
@@ -777,9 +1165,11 @@
      *
      * @param {Element} container
      * @param {boolean} enabled
+     * @param {string} language
      * @returns {HTMLButtonElement}
      */
-    mountDocked(container, enabled) {
+    mountDocked(container, enabled, language) {
+      this.setLanguage(language);
       const button = this.ensureButton();
       this.setEnabled(enabled);
 
@@ -792,6 +1182,15 @@
       }
 
       return button;
+    }
+
+    /**
+     * Updates the language used by activation-control labels.
+     *
+     * @param {string} language
+     */
+    setLanguage(language) {
+      this.language = UiStrings.normalizeLanguage(language);
     }
 
     /**
@@ -900,7 +1299,8 @@
      */
     setEnabled(enabled) {
       const button = this.ensureButton();
-      button.title = enabled ? "Turn Bibilili off" : "Turn Bibilili on";
+      const strings = UiStrings.for(this.language);
+      button.title = enabled ? strings.turnOffLabel : strings.turnOnLabel;
       button.setAttribute("aria-label", button.title);
       button.setAttribute("aria-pressed", String(enabled));
     }
@@ -1372,12 +1772,14 @@
      *
      * @param {string} kind
      * @param {object} payload
+     * @param {string} language
      * @returns {VideoListSource | null}
      */
-    static sourceFromPayload(kind, payload) {
+    static sourceFromPayload(kind, payload, language) {
       const items = AccountSourceAdapter.itemsFromEntries(
         kind,
-        AccountSourceAdapter.entriesFromPayload(payload)
+        AccountSourceAdapter.entriesFromPayload(payload),
+        language
       );
 
       if (items.length === 0) {
@@ -1386,7 +1788,6 @@
 
       return {
         kind,
-        label: SOURCE_LABELS[kind],
         root: null,
         items
       };
@@ -1413,14 +1814,15 @@
      *
      * @param {string} kind
      * @param {object[]} entries
+     * @param {string} language
      * @returns {VideoItem[]}
      */
-    static itemsFromEntries(kind, entries) {
+    static itemsFromEntries(kind, entries, language) {
       const items = [];
       const seen = new Set();
 
       for (const entry of entries) {
-        const item = AccountSourceAdapter.itemFromEntry(kind, entry);
+        const item = AccountSourceAdapter.itemFromEntry(kind, entry, language);
 
         if (!item) {
           continue;
@@ -1447,9 +1849,10 @@
      *
      * @param {string} kind
      * @param {object} entry
+     * @param {string} language
      * @returns {VideoItem | null}
      */
-    static itemFromEntry(kind, entry) {
+    static itemFromEntry(kind, entry, language) {
       const targetUrl = AccountSourceAdapter.targetUrlFor(entry);
       const title = AccountSourceAdapter.titleFor(entry);
 
@@ -1464,8 +1867,8 @@
         sourceKind: kind,
         duration: AccountSourceAdapter.durationFor(entry),
         author: AccountSourceAdapter.authorFor(entry),
-        viewCount: AccountSourceAdapter.viewCountFor(entry),
-        progress: AccountSourceAdapter.progressFor(entry)
+        viewCount: AccountSourceAdapter.viewCountFor(entry, language),
+        progress: AccountSourceAdapter.progressFor(entry, language)
       };
     }
 
@@ -1588,9 +1991,10 @@
      * Formats the view count when Bilibili includes one.
      *
      * @param {object} entry
+     * @param {string} language
      * @returns {string | null}
      */
-    static viewCountFor(entry) {
+    static viewCountFor(entry, language) {
       const viewCount = AccountSourceAdapter.numberValue(
         entry.stat?.view ?? entry.view ?? entry.play
       );
@@ -1599,7 +2003,10 @@
         return null;
       }
 
-      return `${AccountSourceAdapter.compactNumber(viewCount)} views`;
+      return UiStrings.viewCount(
+        AccountSourceAdapter.compactNumber(viewCount, language),
+        language
+      );
     }
 
     /**
@@ -1618,9 +2025,10 @@
      * Extracts playback progress from account record progress fields.
      *
      * @param {object} entry
+     * @param {string} language
      * @returns {string | null}
      */
-    static progressFor(entry) {
+    static progressFor(entry, language) {
       const progress = AccountSourceAdapter.numberValue(entry.progress);
 
       if (progress === null) {
@@ -1630,12 +2038,12 @@
       const duration = AccountSourceAdapter.numberValue(entry.duration);
 
       if (progress === -1 || (duration && progress >= duration)) {
-        return "Finished";
+        return UiStrings.finishedProgress(language);
       }
 
       const formatted = AccountSourceAdapter.formatDuration(progress);
 
-      return formatted ? `Watched ${formatted}` : null;
+      return formatted ? UiStrings.watchedProgress(formatted, language) : null;
     }
 
     /**
@@ -1704,11 +2112,12 @@
      * Formats large counts without changing the card layout.
      *
      * @param {number} value
+     * @param {string} language
      * @returns {string}
      */
-    static compactNumber(value) {
+    static compactNumber(value, language) {
       try {
-        return new Intl.NumberFormat(undefined, {
+        return new Intl.NumberFormat(UiStrings.numberLocale(language), {
           maximumFractionDigits: 1,
           notation: "compact"
         }).format(value);
@@ -1770,6 +2179,8 @@
       this.loading = false;
       this.abortController = null;
       this.sequence = 0;
+      this.loadedLanguage = null;
+      this.loadingLanguage = null;
     }
 
     /**
@@ -1782,11 +2193,32 @@
     }
 
     /**
-     * Starts one account-source refresh when no refresh is already running.
+     * Starts one account-source refresh for the current UI language.
+     *
+     * @param {string} language
+     * @param {boolean} [force]
      */
-    refresh() {
-      if (this.loading || typeof fetch !== "function") {
+    refresh(language, force = false) {
+      if (typeof fetch !== "function") {
         return;
+      }
+
+      const normalizedLanguage = UiStrings.normalizeLanguage(language);
+
+      if (this.loading) {
+        if (!force || this.loadingLanguage === normalizedLanguage) {
+          return;
+        }
+
+        this.abortController?.abort();
+      }
+
+      if (!force && this.loadedLanguage === normalizedLanguage) {
+        return;
+      }
+
+      if (this.loadedLanguage !== normalizedLanguage) {
+        this.sources = [];
       }
 
       const sequence = this.sequence + 1;
@@ -1795,8 +2227,9 @@
       this.sequence = sequence;
       this.loading = true;
       this.abortController = controller;
+      this.loadingLanguage = normalizedLanguage;
 
-      AccountSourceStore.fetchSources(controller?.signal)
+      AccountSourceStore.fetchSources(controller?.signal, normalizedLanguage)
         .then((sources) => {
           if (sequence !== this.sequence) {
             return;
@@ -1810,6 +2243,10 @@
             return;
           }
 
+          if (sequence === this.sequence) {
+            this.sources = [];
+          }
+
           DiagnosticLog.info("account source refresh failed", {
             message: error?.message ?? String(error)
           });
@@ -1821,6 +2258,8 @@
 
           this.loading = false;
           this.abortController = null;
+          this.loadedLanguage = normalizedLanguage;
+          this.loadingLanguage = null;
         });
     }
 
@@ -1833,18 +2272,21 @@
       this.abortController = null;
       this.loading = false;
       this.sources = [];
+      this.loadedLanguage = null;
+      this.loadingLanguage = null;
     }
 
     /**
      * Fetches all account-backed video-list sources.
      *
      * @param {AbortSignal | undefined} signal
+     * @param {string} language
      * @returns {Promise<VideoListSource[]>}
      */
-    static async fetchSources(signal) {
+    static async fetchSources(signal, language) {
       const [watchLaterSource, historySource] = await Promise.all([
-        AccountSourceStore.fetchWatchLaterSource(signal),
-        AccountSourceStore.fetchHistorySource(signal)
+        AccountSourceStore.fetchWatchLaterSource(signal, language),
+        AccountSourceStore.fetchHistorySource(signal, language)
       ]);
 
       return [watchLaterSource, historySource].filter(Boolean);
@@ -1854,13 +2296,15 @@
      * Fetches the account watch-later list through Bilibili's to-view endpoint.
      *
      * @param {AbortSignal | undefined} signal
+     * @param {string} language
      * @returns {Promise<VideoListSource | null>}
      */
-    static async fetchWatchLaterSource(signal) {
+    static async fetchWatchLaterSource(signal, language) {
       return AccountSourceStore.fetchSource(
         SourceKind.WATCH_LATER,
         WATCH_LATER_SOURCE_URL,
-        signal
+        signal,
+        language
       );
     }
 
@@ -1868,13 +2312,15 @@
      * Fetches the account history list through Bilibili's cursor endpoint.
      *
      * @param {AbortSignal | undefined} signal
+     * @param {string} language
      * @returns {Promise<VideoListSource | null>}
      */
-    static async fetchHistorySource(signal) {
+    static async fetchHistorySource(signal, language) {
       return AccountSourceStore.fetchSource(
         SourceKind.HISTORY,
         HISTORY_SOURCE_URL,
-        signal
+        signal,
+        language
       );
     }
 
@@ -1884,9 +2330,10 @@
      * @param {string} kind
      * @param {string} url
      * @param {AbortSignal | undefined} signal
+     * @param {string} language
      * @returns {Promise<VideoListSource | null>}
      */
-    static async fetchSource(kind, url, signal) {
+    static async fetchSource(kind, url, signal, language) {
       try {
         const payload = await AccountSourceStore.fetchApiPayload(url, signal);
 
@@ -1894,7 +2341,7 @@
           return null;
         }
 
-        return AccountSourceAdapter.sourceFromPayload(kind, payload);
+        return AccountSourceAdapter.sourceFromPayload(kind, payload, language);
       } catch (error) {
         if (error?.name === "AbortError") {
           throw error;
@@ -2139,7 +2586,6 @@
 
           candidates.push({
             kind: definition.kind,
-            label: SOURCE_LABELS[definition.kind],
             root,
             items,
             score: this.scoreSourceRoot(root, definition, items.length)
@@ -2417,7 +2863,7 @@
       return SOURCE_ORDER
         .map((kind) => byKind.get(kind))
         .filter(Boolean)
-        .map(({ kind, label, root, items }) => ({ kind, label, root, items }));
+        .map(({ kind, root, items }) => ({ kind, root, items }));
     }
   }
 
@@ -2450,6 +2896,7 @@
       this.sourceButtons = new Map();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.language = DEFAULT_UI_LANGUAGE;
       this.movedNodes = new Map();
       this.markedSourceRoots = new Set();
     }
@@ -2460,10 +2907,12 @@
      * @param {DiscoveredRegions} regions
      * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
+     * @param {string} language
      */
-    render(regions, resetSourceRoute, activationControl) {
+    render(regions, resetSourceRoute, activationControl, language) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+      this.setLanguage(language);
       this.setTheme(ThemeResolver.resolve(this.document));
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
@@ -2501,6 +2950,7 @@
       this.sourceButtons.clear();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.language = DEFAULT_UI_LANGUAGE;
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
 
@@ -2519,7 +2969,6 @@
 
       this.root = this.document.createElement("section");
       this.root.id = OWNED_ROOT_ID;
-      this.root.setAttribute("aria-label", "Bibilili watch layout");
       this.root.dataset.bibililiTheme = ThemeResolver.resolve(this.document);
 
       this.stage = this.document.createElement("main");
@@ -2527,15 +2976,12 @@
 
       this.playerPane = this.document.createElement("section");
       this.playerPane.className = "bibilili-player-pane";
-      this.playerPane.setAttribute("aria-label", "Player");
 
       this.commentPane = this.document.createElement("aside");
       this.commentPane.className = "bibilili-comment-pane";
-      this.commentPane.setAttribute("aria-label", "Comments");
 
       this.dock = this.document.createElement("section");
       this.dock.className = "bibilili-list-dock";
-      this.dock.setAttribute("aria-label", "Video lists");
 
       this.sourceBar = this.document.createElement("div");
       this.sourceBar.className = "bibilili-source-bar";
@@ -2549,6 +2995,25 @@
       this.dock.append(this.sourceBar, this.rail);
       this.root.append(this.stage, this.dock);
       this.document.body.prepend(this.root);
+    }
+
+    /**
+     * Applies localized labels to extension-owned layout landmarks.
+     *
+     * @param {string} language
+     */
+    setLanguage(language) {
+      this.language = UiStrings.normalizeLanguage(language);
+
+      if (!this.root) {
+        return;
+      }
+
+      const strings = UiStrings.for(this.language);
+      this.root.setAttribute("aria-label", strings.layoutLabel);
+      this.playerPane?.setAttribute("aria-label", strings.playerLabel);
+      this.commentPane?.setAttribute("aria-label", strings.commentsLabel);
+      this.dock?.setAttribute("aria-label", strings.videoListsLabel);
     }
 
     /**
@@ -2718,14 +3183,18 @@
      * @param {ActivationControl} activationControl
      */
     renderSourceBar(sources, activationControl) {
-      const activationButton = activationControl.mountDocked(this.sourceBar, true);
+      const activationButton = activationControl.mountDocked(
+        this.sourceBar,
+        true,
+        this.language
+      );
       const availableKinds = new Set();
       let previous = activationButton;
 
       for (const source of sources) {
         const button = this.sourceButtonFor(source.kind);
         availableKinds.add(source.kind);
-        button.textContent = source.label;
+        button.textContent = UiStrings.sourceLabel(source.kind, this.language);
         button.setAttribute(
           "aria-current",
           String(this.selectedSourceKind === source.kind)
@@ -2826,7 +3295,7 @@
 
       const title = this.document.createElement("h2");
       title.className = "bibilili-source-title";
-      title.textContent = source.label;
+      title.textContent = UiStrings.sourceLabel(source.kind, this.language);
 
       const row = this.document.createElement("div");
       row.className = "bibilili-card-row";
@@ -3056,6 +3525,7 @@
       this.themeChangeHandler = null;
       this.popstateHandler = null;
       this.hashchangeHandler = null;
+      this.uiLanguage = LanguageResolver.resolve(document);
       this.pageKey = "";
       this.lastPlayerWaitDiagnostic = "";
       this.lastRenderDiagnostic = "";
@@ -3154,6 +3624,7 @@
         return;
       }
 
+      const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
       regions.sources = SourceMerger.merge(
         regions.sources,
@@ -3178,10 +3649,16 @@
       const renderDetails = {
         pageKey: this.pageKey,
         hasComments: Boolean(regions.comments),
+        language,
         sourceKinds: regions.sources.map((source) => source.kind),
         resetSourceRoute
       };
-      this.layout.render(regions, resetSourceRoute, this.activationControl);
+      this.layout.render(
+        regions,
+        resetSourceRoute,
+        this.activationControl,
+        language
+      );
       this.logRenderedLayout(renderDetails);
     }
 
@@ -3202,10 +3679,15 @@
         attributes: true,
         attributeFilter: [
           "class",
+          "lang",
           "data-theme",
           "data-color-mode",
           "data-prefers-color-scheme",
           "data-dark",
+          "data-locale",
+          "data-language",
+          "data-lang",
+          "data-i18n-locale",
           "style"
         ],
         childList: true,
@@ -3293,13 +3775,32 @@
         return;
       }
 
-      this.accountSources.refresh();
+      this.accountSources.refresh(this.resolveUiLanguage());
+    }
+
+    /**
+     * Resolves and tracks the language used by extension-owned UI.
+     *
+     * @returns {string}
+     */
+    resolveUiLanguage() {
+      const nextLanguage = LanguageResolver.resolve(this.document);
+
+      if (nextLanguage !== this.uiLanguage) {
+        this.uiLanguage = nextLanguage;
+
+        if (this.enabled && this.isWatchPage()) {
+          this.accountSources.refresh(nextLanguage, true);
+        }
+      }
+
+      return this.uiLanguage;
     }
 
     /**
      * Logs changed render state without flooding routine reconciliation.
      *
-     * @param {{ pageKey: string, hasComments: boolean, sourceKinds: string[], resetSourceRoute: boolean }} details
+     * @param {{ pageKey: string, hasComments: boolean, language: string, sourceKinds: string[], resetSourceRoute: boolean }} details
      */
     logRenderedLayout(details) {
       const key = JSON.stringify(details);
@@ -3341,7 +3842,8 @@
       }
 
       this.activationControl.mountFloating(
-        ThemeResolver.resolve(this.document)
+        ThemeResolver.resolve(this.document),
+        this.resolveUiLanguage()
       );
     }
 
@@ -3383,9 +3885,23 @@
   /**
    * @typedef {object} VideoListSource
    * @property {string} kind Closed source kind.
-   * @property {string} label Human-readable source label.
    * @property {Element | null} root Page-owned source root for DOM sources.
    * @property {VideoItem[]} items Extracted ordered video items.
+   */
+
+  /**
+   * @typedef {object} LocalizedUiStrings
+   * @property {string} layoutLabel Accessible name for the transformed layout.
+   * @property {string} playerLabel Accessible name for the player pane.
+   * @property {string} commentsLabel Accessible name for the comment pane.
+   * @property {string} videoListsLabel Accessible name for the list dock.
+   * @property {string} turnOnLabel Accessible name for enabling Bibilili.
+   * @property {string} turnOffLabel Accessible name for disabling Bibilili.
+   * @property {Record<string, string>} sourceLabels Source labels by source kind.
+   * @property {string} numberLocale Intl locale for compact account numbers.
+   * @property {(count: string) => string} viewCount Formats account view count text.
+   * @property {string} finishedProgress Account progress label for completed videos.
+   * @property {(duration: string) => string} watchedProgress Formats account progress text.
    */
 
   /**
