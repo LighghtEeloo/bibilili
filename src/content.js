@@ -12,9 +12,14 @@
   const COMMENT_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
+  const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
   const URGENT_RECONCILE_DELAY_MS = 0;
   const LOG_PREFIX = "[bibilili]";
+  const BILIBILI_WEB_ORIGIN = "https://www.bilibili.com";
+  const HISTORY_SOURCE_URL =
+    `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
+  const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
 
   const PLAYER_SELECTORS = [
     "#bilibili-player",
@@ -143,20 +148,23 @@
     QUEUE: "queue",
     COLLECTION: "collection",
     WATCH_LATER: "watch_later",
+    HISTORY: "history",
     RECOMMENDATIONS: "recommendations"
   });
 
   const SOURCE_ORDER = Object.freeze([
     SourceKind.QUEUE,
     SourceKind.COLLECTION,
+    SourceKind.RECOMMENDATIONS,
     SourceKind.WATCH_LATER,
-    SourceKind.RECOMMENDATIONS
+    SourceKind.HISTORY
   ]);
 
   const SOURCE_LABELS = Object.freeze({
     [SourceKind.QUEUE]: "Queue",
     [SourceKind.COLLECTION]: "Collection",
     [SourceKind.WATCH_LATER]: "Watch Later",
+    [SourceKind.HISTORY]: "History",
     [SourceKind.RECOMMENDATIONS]: "Recommendations"
   });
 
@@ -1355,6 +1363,636 @@
   }
 
   /**
+   * Converts Bilibili account-list API records into uniform video items.
+   */
+  class AccountSourceAdapter {
+    /**
+     * Converts one successful API payload into a video-list source.
+     *
+     * @param {string} kind
+     * @param {object} payload
+     * @returns {VideoListSource | null}
+     */
+    static sourceFromPayload(kind, payload) {
+      const items = AccountSourceAdapter.itemsFromEntries(
+        kind,
+        AccountSourceAdapter.entriesFromPayload(payload)
+      );
+
+      if (items.length === 0) {
+        return null;
+      }
+
+      return {
+        kind,
+        label: SOURCE_LABELS[kind],
+        root: null,
+        items
+      };
+    }
+
+    /**
+     * Returns the account-list array from a Bilibili response payload.
+     *
+     * @param {object} payload
+     * @returns {object[]}
+     */
+    static entriesFromPayload(payload) {
+      const list = payload?.data?.list;
+
+      if (!Array.isArray(list)) {
+        return [];
+      }
+
+      return list.filter((entry) => entry && typeof entry === "object");
+    }
+
+    /**
+     * Extracts valid account list items while preserving Bilibili order.
+     *
+     * @param {string} kind
+     * @param {object[]} entries
+     * @returns {VideoItem[]}
+     */
+    static itemsFromEntries(kind, entries) {
+      const items = [];
+      const seen = new Set();
+
+      for (const entry of entries) {
+        const item = AccountSourceAdapter.itemFromEntry(kind, entry);
+
+        if (!item) {
+          continue;
+        }
+
+        const key = `${item.targetUrl}\n${item.title}`;
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        items.push(item);
+
+        if (items.length >= MAX_ITEMS_PER_SOURCE) {
+          break;
+        }
+      }
+
+      return items;
+    }
+
+    /**
+     * Converts one account list record into a video item.
+     *
+     * @param {string} kind
+     * @param {object} entry
+     * @returns {VideoItem | null}
+     */
+    static itemFromEntry(kind, entry) {
+      const targetUrl = AccountSourceAdapter.targetUrlFor(entry);
+      const title = AccountSourceAdapter.titleFor(entry);
+
+      if (!targetUrl || !title) {
+        return null;
+      }
+
+      return {
+        targetUrl,
+        title,
+        thumbnailUrl: AccountSourceAdapter.thumbnailFor(entry),
+        sourceKind: kind,
+        duration: AccountSourceAdapter.durationFor(entry),
+        author: AccountSourceAdapter.authorFor(entry),
+        viewCount: AccountSourceAdapter.viewCountFor(entry),
+        progress: AccountSourceAdapter.progressFor(entry)
+      };
+    }
+
+    /**
+     * Resolves the best navigation target from Bilibili account record fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static targetUrlFor(entry) {
+      const directUrl = AccountSourceAdapter.absoluteUrl(
+        entry.redirect_link || entry.redirect_url || entry.uri || entry.url
+      );
+
+      if (directUrl) {
+        return directUrl;
+      }
+
+      const page = AccountSourceAdapter.pageNumberFor(entry);
+      const bvid = AccountSourceAdapter.stringValue(
+        entry.bvid || entry.history?.bvid
+      );
+
+      if (bvid) {
+        return AccountSourceAdapter.videoUrl({ bvid, page });
+      }
+
+      const aid = AccountSourceAdapter.numberValue(
+        entry.aid ?? entry.kid ?? entry.history?.oid
+      );
+
+      if (aid) {
+        return AccountSourceAdapter.videoUrl({ aid, page });
+      }
+
+      const epid = AccountSourceAdapter.numberValue(
+        entry.epid ?? entry.history?.epid ?? entry.bangumi?.ep_id
+      );
+
+      if (epid) {
+        return `${BILIBILI_WEB_ORIGIN}/bangumi/play/ep${epid}`;
+      }
+
+      return null;
+    }
+
+    /**
+     * Builds a canonical Bilibili video URL.
+     *
+     * @param {{ bvid?: string, aid?: number, page?: number | null }} params
+     * @returns {string}
+     */
+    static videoUrl(params) {
+      const path = params.bvid ? `/video/${params.bvid}` : `/video/av${params.aid}`;
+      const url = new URL(path, BILIBILI_WEB_ORIGIN);
+
+      if (params.page && params.page > 1) {
+        url.searchParams.set("p", String(params.page));
+      }
+
+      return url.href;
+    }
+
+    /**
+     * Extracts the display title from account record title fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static titleFor(entry) {
+      const title = AccountSourceAdapter.cleanText(entry.title || entry.name);
+      const subtitle = AccountSourceAdapter.cleanText(
+        entry.long_title ||
+          entry.show_title ||
+          entry.page?.part ||
+          entry.history?.part
+      );
+
+      if (title && subtitle && title !== subtitle) {
+        return `${title} - ${subtitle}`;
+      }
+
+      return title || subtitle;
+    }
+
+    /**
+     * Finds a thumbnail URL from account record image fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static thumbnailFor(entry) {
+      const cover = Array.isArray(entry.covers) ? entry.covers[0] : null;
+
+      return SourceAdapter.assetUrl(
+        entry.pic ||
+          entry.cover ||
+          entry.first_frame ||
+          cover ||
+          entry.bangumi?.cover
+      );
+    }
+
+    /**
+     * Extracts the author label from account record owner fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static authorFor(entry) {
+      return AccountSourceAdapter.cleanText(
+        entry.author_name ||
+          entry.owner?.name ||
+          entry.author ||
+          entry.up_name
+      );
+    }
+
+    /**
+     * Formats the view count when Bilibili includes one.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static viewCountFor(entry) {
+      const viewCount = AccountSourceAdapter.numberValue(
+        entry.stat?.view ?? entry.view ?? entry.play
+      );
+
+      if (!viewCount || viewCount <= 0) {
+        return null;
+      }
+
+      return `${AccountSourceAdapter.compactNumber(viewCount)} views`;
+    }
+
+    /**
+     * Extracts the duration from account record duration fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static durationFor(entry) {
+      return AccountSourceAdapter.formatDuration(
+        AccountSourceAdapter.numberValue(entry.duration ?? entry.page?.duration)
+      );
+    }
+
+    /**
+     * Extracts playback progress from account record progress fields.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static progressFor(entry) {
+      const progress = AccountSourceAdapter.numberValue(entry.progress);
+
+      if (progress === null) {
+        return null;
+      }
+
+      const duration = AccountSourceAdapter.numberValue(entry.duration);
+
+      if (progress === -1 || (duration && progress >= duration)) {
+        return "Finished";
+      }
+
+      const formatted = AccountSourceAdapter.formatDuration(progress);
+
+      return formatted ? `Watched ${formatted}` : null;
+    }
+
+    /**
+     * Reads the last watched page number from account record fields.
+     *
+     * @param {object} entry
+     * @returns {number | null}
+     */
+    static pageNumberFor(entry) {
+      return AccountSourceAdapter.numberValue(
+        entry.page?.page ?? entry.history?.page
+      );
+    }
+
+    /**
+     * Normalizes a possibly relative URL to an absolute HTTP(S) URL.
+     *
+     * @param {unknown} value
+     * @returns {string | null}
+     */
+    static absoluteUrl(value) {
+      const text = AccountSourceAdapter.stringValue(value);
+
+      if (!text || text.startsWith("javascript:")) {
+        return null;
+      }
+
+      try {
+        const url = new URL(text, BILIBILI_WEB_ORIGIN);
+
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+          return null;
+        }
+
+        return url.href;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Formats seconds as a compact duration token.
+     *
+     * @param {number | null} seconds
+     * @returns {string | null}
+     */
+    static formatDuration(seconds) {
+      if (!seconds || seconds <= 0) {
+        return null;
+      }
+
+      const totalSeconds = Math.floor(seconds);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const remainder = totalSeconds % 60;
+      const paddedRemainder = String(remainder).padStart(2, "0");
+
+      if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${paddedRemainder}`;
+      }
+
+      return `${minutes}:${paddedRemainder}`;
+    }
+
+    /**
+     * Formats large counts without changing the card layout.
+     *
+     * @param {number} value
+     * @returns {string}
+     */
+    static compactNumber(value) {
+      try {
+        return new Intl.NumberFormat(undefined, {
+          maximumFractionDigits: 1,
+          notation: "compact"
+        }).format(value);
+      } catch (_error) {
+        return String(value);
+      }
+    }
+
+    /**
+     * Converts a numeric value from Bilibili payloads.
+     *
+     * @param {unknown} value
+     * @returns {number | null}
+     */
+    static numberValue(value) {
+      const number = Number(value);
+
+      if (!Number.isFinite(number)) {
+        return null;
+      }
+
+      return number;
+    }
+
+    /**
+     * Converts a string value from Bilibili payloads.
+     *
+     * @param {unknown} value
+     * @returns {string | null}
+     */
+    static stringValue(value) {
+      return typeof value === "string" ? value.trim() || null : null;
+    }
+
+    /**
+     * Normalizes compact text from Bilibili payloads.
+     *
+     * @param {unknown} value
+     * @returns {string | null}
+     */
+    static cleanText(value) {
+      const text = AccountSourceAdapter.stringValue(value);
+      return text?.replace(/\s+/g, " ") ?? null;
+    }
+  }
+
+  /**
+   * Loads account-backed list sources and notifies reconciliation on completion.
+   */
+  class AccountSourceStore {
+    /**
+     * Creates an account source store.
+     *
+     * @param {() => void} onChange
+     */
+    constructor(onChange) {
+      this.onChange = onChange;
+      this.sources = [];
+      this.loading = false;
+      this.abortController = null;
+      this.sequence = 0;
+    }
+
+    /**
+     * Returns the latest loaded account sources.
+     *
+     * @returns {VideoListSource[]}
+     */
+    currentSources() {
+      return this.sources;
+    }
+
+    /**
+     * Starts one account-source refresh when no refresh is already running.
+     */
+    refresh() {
+      if (this.loading || typeof fetch !== "function") {
+        return;
+      }
+
+      const sequence = this.sequence + 1;
+      const controller =
+        typeof AbortController === "function" ? new AbortController() : null;
+      this.sequence = sequence;
+      this.loading = true;
+      this.abortController = controller;
+
+      AccountSourceStore.fetchSources(controller?.signal)
+        .then((sources) => {
+          if (sequence !== this.sequence) {
+            return;
+          }
+
+          this.sources = sources;
+          this.onChange();
+        })
+        .catch((error) => {
+          if (error?.name === "AbortError") {
+            return;
+          }
+
+          DiagnosticLog.info("account source refresh failed", {
+            message: error?.message ?? String(error)
+          });
+        })
+        .finally(() => {
+          if (sequence !== this.sequence) {
+            return;
+          }
+
+          this.loading = false;
+          this.abortController = null;
+        });
+    }
+
+    /**
+     * Cancels pending account fetches and clears loaded sources.
+     */
+    stop() {
+      this.sequence += 1;
+      this.abortController?.abort();
+      this.abortController = null;
+      this.loading = false;
+      this.sources = [];
+    }
+
+    /**
+     * Fetches all account-backed video-list sources.
+     *
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<VideoListSource[]>}
+     */
+    static async fetchSources(signal) {
+      const [watchLaterSource, historySource] = await Promise.all([
+        AccountSourceStore.fetchWatchLaterSource(signal),
+        AccountSourceStore.fetchHistorySource(signal)
+      ]);
+
+      return [watchLaterSource, historySource].filter(Boolean);
+    }
+
+    /**
+     * Fetches the account watch-later list through Bilibili's to-view endpoint.
+     *
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<VideoListSource | null>}
+     */
+    static async fetchWatchLaterSource(signal) {
+      return AccountSourceStore.fetchSource(
+        SourceKind.WATCH_LATER,
+        WATCH_LATER_SOURCE_URL,
+        signal
+      );
+    }
+
+    /**
+     * Fetches the account history list through Bilibili's cursor endpoint.
+     *
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<VideoListSource | null>}
+     */
+    static async fetchHistorySource(signal) {
+      return AccountSourceStore.fetchSource(
+        SourceKind.HISTORY,
+        HISTORY_SOURCE_URL,
+        signal
+      );
+    }
+
+    /**
+     * Fetches and normalizes one account-backed source.
+     *
+     * @param {string} kind
+     * @param {string} url
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<VideoListSource | null>}
+     */
+    static async fetchSource(kind, url, signal) {
+      try {
+        const payload = await AccountSourceStore.fetchApiPayload(url, signal);
+
+        if (!AccountSourceStore.isSuccessfulPayload(payload)) {
+          return null;
+        }
+
+        return AccountSourceAdapter.sourceFromPayload(kind, payload);
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          throw error;
+        }
+
+        DiagnosticLog.info("account source unavailable", {
+          kind,
+          message: error?.message ?? String(error)
+        });
+        return null;
+      }
+    }
+
+    /**
+     * Fetches a Bilibili JSON payload with the current account cookies.
+     *
+     * Note: Bilibili account endpoints require the page's login cookies and may
+     * return an application-level error when the visitor is signed out.
+     *
+     * @param {string} url
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<object>}
+     */
+    static async fetchApiPayload(url, signal) {
+      const response = await fetch(url, {
+        credentials: "include",
+        headers: {
+          Accept: "application/json, text/plain, */*"
+        },
+        signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return AccountSourceStore.parseApiPayload(await response.text());
+    }
+
+    /**
+     * Parses JSON and callback-wrapped JSON responses.
+     *
+     * @param {string} text
+     * @returns {object}
+     */
+    static parseApiPayload(text) {
+      try {
+        return JSON.parse(text);
+      } catch (_jsonError) {
+        const match = text.trim().match(/^[\w$.]+\((.*)\);?$/s);
+
+        if (!match) {
+          throw new Error("Invalid account source JSON");
+        }
+
+        return JSON.parse(match[1]);
+      }
+    }
+
+    /**
+     * Returns true when a Bilibili API payload is successful.
+     *
+     * @param {object} payload
+     * @returns {boolean}
+     */
+    static isSuccessfulPayload(payload) {
+      return payload?.code === 0;
+    }
+  }
+
+  /**
+   * Merges page-owned sources with account-backed sources by closed source kind.
+   */
+  class SourceMerger {
+    /**
+     * Combines source lists and returns them in canonical source order.
+     *
+     * @param {VideoListSource[]} pageSources
+     * @param {VideoListSource[]} accountSources
+     * @returns {VideoListSource[]}
+     */
+    static merge(pageSources, accountSources) {
+      const byKind = new Map();
+
+      for (const source of pageSources) {
+        byKind.set(source.kind, source);
+      }
+
+      for (const source of accountSources) {
+        byKind.set(source.kind, source);
+      }
+
+      return SOURCE_ORDER
+        .map((kind) => byKind.get(kind))
+        .filter(Boolean);
+    }
+  }
+
+  /**
    * Discovers page-owned player, comment, and source regions for one watch page.
    */
   class RegionDiscovery {
@@ -2324,6 +2962,10 @@
       this.unmarkSourceRoots();
 
       for (const source of sources) {
+        if (!source.root) {
+          continue;
+        }
+
         source.root.setAttribute(SOURCE_ROOT_ATTR, source.kind);
         this.markedSourceRoots.add(source.root);
       }
@@ -2356,6 +2998,9 @@
       this.discovery = new RegionDiscovery(document);
       this.layout = new LayoutRoot(document);
       this.commentPrimer = new CommentPrimer(document);
+      this.accountSources = new AccountSourceStore(() => {
+        this.scheduleReconcile(false, ReconcilePriority.LAZY);
+      });
       this.enabled = ActivationPreference.readEnabled();
       this.activationControl = new ActivationControl(document, (enabled) => {
         this.setEnabled(enabled);
@@ -2383,6 +3028,7 @@
       this.observeNavigation();
       this.observeThemePreference();
       this.renderFloatingActivation();
+      this.refreshAccountSources();
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
     }
 
@@ -2417,6 +3063,7 @@
       }
 
       this.commentPrimer.stop();
+      this.accountSources.stop();
       this.layout.destroy();
       this.activationControl.destroy();
     }
@@ -2466,6 +3113,10 @@
       }
 
       const regions = this.discovery.discover();
+      regions.sources = SourceMerger.merge(
+        regions.sources,
+        this.accountSources.currentSources()
+      );
 
       if (!regions.player) {
         this.logWaitingForPlayer();
@@ -2560,6 +3211,7 @@
 
       this.pageKey = nextPageKey;
       this.layout.destroy();
+      this.refreshAccountSources();
       this.scheduleReconcile(true, ReconcilePriority.URGENT);
     }
 
@@ -2581,12 +3233,25 @@
       if (!enabled) {
         this.lastRenderDiagnostic = "";
         this.commentPrimer.stop();
+        this.accountSources.stop();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
       }
 
+      this.refreshAccountSources();
       this.scheduleReconcile(true, ReconcilePriority.URGENT);
+    }
+
+    /**
+     * Refreshes account-backed sources when the transformed page can use them.
+     */
+    refreshAccountSources() {
+      if (!this.enabled || !this.isWatchPage()) {
+        return;
+      }
+
+      this.accountSources.refresh();
     }
 
     /**
@@ -2677,7 +3342,7 @@
    * @typedef {object} VideoListSource
    * @property {string} kind Closed source kind.
    * @property {string} label Human-readable source label.
-   * @property {Element} root Page-owned source root.
+   * @property {Element | null} root Page-owned source root for DOM sources.
    * @property {VideoItem[]} items Extracted ordered video items.
    */
 

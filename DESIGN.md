@@ -10,7 +10,7 @@ scroll surfaces around it.
 ## Watch Page
 
 The watch page is the Bilibili document for one visible video. Bibilili treats
-it as discovered regions: player, comments, and video-list sources.
+it as discovered regions: player, comments, and page video-list sources.
 
 The player region contains the video player and immediate playback controls.
 Bibilili moves its surrounding layout context while preserving playback logic.
@@ -21,8 +21,9 @@ extension-owned presentation surfaces.
 The comment region contains the page-owned comment tree. Bibilili moves this
 tree into a right-side scroll container.
 
-Video-list sources contain page-owned list data. Bibilili reads them into
-uniform list items and routes one source at a time into the bottom dock.
+Video-list sources contain page-owned list data or Bilibili account list data.
+Bibilili reads them into uniform list items and routes one source at a time
+into the bottom dock.
 
 ## Layout Root
 
@@ -102,14 +103,31 @@ comment region, while comment controls remain page-owned markup.
 A video list source is a Bilibili list that can produce video items.
 
 The source kind is a closed set represented as an enum. The initial kinds are
-recommendations, collection, watch later, and queue. A source kind is shown when
-the page exposes matching content.
+queue, collection, recommendations, watch later, and history. A source kind is
+shown when page markup or an account list exposes matching content.
 
-Each source has a label, stable source kind, page-owned root node, and ordered
-set of extracted video items.
+Each source has a label, stable source kind, optional page-owned root node, and
+ordered set of extracted video items.
 
-Source adapters convert page-owned list markup into video items. The bottom
-dock renderer consumes adapter output.
+Source adapters convert page-owned list markup and Bilibili account API payloads
+into video items. The bottom dock renderer consumes adapter output.
+
+## Account Video List Source
+
+An account video list source is a read-only Bilibili account list fetched by the
+content script with the current Bilibili login cookies.
+
+The account source kinds are watch later and history. Watch later reads
+Bilibili's to-view list. History reads the recent video history list. Each API
+response is normalized into the same video item shape used by page-owned
+sources.
+
+Account source fetches are advisory. They never block the first transformed
+layout. When an account request fails, requires login, or returns no valid
+video items, that source is absent for the current render pass.
+
+Account sources do not have page-owned roots. They are rendered in the bottom
+dock but do not participate in source-root hiding.
 
 ## Video Item
 
@@ -125,8 +143,8 @@ field.
 
 The list dock is the bottom container for the selected video-list source. It
 contains the source bar and list rail, and it is the canonical visual placement
-for recommendations, collections, watch-later entries, queues, and later
-video-list kinds.
+for recommendations, collections, watch-later entries, history entries, queues,
+and later video-list kinds.
 
 The list dock has bounded height. It owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
@@ -144,8 +162,8 @@ bar height.
 The source bar is the control row inside the enabled list dock.
 
 It begins with the activation control, then contains one route button per
-discovered source kind. The initial source buttons are Recommendations,
-Collection, Watch Later, and Queue when those sources are available.
+discovered source kind. The initial source buttons are Queue, Collection,
+Recommendations, Watch Later, and History when those sources are available.
 
 The buttons are list routers. Selecting a source replaces the list rail with
 that source's video items. Source buttons do not toggle a source off and do not
@@ -171,7 +189,7 @@ interaction while Bilibili mutates the page.
 The list rail is the horizontal scroll surface inside the list dock.
 
 It renders one group for the selected source. Source route fallback uses
-source-kind order: queue, collection, watch later, recommendations.
+source-kind order: queue, collection, recommendations, watch later, history.
 
 Every group uses the same card layout. Native Bilibili list styling has no role
 in the bottom presentation.
@@ -193,9 +211,9 @@ navigation unless the browser or Bilibili intercepts the link.
 
 The reconciler maintains the transformed layout after initial mount.
 
-It observes same-tab navigation, lazy region insertion, list updates, and page
-theme marker changes. When the watched video changes, it starts a new page
-session and rebuilds discovered regions.
+It observes same-tab navigation, lazy region insertion, list updates, account
+source completion, and page theme marker changes. When the watched video
+changes, it starts a new page session and rebuilds discovered regions.
 
 Reconciliation requests carry a priority and a source-reset flag. The reset
 flag clears the page-session source route when the visible video session
@@ -218,8 +236,8 @@ extension-owned surfaces. The render path updates stable controls in place and
 moves page-owned player and comment nodes only when their owning region
 changes.
 
-When a source root changes, that source is re-extracted and the list rail is
-re-rendered from the current source route.
+When a source root changes or an account source finishes loading, that source is
+re-extracted and the list rail is re-rendered from the current source route.
 
 When the comment region changes, the comment pane receives the current
 page-owned comment tree.
@@ -244,6 +262,9 @@ network-backed content.
 Bibilili may move page-owned player and comment nodes into extension
 containers. It keeps page-owned video-list roots available for observation and
 extraction.
+
+Bibilili reads Bilibili account list APIs and renders the returned records into
+extension-owned cards. It does not modify account lists.
 
 Bibilili removes only nodes it owns.
 
