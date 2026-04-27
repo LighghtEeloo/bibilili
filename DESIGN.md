@@ -72,13 +72,17 @@ text, muted text, selected controls, and badges in light and dark modes.
 
 The UI language is the language used by extension-owned labels and accessible
 names. Bibilili resolves it from Bilibili document language markers, storage or
-cookie locale markers, localized page chrome, and then the browser language.
+cookie locale markers, localized page chrome, the extension i18n UI
+language, and then the browser language. The resolved language selects a
+packaged extension i18n catalog.
 
-Source kinds stay language-neutral. The renderer maps source kinds to localized
-button text and rail headings during reconciliation.
+Extension-owned labels and accessible names are message keys. Source kinds stay
+language-neutral. The renderer maps source kinds to localized button text and
+rail headings during reconciliation.
 
-Bibilili-generated account metadata uses the UI language. Page-owned titles,
-authors, and metadata remain in the language and wording provided by Bilibili.
+Bibilili-generated account metadata uses the UI language for number formatting
+and message templates. Page-owned titles, authors, and metadata remain in the
+language and wording provided by Bilibili.
 
 ## Activation Control
 

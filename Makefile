@@ -4,7 +4,7 @@ EXTENSION_SLUG := bibilili
 VERSION := $(shell node -p "require('./manifest.json').version")
 DIST_DIR := dist
 PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-$(VERSION).zip
-PACKAGE_FILES := manifest.json README.md src assets
+PACKAGE_FILES := manifest.json README.md src assets _locales
 
 .PHONY: help validate manual-checklist package inspect-package test-package clean
 
@@ -20,6 +20,7 @@ help:
 validate:
 	node --check src/content.js
 	node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
+	node -e "const fs=require('fs'); for (const dir of ['en','zh_CN','zh_TW']) JSON.parse(fs.readFileSync('_locales/'+dir+'/messages.json', 'utf8'))"
 	test -f assets/bibilili-logo.svg
 	test -f assets/bibilili-logo-white.svg
 	test -f assets/bibilili-logo-16.png

@@ -204,13 +204,6 @@
     SourceKind.HISTORY
   ]);
 
-  const ENGLISH_SOURCE_LABELS = Object.freeze({
-    [SourceKind.COLLECTION]: "Collection",
-    [SourceKind.WATCH_LATER]: "Watch Later",
-    [SourceKind.HISTORY]: "History",
-    [SourceKind.RECOMMENDATIONS]: "Recommendations"
-  });
-
   /**
    * Closed UI languages rendered by extension-owned controls.
    */
@@ -222,66 +215,42 @@
 
   const DEFAULT_UI_LANGUAGE = UiLanguage.ENGLISH;
 
-  const SOURCE_LABELS_BY_LANGUAGE = Object.freeze({
-    [UiLanguage.ENGLISH]: ENGLISH_SOURCE_LABELS,
-    [UiLanguage.SIMPLIFIED_CHINESE]: Object.freeze({
-      [SourceKind.COLLECTION]: "合集",
-      [SourceKind.WATCH_LATER]: "稍后再看",
-      [SourceKind.HISTORY]: "历史",
-      [SourceKind.RECOMMENDATIONS]: "推荐"
-    }),
-    [UiLanguage.TRADITIONAL_CHINESE]: Object.freeze({
-      [SourceKind.COLLECTION]: "合輯",
-      [SourceKind.WATCH_LATER]: "稍後再看",
-      [SourceKind.HISTORY]: "歷史",
-      [SourceKind.RECOMMENDATIONS]: "推薦"
-    })
+  /**
+   * Extension i18n message names used by extension-owned UI surfaces.
+   */
+  const UiMessage = Object.freeze({
+    LAYOUT_LABEL: "layoutLabel",
+    PLAYER_LABEL: "playerLabel",
+    COMMENTS_LABEL: "commentsLabel",
+    VIDEO_LISTS_LABEL: "videoListsLabel",
+    TURN_ON_LABEL: "turnOnLabel",
+    TURN_OFF_LABEL: "turnOffLabel",
+    VIEW_COUNT: "viewCount",
+    FINISHED_PROGRESS: "finishedProgress",
+    WATCHED_PROGRESS: "watchedProgress"
   });
 
-  /**
-   * Localized extension-owned UI strings keyed by resolved Bilibili language.
-   */
-  const UI_STRINGS = Object.freeze({
-    [UiLanguage.ENGLISH]: Object.freeze({
-      layoutLabel: "Bibilili watch layout",
-      playerLabel: "Player",
-      commentsLabel: "Comments",
-      videoListsLabel: "Video lists",
-      turnOnLabel: "Turn Bibilili on",
-      turnOffLabel: "Turn Bibilili off",
-      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.ENGLISH],
-      numberLocale: "en",
-      viewCount: (count) => `${count} views`,
-      finishedProgress: "Finished",
-      watchedProgress: (duration) => `Watched ${duration}`
-    }),
-    [UiLanguage.SIMPLIFIED_CHINESE]: Object.freeze({
-      layoutLabel: "Bibilili 观看布局",
-      playerLabel: "播放器",
-      commentsLabel: "评论",
-      videoListsLabel: "视频列表",
-      turnOnLabel: "开启 Bibilili",
-      turnOffLabel: "关闭 Bibilili",
-      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.SIMPLIFIED_CHINESE],
-      numberLocale: "zh-CN",
-      viewCount: (count) => `${count} 次播放`,
-      finishedProgress: "已看完",
-      watchedProgress: (duration) => `已观看 ${duration}`
-    }),
-    [UiLanguage.TRADITIONAL_CHINESE]: Object.freeze({
-      layoutLabel: "Bibilili 觀看佈局",
-      playerLabel: "播放器",
-      commentsLabel: "評論",
-      videoListsLabel: "影片列表",
-      turnOnLabel: "開啟 Bibilili",
-      turnOffLabel: "關閉 Bibilili",
-      sourceLabels: SOURCE_LABELS_BY_LANGUAGE[UiLanguage.TRADITIONAL_CHINESE],
-      numberLocale: "zh-TW",
-      viewCount: (count) => `${count} 次觀看`,
-      finishedProgress: "已看完",
-      watchedProgress: (duration) => `已觀看 ${duration}`
-    })
+  const SOURCE_LABEL_MESSAGE_NAMES = Object.freeze({
+    [SourceKind.COLLECTION]: "sourceCollectionLabel",
+    [SourceKind.WATCH_LATER]: "sourceWatchLaterLabel",
+    [SourceKind.HISTORY]: "sourceHistoryLabel",
+    [SourceKind.RECOMMENDATIONS]: "sourceRecommendationsLabel"
   });
+
+  const I18N_MESSAGE_DIRECTORIES = Object.freeze({
+    [UiLanguage.ENGLISH]: "en",
+    [UiLanguage.SIMPLIFIED_CHINESE]: "zh_CN",
+    [UiLanguage.TRADITIONAL_CHINESE]: "zh_TW"
+  });
+
+  const I18N_NUMBER_LOCALES = Object.freeze({
+    [UiLanguage.ENGLISH]: "en",
+    [UiLanguage.SIMPLIFIED_CHINESE]: "zh-CN",
+    [UiLanguage.TRADITIONAL_CHINESE]: "zh-TW"
+  });
+
+  const I18N_CATALOGS = new Map();
+  const I18N_LOADS = new Map();
 
   /**
    * Closed theme modes applied to extension-owned surfaces.
@@ -646,7 +615,7 @@
   }
 
   /**
-   * Provides localized text for extension-owned UI surfaces.
+   * Provides localized text from extension i18n message catalogs.
    */
   class UiStrings {
     /**
@@ -656,17 +625,66 @@
      * @returns {string}
      */
     static normalizeLanguage(language) {
-      return UI_STRINGS[language] ? language : DEFAULT_UI_LANGUAGE;
+      return I18N_MESSAGE_DIRECTORIES[language] ? language : DEFAULT_UI_LANGUAGE;
     }
 
     /**
-     * Returns the localized string bundle for a UI language.
+     * Loads all packaged message catalogs used by the content script.
+     *
+     * @returns {Promise<void>}
+     */
+    static async loadSupported() {
+      await Promise.all(
+        Object.values(UiLanguage).map((language) => UiStrings.load(language))
+      );
+    }
+
+    /**
+     * Loads one packaged message catalog.
      *
      * @param {string | null | undefined} language
-     * @returns {LocalizedUiStrings}
+     * @returns {Promise<void>}
      */
-    static for(language) {
-      return UI_STRINGS[UiStrings.normalizeLanguage(language)];
+    static load(language) {
+      const normalizedLanguage = UiStrings.normalizeLanguage(language);
+
+      if (I18N_CATALOGS.has(normalizedLanguage)) {
+        return Promise.resolve();
+      }
+
+      if (I18N_LOADS.has(normalizedLanguage)) {
+        return I18N_LOADS.get(normalizedLanguage);
+      }
+
+      if (typeof fetch !== "function") {
+        I18N_CATALOGS.set(normalizedLanguage, null);
+        return Promise.resolve();
+      }
+
+      const load = fetch(UiStrings.catalogUrl(normalizedLanguage))
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          return response.json();
+        })
+        .then((catalog) => {
+          I18N_CATALOGS.set(normalizedLanguage, catalog);
+        })
+        .catch((error) => {
+          I18N_CATALOGS.set(normalizedLanguage, null);
+          DiagnosticLog.info("i18n catalog unavailable", {
+            language: normalizedLanguage,
+            message: error?.message ?? String(error)
+          });
+        })
+        .finally(() => {
+          I18N_LOADS.delete(normalizedLanguage);
+        });
+
+      I18N_LOADS.set(normalizedLanguage, load);
+      return load;
     }
 
     /**
@@ -677,7 +695,9 @@
      * @returns {string}
      */
     static sourceLabel(kind, language) {
-      return UiStrings.for(language).sourceLabels[kind] ?? kind;
+      const messageName = SOURCE_LABEL_MESSAGE_NAMES[kind];
+
+      return messageName ? UiStrings.message(messageName, language) : kind;
     }
 
     /**
@@ -688,7 +708,7 @@
      * @returns {string}
      */
     static viewCount(count, language) {
-      return UiStrings.for(language).viewCount(count);
+      return UiStrings.message(UiMessage.VIEW_COUNT, language, [count]);
     }
 
     /**
@@ -698,7 +718,7 @@
      * @returns {string}
      */
     static finishedProgress(language) {
-      return UiStrings.for(language).finishedProgress;
+      return UiStrings.message(UiMessage.FINISHED_PROGRESS, language);
     }
 
     /**
@@ -709,7 +729,7 @@
      * @returns {string}
      */
     static watchedProgress(duration, language) {
-      return UiStrings.for(language).watchedProgress(duration);
+      return UiStrings.message(UiMessage.WATCHED_PROGRESS, language, [duration]);
     }
 
     /**
@@ -719,7 +739,170 @@
      * @returns {string}
      */
     static numberLocale(language) {
-      return UiStrings.for(language).numberLocale;
+      return I18N_NUMBER_LOCALES[UiStrings.normalizeLanguage(language)];
+    }
+
+    /**
+     * Returns one localized message with optional substitutions.
+     *
+     * @param {string} name
+     * @param {string} language
+     * @param {string[]} [substitutions]
+     * @returns {string}
+     */
+    static message(name, language, substitutions = []) {
+      return (
+        UiStrings.catalogMessage(name, language, substitutions) ||
+        UiStrings.runtimeMessage(name, substitutions) ||
+        name
+      );
+    }
+
+    /**
+     * Reads and interpolates one message from a loaded catalog.
+     *
+     * @param {string} name
+     * @param {string} language
+     * @param {string[]} substitutions
+     * @returns {string}
+     */
+    static catalogMessage(name, language, substitutions) {
+      const catalog = I18N_CATALOGS.get(UiStrings.normalizeLanguage(language));
+      const record = catalog?.[name];
+
+      if (!record || typeof record.message !== "string") {
+        return "";
+      }
+
+      return UiStrings.interpolate(record, substitutions);
+    }
+
+    /**
+     * Applies Chrome i18n-style placeholder substitutions to a catalog record.
+     *
+     * @param {I18nMessageRecord} record
+     * @param {string[]} substitutions
+     * @returns {string}
+     */
+    static interpolate(record, substitutions) {
+      let message = record.message;
+      const placeholders = record.placeholders ?? {};
+
+      for (const [name, placeholder] of Object.entries(placeholders)) {
+        const value = UiStrings.placeholderValue(placeholder, substitutions);
+        const pattern = new RegExp(`\\$${UiStrings.escapeRegExp(name)}\\$`, "gi");
+        message = message.replace(pattern, value);
+      }
+
+      substitutions.forEach((value, index) => {
+        message = message.replace(new RegExp(`\\$${index + 1}`, "g"), value);
+      });
+
+      return message.replace(/\$\$/g, "$");
+    }
+
+    /**
+     * Resolves one catalog placeholder content value.
+     *
+     * @param {{ content?: string }} placeholder
+     * @param {string[]} substitutions
+     * @returns {string}
+     */
+    static placeholderValue(placeholder, substitutions) {
+      const content = placeholder.content ?? "";
+      const match = content.match(/^\$(\d+)$/u);
+
+      if (!match) {
+        return content;
+      }
+
+      return substitutions[Number(match[1]) - 1] ?? "";
+    }
+
+    /**
+     * Reads a message from the browser extension i18n API when available.
+     *
+     * @param {string} name
+     * @param {string[]} substitutions
+     * @returns {string}
+     */
+    static runtimeMessage(name, substitutions) {
+      const i18n = UiStrings.extensionI18n();
+
+      if (!i18n) {
+        return "";
+      }
+
+      try {
+        if (substitutions.length === 0) {
+          return i18n.getMessage(name);
+        }
+
+        return i18n.getMessage(
+          name,
+          substitutions.length === 1 ? substitutions[0] : substitutions
+        );
+      } catch (_error) {
+        return "";
+      }
+    }
+
+    /**
+     * Returns the packaged URL for one locale messages file.
+     *
+     * @param {string} language
+     * @returns {string}
+     */
+    static catalogUrl(language) {
+      const directory = I18N_MESSAGE_DIRECTORIES[language];
+      const path = `_locales/${directory}/messages.json`;
+      const runtime = UiStrings.extensionRuntime();
+
+      return runtime?.getURL ? runtime.getURL(path) : path;
+    }
+
+    /**
+     * Returns the extension runtime namespace when the browser exposes one.
+     *
+     * @returns {{ getURL?: (path: string) => string } | null}
+     */
+    static extensionRuntime() {
+      if (typeof chrome !== "undefined" && chrome.runtime) {
+        return chrome.runtime;
+      }
+
+      if (typeof browser !== "undefined" && browser.runtime) {
+        return browser.runtime;
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns the extension i18n namespace when the browser exposes one.
+     *
+     * @returns {{ getMessage: (name: string, substitutions?: string | string[]) => string, getUILanguage?: () => string } | null}
+     */
+    static extensionI18n() {
+      if (typeof chrome !== "undefined" && chrome.i18n?.getMessage) {
+        return chrome.i18n;
+      }
+
+      if (typeof browser !== "undefined" && browser.i18n?.getMessage) {
+        return browser.i18n;
+      }
+
+      return null;
+    }
+
+    /**
+     * Escapes a string for literal use inside a regular expression.
+     *
+     * @param {string} value
+     * @returns {string}
+     */
+    static escapeRegExp(value) {
+      return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
   }
 
@@ -740,6 +923,7 @@
         LanguageResolver.storedLanguage("sessionStorage") ??
         LanguageResolver.cookieLanguage(document.cookie) ??
         LanguageResolver.pageChromeLanguage(document) ??
+        LanguageResolver.extensionLanguage() ??
         LanguageResolver.browserLanguage() ??
         DEFAULT_UI_LANGUAGE
       );
@@ -890,6 +1074,21 @@
       }
 
       return null;
+    }
+
+    /**
+     * Returns the extension UI language when the i18n API exposes one.
+     *
+     * @returns {string | null}
+     */
+    static extensionLanguage() {
+      const i18n = UiStrings.extensionI18n();
+
+      if (typeof i18n?.getUILanguage !== "function") {
+        return null;
+      }
+
+      return LanguageResolver.languageToken(i18n.getUILanguage());
     }
 
     /**
@@ -1318,8 +1517,10 @@
      * @returns {string}
      */
     static logoAssetUrl() {
-      if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-        return chrome.runtime.getURL(LOGO_ASSET_PATH);
+      const runtime = UiStrings.extensionRuntime();
+
+      if (runtime?.getURL) {
+        return runtime.getURL(LOGO_ASSET_PATH);
       }
 
       return LOGO_ASSET_PATH;
@@ -1332,8 +1533,10 @@
      */
     setEnabled(enabled) {
       const button = this.ensureButton();
-      const strings = UiStrings.for(this.language);
-      button.title = enabled ? strings.turnOffLabel : strings.turnOnLabel;
+      button.title = UiStrings.message(
+        enabled ? UiMessage.TURN_OFF_LABEL : UiMessage.TURN_ON_LABEL,
+        this.language
+      );
       button.setAttribute("aria-label", button.title);
       button.setAttribute("aria-pressed", String(enabled));
     }
@@ -3451,11 +3654,22 @@
         return;
       }
 
-      const strings = UiStrings.for(this.language);
-      this.root.setAttribute("aria-label", strings.layoutLabel);
-      this.playerPane?.setAttribute("aria-label", strings.playerLabel);
-      this.commentPane?.setAttribute("aria-label", strings.commentsLabel);
-      this.dock?.setAttribute("aria-label", strings.videoListsLabel);
+      this.root.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.LAYOUT_LABEL, this.language)
+      );
+      this.playerPane?.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.PLAYER_LABEL, this.language)
+      );
+      this.commentPane?.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.COMMENTS_LABEL, this.language)
+      );
+      this.dock?.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.VIDEO_LISTS_LABEL, this.language)
+      );
     }
 
     /**
@@ -4332,21 +4546,6 @@
    */
 
   /**
-   * @typedef {object} LocalizedUiStrings
-   * @property {string} layoutLabel Accessible name for the transformed layout.
-   * @property {string} playerLabel Accessible name for the player pane.
-   * @property {string} commentsLabel Accessible name for the comment pane.
-   * @property {string} videoListsLabel Accessible name for the list dock.
-   * @property {string} turnOnLabel Accessible name for enabling Bibilili.
-   * @property {string} turnOffLabel Accessible name for disabling Bibilili.
-   * @property {Record<string, string>} sourceLabels Source labels by source kind.
-   * @property {string} numberLocale Intl locale for compact account numbers.
-   * @property {(count: string) => string} viewCount Formats account view count text.
-   * @property {string} finishedProgress Account progress label for completed videos.
-   * @property {(duration: string) => string} watchedProgress Formats account progress text.
-   */
-
-  /**
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
@@ -4361,12 +4560,27 @@
    * @property {RegExp} pattern Heading text pattern.
    */
 
+  /**
+   * @typedef {object} I18nMessageRecord
+   * @property {string} message Localized message text.
+   * @property {Record<string, { content?: string }>} [placeholders]
+   */
+
   const previousController = window.__bibililiController;
   if (previousController && typeof previousController.stop === "function") {
     previousController.stop();
   }
 
-  const start = () => {
+  const startToken = Symbol("bibilili-start");
+  window.__bibililiStartToken = startToken;
+
+  const start = async () => {
+    await UiStrings.loadSupported();
+
+    if (window.__bibililiStartToken !== startToken) {
+      return;
+    }
+
     const controller = new BibililiController(document);
     window.__bibililiController = controller;
     controller.start();

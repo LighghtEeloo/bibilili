@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Bibilili",
+  "default_locale": "en",
+  "name": "__MSG_extensionName__",
   "version": "0.0.1",
-  "description": "Transposes Bilibili watch pages by placing comments beside the player and video lists below it.",
+  "description": "__MSG_extensionDescription__",
   "icons": {
     "16": "assets/bibilili-logo-16.png",
     "32": "assets/bibilili-logo-32.png",
@@ -21,7 +22,10 @@
   "host_permissions": ["https://api.bilibili.com/*"],
   "web_accessible_resources": [
     {
-      "resources": ["assets/bibilili-logo-white.svg"],
+      "resources": [
+        "assets/bibilili-logo-white.svg",
+        "_locales/*/messages.json"
+      ],
       "matches": ["https://www.bilibili.com/*"]
     }
   ],

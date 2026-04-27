@@ -1,0 +1,74 @@
+{
+  "extensionName": {
+    "message": "Bibilili",
+    "description": "Extension name."
+  },
+  "extensionDescription": {
+    "message": "Transposes Bilibili watch pages by placing comments beside the player and video lists below it.",
+    "description": "Manifest extension description."
+  },
+  "layoutLabel": {
+    "message": "Bibilili watch layout",
+    "description": "Accessible name for the transformed watch layout."
+  },
+  "playerLabel": {
+    "message": "Player",
+    "description": "Accessible name for the player pane."
+  },
+  "commentsLabel": {
+    "message": "Comments",
+    "description": "Accessible name for the comment pane."
+  },
+  "videoListsLabel": {
+    "message": "Video lists",
+    "description": "Accessible name for the video list dock."
+  },
+  "turnOnLabel": {
+    "message": "Turn Bibilili on",
+    "description": "Accessible name for enabling the transformed layout."
+  },
+  "turnOffLabel": {
+    "message": "Turn Bibilili off",
+    "description": "Accessible name for disabling the transformed layout."
+  },
+  "sourceCollectionLabel": {
+    "message": "Collection",
+    "description": "Label for a collection video-list source."
+  },
+  "sourceWatchLaterLabel": {
+    "message": "Watch Later",
+    "description": "Label for a watch-later video-list source."
+  },
+  "sourceHistoryLabel": {
+    "message": "History",
+    "description": "Label for a history video-list source."
+  },
+  "sourceRecommendationsLabel": {
+    "message": "Recommendations",
+    "description": "Label for a recommendations video-list source."
+  },
+  "viewCount": {
+    "message": "$COUNT$ views",
+    "description": "Video card view count metadata.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1.2K"
+      }
+    }
+  },
+  "finishedProgress": {
+    "message": "Finished",
+    "description": "Video card progress metadata for a completed video."
+  },
+  "watchedProgress": {
+    "message": "Watched $DURATION$",
+    "description": "Video card progress metadata for a partially watched video.",
+    "placeholders": {
+      "duration": {
+        "content": "$1",
+        "example": "12:34"
+      }
+    }
+  }
+}

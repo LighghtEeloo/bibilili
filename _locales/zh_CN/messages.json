@@ -1,0 +1,74 @@
+{
+  "extensionName": {
+    "message": "Bibilili",
+    "description": "Extension name."
+  },
+  "extensionDescription": {
+    "message": "重排 Bilibili 观看页，将评论放在播放器旁边，并将视频列表放在下方。",
+    "description": "Manifest extension description."
+  },
+  "layoutLabel": {
+    "message": "Bibilili 观看布局",
+    "description": "Accessible name for the transformed watch layout."
+  },
+  "playerLabel": {
+    "message": "播放器",
+    "description": "Accessible name for the player pane."
+  },
+  "commentsLabel": {
+    "message": "评论",
+    "description": "Accessible name for the comment pane."
+  },
+  "videoListsLabel": {
+    "message": "视频列表",
+    "description": "Accessible name for the video list dock."
+  },
+  "turnOnLabel": {
+    "message": "开启 Bibilili",
+    "description": "Accessible name for enabling the transformed layout."
+  },
+  "turnOffLabel": {
+    "message": "关闭 Bibilili",
+    "description": "Accessible name for disabling the transformed layout."
+  },
+  "sourceCollectionLabel": {
+    "message": "合集",
+    "description": "Label for a collection video-list source."
+  },
+  "sourceWatchLaterLabel": {
+    "message": "稍后再看",
+    "description": "Label for a watch-later video-list source."
+  },
+  "sourceHistoryLabel": {
+    "message": "历史",
+    "description": "Label for a history video-list source."
+  },
+  "sourceRecommendationsLabel": {
+    "message": "推荐",
+    "description": "Label for a recommendations video-list source."
+  },
+  "viewCount": {
+    "message": "$COUNT$ 次播放",
+    "description": "Video card view count metadata.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1.2万"
+      }
+    }
+  },
+  "finishedProgress": {
+    "message": "已看完",
+    "description": "Video card progress metadata for a completed video."
+  },
+  "watchedProgress": {
+    "message": "已观看 $DURATION$",
+    "description": "Video card progress metadata for a partially watched video.",
+    "placeholders": {
+      "duration": {
+        "content": "$1",
+        "example": "12:34"
+      }
+    }
+  }
+}
