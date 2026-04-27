@@ -753,7 +753,6 @@
     static message(name, language, substitutions = []) {
       return (
         UiStrings.catalogMessage(name, language, substitutions) ||
-        UiStrings.runtimeMessage(name, substitutions) ||
         name
       );
     }
@@ -817,34 +816,6 @@
       }
 
       return substitutions[Number(match[1]) - 1] ?? "";
-    }
-
-    /**
-     * Reads a message from the browser extension i18n API when available.
-     *
-     * @param {string} name
-     * @param {string[]} substitutions
-     * @returns {string}
-     */
-    static runtimeMessage(name, substitutions) {
-      const i18n = UiStrings.extensionI18n();
-
-      if (!i18n) {
-        return "";
-      }
-
-      try {
-        if (substitutions.length === 0) {
-          return i18n.getMessage(name);
-        }
-
-        return i18n.getMessage(
-          name,
-          substitutions.length === 1 ? substitutions[0] : substitutions
-        );
-      } catch (_error) {
-        return "";
-      }
     }
 
     /**
@@ -1471,27 +1442,10 @@
       this.button.append(ActivationControl.logoMark(this.document));
       this.button.addEventListener("click", () => {
         const nextEnabled = this.button.getAttribute("aria-pressed") !== "true";
-        DiagnosticLog.info("activation click", {
-          nextEnabled,
-          placement: this.placement()
-        });
         this.onToggle(nextEnabled);
       });
 
       return this.button;
-    }
-
-    /**
-     * Returns the current visual placement of the activation button.
-     *
-     * @returns {string}
-     */
-    placement() {
-      if (this.button && this.floatingRoot?.contains(this.button)) {
-        return "floating";
-      }
-
-      return "docked";
     }
 
     /**
@@ -2515,8 +2469,11 @@
      * @returns {string | null}
      */
     static targetUrlFor(entry) {
-      const directUrl = AccountSourceAdapter.absoluteUrl(
-        entry.redirect_link || entry.redirect_url || entry.uri || entry.url
+      const directUrl = SourceAdapter.normalizedVideoUrl(
+        AccountSourceAdapter.stringValue(entry.redirect_link) ||
+          AccountSourceAdapter.stringValue(entry.redirect_url) ||
+          AccountSourceAdapter.stringValue(entry.uri) ||
+          AccountSourceAdapter.stringValue(entry.url)
       );
 
       if (directUrl) {
@@ -2529,7 +2486,7 @@
       );
 
       if (bvid) {
-        return AccountSourceAdapter.videoUrl({ bvid, page });
+        return SourceAdapter.videoUrl({ bvid, page });
       }
 
       const aid = AccountSourceAdapter.numberValue(
@@ -2537,7 +2494,7 @@
       );
 
       if (aid) {
-        return AccountSourceAdapter.videoUrl({ aid, page });
+        return SourceAdapter.videoUrl({ aid: String(aid), page });
       }
 
       const epid = AccountSourceAdapter.numberValue(
@@ -2549,23 +2506,6 @@
       }
 
       return null;
-    }
-
-    /**
-     * Builds a canonical Bilibili video URL.
-     *
-     * @param {{ bvid?: string, aid?: number, page?: number | null }} params
-     * @returns {string}
-     */
-    static videoUrl(params) {
-      const path = params.bvid ? `/video/${params.bvid}` : `/video/av${params.aid}`;
-      const url = new URL(path, BILIBILI_WEB_ORIGIN);
-
-      if (params.page && params.page > 1) {
-        url.searchParams.set("p", String(params.page));
-      }
-
-      return url.href;
     }
 
     /**
@@ -2695,32 +2635,6 @@
     }
 
     /**
-     * Normalizes a possibly relative URL to an absolute HTTP(S) URL.
-     *
-     * @param {unknown} value
-     * @returns {string | null}
-     */
-    static absoluteUrl(value) {
-      const text = AccountSourceAdapter.stringValue(value);
-
-      if (!text || text.startsWith("javascript:")) {
-        return null;
-      }
-
-      try {
-        const url = new URL(text, BILIBILI_WEB_ORIGIN);
-
-        if (url.protocol !== "http:" && url.protocol !== "https:") {
-          return null;
-        }
-
-        return url.href;
-      } catch (_error) {
-        return null;
-      }
-    }
-
-    /**
      * Formats seconds as a compact duration token.
      *
      * @param {number | null} seconds
@@ -2795,8 +2709,7 @@
      * @returns {string | null}
      */
     static cleanText(value) {
-      const text = AccountSourceAdapter.stringValue(value);
-      return text?.replace(/\s+/g, " ") ?? null;
+      return SourceAdapter.cleanMetadata(AccountSourceAdapter.stringValue(value));
     }
   }
 
@@ -3717,14 +3630,12 @@
       this.ensurePlayerTitleOverlay();
 
       if (!title) {
-        this.root.classList.remove("bibilili-has-player-title");
         this.playerTitleOverlay.hidden = true;
         this.playerTitleOverlay.removeAttribute("title");
         this.playerTitleText.textContent = "";
         return;
       }
 
-      this.root.classList.add("bibilili-has-player-title");
       this.playerTitleOverlay.hidden = false;
       this.playerTitleText.textContent = title;
       this.playerTitleOverlay.setAttribute("title", title);
@@ -4184,7 +4095,6 @@
       this.uiLanguage = LanguageResolver.resolve(document);
       this.pageKey = "";
       this.lastPlayerWaitDiagnostic = "";
-      this.lastRenderDiagnostic = "";
     }
 
     /**
@@ -4263,18 +4173,12 @@
      */
     reconcile(resetSourceRoute) {
       if (!this.isWatchPage()) {
-        DiagnosticLog.info("reconcile skipped outside watch page", {
-          url: window.location.href
-        });
         this.layout.destroy();
         this.activationControl.destroy();
         return;
       }
 
       if (!this.enabled) {
-        DiagnosticLog.info("reconcile skipped while disabled", {
-          pageKey: this.pageKey
-        });
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -4302,20 +4206,12 @@
         });
       }
 
-      const renderDetails = {
-        pageKey: this.pageKey,
-        hasComments: Boolean(regions.comments),
-        language,
-        sourceKinds: regions.sources.map((source) => source.kind),
-        resetSourceRoute
-      };
       this.layout.render(
         regions,
         resetSourceRoute,
         this.activationControl,
         language
       );
-      this.logRenderedLayout(renderDetails);
     }
 
     /**
@@ -4401,17 +4297,11 @@
      * @param {boolean} enabled
      */
     setEnabled(enabled) {
-      DiagnosticLog.info("activation state request", {
-        enabled,
-        layoutMounted: Boolean(this.layout.root?.isConnected),
-        pageKey: this.pageKey
-      });
       this.enabled = enabled;
       ActivationPreference.writeEnabled(enabled);
       this.cancelScheduledReconcile();
 
       if (!enabled) {
-        this.lastRenderDiagnostic = "";
         this.commentPrimer.stop();
         this.accountSources.stop();
         this.layout.destroy();
@@ -4451,22 +4341,6 @@
       }
 
       return this.uiLanguage;
-    }
-
-    /**
-     * Logs changed render state without flooding routine reconciliation.
-     *
-     * @param {{ pageKey: string, hasComments: boolean, language: string, sourceKinds: string[], resetSourceRoute: boolean }} details
-     */
-    logRenderedLayout(details) {
-      const key = JSON.stringify(details);
-
-      if (key === this.lastRenderDiagnostic) {
-        return;
-      }
-
-      this.lastRenderDiagnostic = key;
-      DiagnosticLog.info("reconcile rendered layout", details);
     }
 
     /**

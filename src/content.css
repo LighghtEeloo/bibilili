@@ -29,13 +29,10 @@
   --bibilili-placeholder-bg: #ebeef2;
   --bibilili-placeholder-text: rgba(24, 25, 28, 0.62);
   --bibilili-badge-bg: rgba(0, 0, 0, 0.72);
-  --bibilili-source-badge-bg: rgba(251, 114, 153, 0.86);
   --bibilili-selected-text: #004d67;
   --bibilili-selected-bg: #d9f4ff;
   --bibilili-selected-border: #008fc2;
   --bibilili-shadow: rgba(0, 0, 0, 0.18);
-  --bibilili-blue: #00a1d6;
-  --bibilili-pink: #fb7299;
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(178px, 24vh, 242px);
   --bibilili-card-width: 188px;
@@ -82,7 +79,6 @@
   --bibilili-placeholder-bg: #262626;
   --bibilili-placeholder-text: rgba(255, 255, 255, 0.64);
   --bibilili-badge-bg: rgba(0, 0, 0, 0.72);
-  --bibilili-source-badge-bg: rgba(251, 114, 153, 0.82);
   --bibilili-selected-text: #ffffff;
   --bibilili-selected-bg: #006f96;
   --bibilili-selected-border: #19b7e8;
@@ -415,8 +411,10 @@
 .bibilili-card-duration {
   position: absolute;
   right: 6px;
+  bottom: 5px;
   max-width: calc(100% - 12px);
   overflow: hidden;
+  padding: 0 5px;
   border-radius: 4px;
   color: #ffffff;
   background: var(--bibilili-badge-bg);
@@ -424,11 +422,6 @@
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.bibilili-card-duration {
-  bottom: 5px;
-  padding: 0 5px;
 }
 
 .bibilili-card-title,
