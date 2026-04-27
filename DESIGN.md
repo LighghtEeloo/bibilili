@@ -107,11 +107,28 @@ mounted. Enabling Bibilili starts or retries a transformed page session.
 
 Activation applies through an urgent reconciliation request after the current
 input task when the player region is already available. Lazy reconciliation and
-comment priming must not gate the first visible transformed layout.
+page priming must not gate the first visible transformed layout.
 
 The activation state is a Bilibili-page preference recording the requested
 state. It persists across same-tab navigation and page reloads when browser
 storage is available.
+
+## Startup Lazy Readiness
+
+Startup lazy readiness is the state between player discovery and Bilibili's
+lazy comment and list hydration. Bibilili treats player mounting as ready when
+the player region is discovered. Comments and page-owned source data may settle
+after the transformed layout is visible.
+
+On a new watch page, the controller may run one native lazy-primer pass before
+moving comments. The pass briefly scrolls the page-owned document toward
+comment and source regions, restores the previous scroll position, and
+reconciles after Bilibili has had a chance to create lazy nodes and attributes.
+
+Page-owned source roots remain measurable while hidden from the transformed
+viewport. Bibilili hides them with source-root bookkeeping styles that preserve
+layout geometry, so Bilibili lazy observers can continue to resolve list data
+and thumbnails.
 
 ## Player Pane
 
@@ -290,7 +307,7 @@ changes.
 
 Reconciliation has two priorities. Urgent requests come from activation,
 initial startup, and same-tab navigation. Lazy requests come from page
-mutations, theme changes, and comment priming.
+mutations, theme changes, page priming, and startup settling.
 
 Urgent requests run asynchronously after the current browser task. They cancel
 pending lazy scheduling, keep the reset flag if any pending request set it, and
@@ -311,10 +328,9 @@ re-extracted and the list rail is re-rendered from the current source route.
 When the comment region changes, the comment pane receives the current
 page-owned comment tree.
 
-When the comment region is absent before first mount, the controller may run one
-native comment-primer pass. The pass briefly scrolls the original document
-toward the comment area, restores the previous scroll position, and reconciles
-again after Bilibili has had a chance to create lazy comment nodes.
+At startup and after same-tab navigation, the controller schedules a bounded
+set of lazy settling passes. These passes refresh comments, list items, and
+thumbnail metadata that Bilibili creates after the first transformed layout.
 
 When the watch title changes, the player title overlay receives the current
 title during reconciliation.

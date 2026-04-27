@@ -11,12 +11,18 @@
   const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
   const RECONCILE_DELAY_MS = 160;
-  const COMMENT_PRIME_DELAY_MS = 650;
+  const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
   const URGENT_RECONCILE_DELAY_MS = 0;
+  const LAZY_SETTLING_RECONCILE_DELAYS_MS = Object.freeze([
+    400,
+    1200,
+    2600,
+    5000
+  ]);
   const LOG_PREFIX = "[bibilili]";
   const BILIBILI_WEB_ORIGIN = "https://www.bilibili.com";
   const HISTORY_SOURCE_URL =
@@ -111,6 +117,44 @@
   const AID_DATA_ATTRS = ["data-aid", "data-avid"];
   const PAGE_DATA_ATTRS = ["data-page", "data-p", "data-part"];
 
+  const LAZY_MUTATION_ATTRIBUTE_FILTER = Object.freeze([
+    "class",
+    "lang",
+    "data-theme",
+    "data-color-mode",
+    "data-prefers-color-scheme",
+    "data-dark",
+    "data-locale",
+    "data-language",
+    "data-lang",
+    "data-i18n-locale",
+    "style",
+    "href",
+    "src",
+    "srcset",
+    "data-src",
+    "data-original",
+    "data-lazy-src",
+    "data-lazyload-src",
+    "data-cover",
+    "data-url",
+    "data-href",
+    "data-link",
+    "data-arcurl",
+    "data-key",
+    "data-bvid",
+    "data-bv-id",
+    "data-bv",
+    "data-aid",
+    "data-avid",
+    "data-page",
+    "data-p",
+    "data-part",
+    "title",
+    "alt",
+    "aria-label"
+  ]);
+
   const TITLE_SELECTORS = [
     ".title-txt",
     ".title",
@@ -161,6 +205,12 @@
     "[class*='right-container']",
     "[class*='sidebar']"
   ].join(",");
+
+  const PAGE_LAZY_PRIME_TARGET_SELECTORS = Object.freeze([
+    ...COMMENT_PRIME_SELECTORS,
+    SOURCE_BOUNDARY_SELECTOR,
+    SIDEBAR_BOUNDARY_SELECTOR
+  ]);
 
   const METADATA_SELECTORS = {
     author: [
@@ -1481,9 +1531,9 @@
   }
 
   /**
-   * Opens the native scroll position once so Bilibili can create lazy comments.
+   * Opens native page positions so Bilibili can hydrate lazy page regions.
    */
-  class CommentPrimer {
+  class PageLazyPrimer {
     /**
      * Creates a primer for one document.
      *
@@ -1493,10 +1543,14 @@
       this.document = document;
       this.primedPageKeys = new Set();
       this.timer = null;
+      this.restoreScrollPosition = null;
     }
 
     /**
-     * Requests one native scroll pass so Bilibili can instantiate lazy comments.
+     * Requests one native scroll pass for comments, sidebar lists, and previews.
+     *
+     * Note: Bilibili can gate comments, list metadata, and thumbnail attributes
+     * behind native document scroll or page-owned IntersectionObservers.
      *
      * @param {string} pageKey
      * @param {() => void} afterPrime
@@ -1515,35 +1569,102 @@
         this.document.documentElement.scrollHeight - window.innerHeight
       );
 
-      if (target) {
-        target.scrollIntoView({ block: "center", inline: "nearest" });
-      } else if (maxY > 0) {
-        window.scrollTo({
-          left: startX,
-          top: Math.min(maxY, Math.max(window.innerHeight, maxY * 0.6))
-        });
-      } else {
+      if (!this.scrollToPrimeTarget(target, startX, startY, maxY)) {
         return false;
       }
 
       this.primedPageKeys.add(pageKey);
+      this.restoreScrollPosition = { left: startX, top: startY };
       window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => {
-        window.scrollTo({ left: startX, top: startY });
+        this.timer = null;
+        this.restoreNativeScroll();
         afterPrime();
-      }, COMMENT_PRIME_DELAY_MS);
+      }, PAGE_LAZY_PRIME_DELAY_MS);
 
       return true;
     }
 
     /**
      * Clears pending native scroll restoration.
+     *
+     * @param {boolean} [restoreScroll]
      */
-    stop() {
+    stop(restoreScroll = true) {
       if (this.timer) {
         window.clearTimeout(this.timer);
         this.timer = null;
       }
+
+      if (restoreScroll) {
+        this.restoreNativeScroll();
+      } else {
+        this.restoreScrollPosition = null;
+      }
+    }
+
+    /**
+     * Moves the native document near a lazy target or a lower page position.
+     *
+     * @param {Element | null} target
+     * @param {number} startX
+     * @param {number} startY
+     * @param {number} maxY
+     * @returns {boolean}
+     */
+    scrollToPrimeTarget(target, startX, startY, maxY) {
+      if (target && PageLazyPrimer.isBelowViewportCenter(target, startY)) {
+        target.scrollIntoView({ block: "center", inline: "nearest" });
+        return true;
+      }
+
+      return this.scrollToLowerPagePosition(startX, maxY);
+    }
+
+    /**
+     * Moves the native document toward lower lazy regions when no target is low.
+     *
+     * @param {number} startX
+     * @param {number} maxY
+     * @returns {boolean}
+     */
+    scrollToLowerPagePosition(startX, maxY) {
+      if (maxY <= 0) {
+        return false;
+      }
+
+      window.scrollTo({
+        left: startX,
+        top: Math.min(maxY, Math.max(window.innerHeight, maxY * 0.6))
+      });
+
+      return true;
+    }
+
+    /**
+     * Returns true when a target is far enough down to prime directly.
+     *
+     * @param {Element} target
+     * @param {number} startY
+     * @returns {boolean}
+     */
+    static isBelowViewportCenter(target, startY) {
+      const targetTop = target.getBoundingClientRect().top + startY;
+
+      return targetTop > startY + window.innerHeight * 0.5;
+    }
+
+    /**
+     * Restores the native document scroll position captured before priming.
+     */
+    restoreNativeScroll() {
+      if (!this.restoreScrollPosition) {
+        return;
+      }
+
+      const { left, top } = this.restoreScrollPosition;
+      this.restoreScrollPosition = null;
+      window.scrollTo({ left, top });
     }
 
     /**
@@ -1552,15 +1673,30 @@
      * @returns {Element | null}
      */
     targetElement() {
-      for (const selector of COMMENT_PRIME_SELECTORS) {
-        const element = this.document.querySelector(selector);
-
-        if (element && !DomProbe.isOwned(element)) {
-          return element;
+      for (const selector of PAGE_LAZY_PRIME_TARGET_SELECTORS) {
+        for (const element of DomProbe.queryAll(this.document, selector)) {
+          if (this.isPrimeTarget(element)) {
+            return element;
+          }
         }
       }
 
       return null;
+    }
+
+    /**
+     * Returns true when an element belongs to the native page surface.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    isPrimeTarget(element) {
+      return (
+        element.isConnected &&
+        element !== this.document.body &&
+        element !== this.document.documentElement &&
+        !DomProbe.isOwned(element)
+      );
     }
   }
 
@@ -4018,7 +4154,7 @@
       this.document = document;
       this.discovery = new RegionDiscovery(document);
       this.layout = new LayoutRoot(document);
-      this.commentPrimer = new CommentPrimer(document);
+      this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       });
@@ -4038,6 +4174,7 @@
       this.uiLanguage = LanguageResolver.resolve(document);
       this.pageKey = "";
       this.lastPlayerWaitDiagnostic = "";
+      this.settlingTimers = [];
     }
 
     /**
@@ -4051,6 +4188,7 @@
       this.renderFloatingActivation();
       this.refreshAccountSources();
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      this.scheduleSettlingReconciles();
     }
 
     /**
@@ -4083,7 +4221,8 @@
         this.themeChangeHandler = null;
       }
 
-      this.commentPrimer.stop();
+      this.lazyPrimer.stop();
+      this.cancelSettlingReconciles();
       this.accountSources.stop();
       this.layout.destroy();
       this.activationControl.destroy();
@@ -4100,6 +4239,40 @@
       priority = ReconcilePriority.LAZY
     ) {
       this.reconcileScheduler.request(resetSourceRoute, priority);
+    }
+
+    /**
+     * Schedules bounded lazy passes while native page hydration settles.
+     */
+    scheduleSettlingReconciles() {
+      this.cancelSettlingReconciles();
+
+      for (const delay of LAZY_SETTLING_RECONCILE_DELAYS_MS) {
+        const timer = window.setTimeout(() => {
+          this.settlingTimers = this.settlingTimers.filter(
+            (candidate) => candidate !== timer
+          );
+
+          if (!this.enabled || !this.isWatchPage()) {
+            return;
+          }
+
+          this.scheduleReconcile(false, ReconcilePriority.LAZY);
+        }, delay);
+
+        this.settlingTimers.push(timer);
+      }
+    }
+
+    /**
+     * Cancels pending startup or navigation settling passes.
+     */
+    cancelSettlingReconciles() {
+      for (const timer of this.settlingTimers) {
+        window.clearTimeout(timer);
+      }
+
+      this.settlingTimers = [];
     }
 
     /**
@@ -4136,10 +4309,12 @@
 
       this.lastPlayerWaitDiagnostic = "";
 
-      if (!regions.comments && !this.layout.root) {
-        this.commentPrimer.prime(this.pageKey, () => {
-          this.scheduleReconcile();
-        });
+      if (
+        this.lazyPrimer.prime(this.pageKey, () => {
+          this.scheduleReconcile(false, ReconcilePriority.LAZY);
+        })
+      ) {
+        regions.comments = null;
       }
 
       this.layout.render(
@@ -4165,19 +4340,7 @@
 
       this.observer.observe(this.document.documentElement, {
         attributes: true,
-        attributeFilter: [
-          "class",
-          "lang",
-          "data-theme",
-          "data-color-mode",
-          "data-prefers-color-scheme",
-          "data-dark",
-          "data-locale",
-          "data-language",
-          "data-lang",
-          "data-i18n-locale",
-          "style"
-        ],
+        attributeFilter: LAZY_MUTATION_ATTRIBUTE_FILTER,
         childList: true,
         subtree: true
       });
@@ -4221,10 +4384,13 @@
         return;
       }
 
+      this.lazyPrimer.stop(false);
+      this.cancelSettlingReconciles();
       this.pageKey = nextPageKey;
       this.layout.destroy();
       this.refreshAccountSources();
       this.scheduleReconcile(true, ReconcilePriority.URGENT);
+      this.scheduleSettlingReconciles();
     }
 
     /**
@@ -4238,7 +4404,8 @@
       this.reconcileScheduler.cancel();
 
       if (!enabled) {
-        this.commentPrimer.stop();
+        this.lazyPrimer.stop();
+        this.cancelSettlingReconciles();
         this.accountSources.stop();
         this.layout.destroy();
         this.renderFloatingActivation();
@@ -4247,6 +4414,7 @@
 
       this.refreshAccountSources();
       this.scheduleReconcile(true, ReconcilePriority.URGENT);
+      this.scheduleSettlingReconciles();
     }
 
     /**

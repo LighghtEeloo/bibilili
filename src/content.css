@@ -449,7 +449,8 @@
 }
 
 [data-bibilili-source-kind] {
-  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 @media (max-width: 920px) {
