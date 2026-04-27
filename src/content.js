@@ -14,6 +14,7 @@
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
+  const COLLECTION_CARD_LOG_SAMPLE_SIZE = 12;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
   const URGENT_RECONCILE_DELAY_MS = 0;
@@ -105,6 +106,15 @@
   const VIDEO_POD_ITEM_SELECTOR = [
     VIDEO_POD_ITEM_CLASS_SELECTOR,
     "li"
+  ].join(",");
+
+  const CURRENT_SOURCE_ITEM_ATTR_SELECTOR = [
+    "[aria-current='page']",
+    "[aria-current='true']",
+    "[aria-selected='true']",
+    "[data-current='true']",
+    "[data-active='true']",
+    "[data-selected='true']"
   ].join(",");
 
   const VIDEO_URL_DATA_ATTRS = [
@@ -1723,6 +1733,10 @@
     extractItems() {
       const items = [];
       const seen = new Set();
+      const itemLimit =
+        this.kind === SourceKind.COLLECTION
+          ? Number.POSITIVE_INFINITY
+          : MAX_ITEMS_PER_SOURCE;
 
       const targets = this.videoTargets();
 
@@ -1741,7 +1755,7 @@
         seen.add(key);
         items.push(item);
 
-        if (items.length >= MAX_ITEMS_PER_SOURCE) {
+        if (items.length >= itemLimit) {
           break;
         }
       }
@@ -1890,6 +1904,9 @@
         title,
         thumbnailUrl: SourceAdapter.thumbnailFor(target, card),
         sourceKind: this.kind,
+        isCurrent:
+          this.kind === SourceKind.COLLECTION &&
+          SourceAdapter.isCurrentSourceTarget(target, card),
         duration: SourceAdapter.durationFor(card),
         author: SourceAdapter.metadataFor(card, "author"),
         viewCount: SourceAdapter.metadataFor(card, "viewCount"),
@@ -2226,6 +2243,98 @@
       return Boolean(
         currentIdentity && targetIdentity && currentIdentity === targetIdentity
       );
+    }
+
+    /**
+     * Returns true when Bilibili marks a source target as the active video row.
+     *
+     * Note: Bilibili collection rows can expose the current video through
+     * active row state even when their extracted target URL does not normalize
+     * to the browser's current watch route.
+     *
+     * @param {Element} target
+     * @param {Element} card
+     * @returns {boolean}
+     */
+    static isCurrentSourceTarget(target, card) {
+      return (
+        SourceAdapter.hasCurrentSourceMarker(target) ||
+        SourceAdapter.hasCurrentSourceMarker(card)
+      );
+    }
+
+    /**
+     * Returns true when an element carries active/current source-row state.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static hasCurrentSourceMarker(element) {
+      return (
+        element.matches(CURRENT_SOURCE_ITEM_ATTR_SELECTOR) ||
+        SourceAdapter.hasCurrentSourceClass(element)
+      );
+    }
+
+    /**
+     * Returns true when an element has a current-looking class token.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static hasCurrentSourceClass(element) {
+      return Array.from(element.classList).some((className) =>
+        /(?:^|[-_])(?:active|current|selected|playing|cur)(?:$|[-_])/iu.test(
+          className
+        )
+      );
+    }
+
+    /**
+     * Returns the current watch route key used to locate collection cards.
+     *
+     * @returns {string | null}
+     */
+    static currentWatchRouteKey() {
+      return SourceAdapter.watchRouteKeyForUrl(window.location.href);
+    }
+
+    /**
+     * Returns a watch route key that distinguishes archive pages within one BV.
+     *
+     * @param {string | URL} value
+     * @returns {string | null}
+     */
+    static watchRouteKeyForUrl(value) {
+      try {
+        const url =
+          value instanceof URL ? value : new URL(value, window.location.href);
+        const identity = SourceAdapter.playableIdentityForUrl(url);
+
+        if (!identity) {
+          return null;
+        }
+
+        if (identity.startsWith("video:")) {
+          return `${identity}:p${SourceAdapter.videoPageForUrl(url)}`;
+        }
+
+        return identity;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Reads the one-based archive page number from a Bilibili watch URL.
+     *
+     * @param {URL} url
+     * @returns {number}
+     */
+    static videoPageForUrl(url) {
+      const page = Number.parseInt(url.searchParams.get("p") ?? "", 10);
+
+      return Number.isSafeInteger(page) && page > 0 ? page : 1;
     }
 
     /**
@@ -3534,6 +3643,8 @@
       this.sourceButtons = new Map();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.hasUserInteractedWithSources = false;
+      this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
       this.movedNodes = new Map();
       this.markedSourceRoots = new Set();
@@ -3588,6 +3699,8 @@
       this.sourceButtons.clear();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.hasUserInteractedWithSources = false;
+      this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
@@ -3785,6 +3898,10 @@
       this.currentActivationControl = activationControl;
       this.markSourceRoots(sources);
 
+      if (resetSourceRoute) {
+        this.hasUserInteractedWithSources = false;
+      }
+
       const previousSourceKind = this.selectedSourceKind;
       this.selectedSourceKind = this.resolveSourceRoute(sources, resetSourceRoute);
       this.resolveRailOpenState(previousSourceKind, resetSourceRoute);
@@ -3893,6 +4010,8 @@
      * @param {string} kind
      */
     handleSourceButtonClick(kind) {
+      this.hasUserInteractedWithSources = true;
+
       if (!this.currentActivationControl) {
         return;
       }
@@ -3946,29 +4065,240 @@
       const row = this.document.createElement("div");
       row.className = "bibilili-card-row";
 
-      for (const item of source.items) {
-        row.append(this.videoCard(item));
+      const currentRouteKey =
+        source.kind === SourceKind.COLLECTION
+          ? SourceAdapter.currentWatchRouteKey()
+          : null;
+      let currentCard = null;
+      let currentCardIndex = -1;
+      let currentCardDetails = null;
+      let currentCardReason = null;
+      const detectionSamples = [];
+
+      for (let index = 0; index < source.items.length; index += 1) {
+        const item = source.items[index];
+        const itemRouteKey = currentRouteKey
+          ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
+          : null;
+        const matchReason = this.currentCollectionItemMatchReason(
+          source.kind,
+          item,
+          currentRouteKey,
+          itemRouteKey
+        );
+        const isCurrent = Boolean(matchReason);
+        const card = this.videoCard(item, isCurrent);
+
+        if (
+          source.kind === SourceKind.COLLECTION &&
+          detectionSamples.length < COLLECTION_CARD_LOG_SAMPLE_SIZE
+        ) {
+          detectionSamples.push(
+            LayoutRoot.collectionCardLogItem(index, item, itemRouteKey)
+          );
+        }
+
+        if (isCurrent && !currentCard) {
+          currentCard = card;
+          currentCardIndex = index;
+          currentCardDetails = LayoutRoot.collectionCardLogItem(
+            index,
+            item,
+            itemRouteKey
+          );
+          currentCardReason = matchReason;
+        }
+
+        row.append(card);
       }
 
       group.append(title, row);
       this.rail.append(group);
+      this.logCollectionCardDetection(
+        source,
+        currentRouteKey,
+        currentCardIndex,
+        currentCardDetails,
+        currentCardReason,
+        detectionSamples,
+        resetScroll
+      );
+      this.locateCurrentCollectionCard(
+        source.kind,
+        currentCard,
+        currentRouteKey,
+        resetScroll
+      );
+    }
 
-      if (resetScroll) {
-        this.rail.scrollLeft = 0;
+    /**
+     * Logs collection card matching inputs for debugging Bilibili markup.
+     *
+     * @param {VideoListSource} source
+     * @param {string | null} currentRouteKey
+     * @param {number} currentCardIndex
+     * @param {object | null} currentCardDetails
+     * @param {string | null} currentCardReason
+     * @param {object[]} detectionSamples
+     * @param {boolean} resetScroll
+     */
+    logCollectionCardDetection(
+      source,
+      currentRouteKey,
+      currentCardIndex,
+      currentCardDetails,
+      currentCardReason,
+      detectionSamples,
+      resetScroll
+    ) {
+      if (source.kind !== SourceKind.COLLECTION) {
+        return;
       }
+
+      DiagnosticLog.info("collection card detection", {
+        currentRouteKey,
+        itemCount: source.items.length,
+        matchedIndex: currentCardIndex,
+        matchedItem: currentCardDetails,
+        matchedReason: currentCardReason,
+        resetScroll,
+        railOpen: this.isRailOpen,
+        selectedSourceKind: this.selectedSourceKind,
+        locatedCollectionRouteKey: this.locatedCollectionRouteKey,
+        sampledItems: detectionSamples
+      });
+    }
+
+    /**
+     * Builds one compact diagnostic record for a collection card candidate.
+     *
+     * @param {number} index
+     * @param {VideoItem} item
+     * @param {string | null} routeKey
+     * @returns {object}
+     */
+    static collectionCardLogItem(index, item, routeKey) {
+      return {
+        index,
+        isCurrent: Boolean(item.isCurrent),
+        routeKey,
+        title: item.title.slice(0, 80),
+        targetUrl: item.targetUrl
+      };
+    }
+
+    /**
+     * Returns the reason an item is the current collection card.
+     *
+     * @param {string} sourceKind
+     * @param {VideoItem} item
+     * @param {string | null} currentRouteKey
+     * @param {string | null} itemRouteKey
+     * @returns {string | null}
+     */
+    currentCollectionItemMatchReason(
+      sourceKind,
+      item,
+      currentRouteKey,
+      itemRouteKey
+    ) {
+      if (sourceKind !== SourceKind.COLLECTION) {
+        return null;
+      }
+
+      if (item.isCurrent) {
+        return "native-current-marker";
+      }
+
+      if (currentRouteKey && itemRouteKey === currentRouteKey) {
+        return "route-key";
+      }
+
+      return null;
+    }
+
+    /**
+     * Positions the collection rail on the current video card when available.
+     *
+     * @param {string} sourceKind
+     * @param {HTMLAnchorElement | null} currentCard
+     * @param {string | null} currentRouteKey
+     * @param {boolean} resetScroll
+     */
+    locateCurrentCollectionCard(
+      sourceKind,
+      currentCard,
+      currentRouteKey,
+      resetScroll
+    ) {
+      const beforeScrollLeft = this.rail.scrollLeft;
+
+      if (
+        sourceKind !== SourceKind.COLLECTION ||
+        !currentCard ||
+        !currentRouteKey
+      ) {
+        if (resetScroll) {
+          this.rail.scrollLeft = 0;
+        }
+        if (sourceKind === SourceKind.COLLECTION) {
+          DiagnosticLog.info("collection card scroll skipped", {
+            currentRouteKey,
+            reason: currentCard ? "missing-current-route-key" : "no-current-card",
+            resetScroll,
+            beforeScrollLeft,
+            afterScrollLeft: this.rail.scrollLeft
+          });
+        }
+        return;
+      }
+
+      if (
+        resetScroll ||
+        this.locatedCollectionRouteKey !== currentRouteKey
+      ) {
+        currentCard.scrollIntoView({ block: "nearest", inline: "center" });
+        this.locatedCollectionRouteKey = currentRouteKey;
+        window.requestAnimationFrame(() => {
+          DiagnosticLog.info("collection card scroll", {
+            currentRouteKey,
+            resetScroll,
+            beforeScrollLeft,
+            afterScrollLeft: this.rail.scrollLeft,
+            cardOffsetLeft: currentCard.offsetLeft,
+            cardWidth: currentCard.offsetWidth,
+            railClientWidth: this.rail.clientWidth,
+            railScrollWidth: this.rail.scrollWidth
+          });
+        });
+        return;
+      }
+
+      DiagnosticLog.info("collection card scroll skipped", {
+        currentRouteKey,
+        reason: "already-located",
+        resetScroll,
+        beforeScrollLeft,
+        afterScrollLeft: this.rail.scrollLeft
+      });
     }
 
     /**
      * Creates one extension-owned video card.
      *
      * @param {VideoItem} item
+     * @param {boolean} [isCurrent]
      * @returns {HTMLAnchorElement}
      */
-    videoCard(item) {
+    videoCard(item, isCurrent = false) {
       const card = this.document.createElement("a");
       card.className = "bibilili-video-card";
       card.href = item.targetUrl;
       card.title = item.title;
+
+      if (isCurrent) {
+        card.setAttribute("aria-current", "page");
+      }
 
       const thumb = this.document.createElement("span");
       thumb.className = "bibilili-card-thumb";
@@ -4015,6 +4345,11 @@
      */
     resolveSourceRoute(sources, resetSourceRoute) {
       const availableKinds = new Set(sources.map((source) => source.kind));
+      const currentCollection = this.currentCollectionSource(sources);
+
+      if (currentCollection && !this.hasUserInteractedWithSources) {
+        return currentCollection.kind;
+      }
 
       if (
         !resetSourceRoute &&
@@ -4025,6 +4360,71 @@
       }
 
       return sources[0]?.kind ?? null;
+    }
+
+    /**
+     * Returns the collection source containing the current watch route.
+     *
+     * @param {VideoListSource[]} sources
+     * @returns {VideoListSource | null}
+     */
+    currentCollectionSource(sources) {
+      const collection = sources.find(
+        (source) => source.kind === SourceKind.COLLECTION
+      );
+      const sourceKinds = sources.map((source) => source.kind);
+
+      if (!collection) {
+        DiagnosticLog.info("collection source detection", {
+          sourceKinds,
+          hasCollection: false,
+          currentRouteKey: SourceAdapter.currentWatchRouteKey(),
+          hasUserInteractedWithSources: this.hasUserInteractedWithSources
+        });
+        return null;
+      }
+
+      const currentRouteKey = SourceAdapter.currentWatchRouteKey();
+      if (!currentRouteKey) {
+        DiagnosticLog.info("collection source detection", {
+          sourceKinds,
+          hasCollection: true,
+          currentRouteKey,
+          itemCount: collection.items.length,
+          matchedIndex: -1,
+          hasUserInteractedWithSources: this.hasUserInteractedWithSources
+        });
+        return null;
+      }
+
+      let matchedReason = null;
+      const matchedIndex = collection.items.findIndex((item) => {
+        const itemRouteKey = SourceAdapter.watchRouteKeyForUrl(item.targetUrl);
+        const matchReason = this.currentCollectionItemMatchReason(
+          collection.kind,
+          item,
+          currentRouteKey,
+          itemRouteKey
+        );
+
+        if (matchReason) {
+          matchedReason = matchReason;
+        }
+
+        return Boolean(matchReason);
+      });
+
+      DiagnosticLog.info("collection source detection", {
+        sourceKinds,
+        hasCollection: true,
+        currentRouteKey,
+        itemCount: collection.items.length,
+        matchedIndex,
+        matchedReason,
+        hasUserInteractedWithSources: this.hasUserInteractedWithSources
+      });
+
+      return matchedIndex >= 0 ? collection : null;
     }
 
     /**
@@ -4510,6 +4910,7 @@
    * @property {string} title Required display title.
    * @property {string | null} thumbnailUrl Optional thumbnail image.
    * @property {string} sourceKind Closed source kind.
+   * @property {boolean} [isCurrent] Native collection current-row marker.
    * @property {string | null} duration Optional compact duration.
    * @property {string | null} author Optional author label.
    * @property {string | null} viewCount Optional view count label.

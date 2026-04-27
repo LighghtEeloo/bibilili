@@ -207,7 +207,8 @@ attributes, and Bilibili video-pod rows. Derived targets are normalized before
 the renderer receives them.
 
 Recommendation sources omit the current watch video. Collection sources
-preserve Bilibili's ordered list entries.
+preserve Bilibili's ordered list entries so the current item remains
+addressable in the rail.
 
 ## List Dock
 
@@ -278,6 +279,11 @@ in the bottom presentation.
 The rail scrolls horizontally across the selected source's cards. Route changes
 replace the group in place and reopen the rail.
 
+When the selected source is a collection, the rail identifies the card whose
+watch route matches the current page. It scrolls to that card once for the
+current page session, and it does so again when the collection route is opened
+explicitly.
+
 ## Video Card
 
 A video card is the extension-owned rendering of one video item.
@@ -287,6 +293,12 @@ the rail height stable.
 
 The card links to the item's target URL. Activating it uses normal page
 navigation unless the browser or Bilibili intercepts the link.
+
+A collection card matching the current watch route exposes `aria-current` and
+uses selected border and title colors.
+
+For collection cards, a native current-row marker from Bilibili is equivalent
+to a matching watch route.
 
 ## Runtime Controller
 
