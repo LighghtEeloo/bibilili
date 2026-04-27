@@ -65,6 +65,48 @@
     ".comment"
   ];
 
+  const COMMENT_USABLE_CONTENT_SELECTOR = [
+    "textarea",
+    "[contenteditable='true']",
+    "button",
+    "[role='button']",
+    ".reply-list",
+    ".reply-item",
+    ".comment-list",
+    ".comment-item",
+    ".bili-comment-list",
+    ".bili-comment-card",
+    "[class*='reply-item']",
+    "[class*='reply-content']",
+    "[class*='comment-item']",
+    "[class*='comment-list']",
+    "[class*='comment-card']",
+    "[class*='comment-renderer']",
+    "[class*='CommentItem']",
+    "[class*='CommentList']",
+    "[class*='empty']",
+    "[class*='Empty']"
+  ].join(",");
+
+  const COMMENT_RENDERED_SURFACE_SELECTOR = [
+    "#bili-comments",
+    "bili-comments",
+    ".bili-comment",
+    ".comment-container",
+    ".reply-warp",
+    ".reply-box",
+    ".comment-m",
+    "[class*='comment-container']",
+    "[class*='reply-warp']",
+    "[class*='Comment']",
+    "[class*='comment']"
+  ].join(",");
+
+  const COMMENT_USABLE_TEXT_PATTERN =
+    /(?:暂无评论|还没有评论|no comments|全部评论|评论区|发表评论|发一条友善的评论|reply|sort by)/i;
+  const COMMENT_MIN_USABLE_TEXT_LENGTH = 12;
+  const COMMENT_MIN_RENDERED_SURFACE_HEIGHT = 120;
+
   const WATCH_TITLE_SELECTORS = [
     "#viewbox_report h1",
     ".video-info-title",
@@ -260,6 +302,15 @@
     RECOMMENDATIONS: "recommendations"
   });
 
+  /**
+   * Closed comment pane states used by discovery and layout reconciliation.
+   */
+  const CommentPaneState = Object.freeze({
+    HIDDEN: "hidden",
+    LOADED: "loaded",
+    RETRY: "retry"
+  });
+
   const SOURCE_ORDER = Object.freeze([
     SourceKind.COLLECTION,
     SourceKind.RECOMMENDATIONS,
@@ -288,6 +339,8 @@
     VIDEO_LISTS_LABEL: "videoListsLabel",
     TURN_ON_LABEL: "turnOnLabel",
     TURN_OFF_LABEL: "turnOffLabel",
+    COMMENT_RETRY_MESSAGE: "commentRetryMessage",
+    COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
     FINISHED_PROGRESS: "finishedProgress",
     WATCHED_PROGRESS: "watchedProgress"
@@ -1557,6 +1610,7 @@
       this.primedPageKeys = new Set();
       this.timer = null;
       this.restoreScrollPosition = null;
+      this.restoreMountedClass = false;
     }
 
     /**
@@ -1564,14 +1618,40 @@
      *
      * Note: Bilibili can gate comments, list metadata, and thumbnail attributes
      * behind native document scroll or page-owned IntersectionObservers.
+     * Forced retries ignore the per-page guard and release the transformed
+     * scroll lock while the native document is being primed.
      *
      * @param {string} pageKey
      * @param {() => void} afterPrime
+     * @param {{ force?: boolean }} [options]
      * @returns {boolean} true when a prime pass was scheduled
      */
-    prime(pageKey, afterPrime) {
-      if (this.primedPageKeys.has(pageKey)) {
+    prime(pageKey, afterPrime, options = {}) {
+      const force = Boolean(options.force);
+
+      if (!force && this.primedPageKeys.has(pageKey)) {
         return false;
+      }
+
+      const hadMountedClass =
+        force &&
+        this.document.documentElement.classList.contains(HTML_MOUNTED_CLASS);
+
+      if (hadMountedClass) {
+        this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+      }
+
+      if (this.timer) {
+        this.stop();
+      }
+
+      const restoreMountedClass =
+        force &&
+        (hadMountedClass ||
+          this.document.documentElement.classList.contains(HTML_MOUNTED_CLASS));
+
+      if (restoreMountedClass) {
+        this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
       }
 
       const startX = window.scrollX;
@@ -1582,16 +1662,26 @@
         this.document.documentElement.scrollHeight - window.innerHeight
       );
 
-      if (!this.scrollToPrimeTarget(target, startX, startY, maxY)) {
+      if (!this.scrollToPrimeTarget(target, startX, startY, maxY, force)) {
+        if (restoreMountedClass) {
+          this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+        }
+
         return false;
       }
 
+      this.signalNativeLazyObservers();
+      window.requestAnimationFrame(() => {
+        this.signalNativeLazyObservers();
+      });
       this.primedPageKeys.add(pageKey);
       this.restoreScrollPosition = { left: startX, top: startY };
+      this.restoreMountedClass = restoreMountedClass;
       window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => {
         this.timer = null;
         this.restoreNativeScroll();
+        this.restoreMountLock();
         afterPrime();
       }, PAGE_LAZY_PRIME_DELAY_MS);
 
@@ -1611,8 +1701,10 @@
 
       if (restoreScroll) {
         this.restoreNativeScroll();
+        this.restoreMountLock();
       } else {
         this.restoreScrollPosition = null;
+        this.restoreMountedClass = false;
       }
     }
 
@@ -1623,15 +1715,34 @@
      * @param {number} startX
      * @param {number} startY
      * @param {number} maxY
+     * @param {boolean} force
      * @returns {boolean}
      */
-    scrollToPrimeTarget(target, startX, startY, maxY) {
+    scrollToPrimeTarget(target, startX, startY, maxY, force) {
+      if (force && target) {
+        target.scrollIntoView({ block: "center", inline: "nearest" });
+        return true;
+      }
+
       if (target && PageLazyPrimer.isBelowViewportCenter(target, startY)) {
         target.scrollIntoView({ block: "center", inline: "nearest" });
         return true;
       }
 
-      return this.scrollToLowerPagePosition(startX, maxY);
+      if (this.scrollToLowerPagePosition(startX, maxY)) {
+        return true;
+      }
+
+      return force;
+    }
+
+    /**
+     * Dispatches native viewport signals used by Bilibili lazy observers.
+     */
+    signalNativeLazyObservers() {
+      window.dispatchEvent(new Event("scroll"));
+      this.document.dispatchEvent(new Event("scroll", { bubbles: true }));
+      window.dispatchEvent(new Event("resize"));
     }
 
     /**
@@ -1678,6 +1789,18 @@
       const { left, top } = this.restoreScrollPosition;
       this.restoreScrollPosition = null;
       window.scrollTo({ left, top });
+    }
+
+    /**
+     * Restores the transformed scroll lock released for a manual retry.
+     */
+    restoreMountLock() {
+      if (!this.restoreMountedClass) {
+        return;
+      }
+
+      this.restoreMountedClass = false;
+      this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
     }
 
     /**
@@ -3495,10 +3618,16 @@
      * @returns {DiscoveredRegions}
      */
     discover() {
+      const comments = this.findCommentRegion();
+      const hasUsableComments = this.hasUsableCommentContent(comments);
+
       return {
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
-        comments: this.findCommentRegion(),
+        comments: hasUsableComments ? comments : null,
+        commentState: hasUsableComments
+          ? CommentPaneState.LOADED
+          : CommentPaneState.RETRY,
         sources: this.findSources()
       };
     }
@@ -3601,6 +3730,65 @@
       }
 
       return null;
+    }
+
+    /**
+     * Tests whether a discovered comment root has page-owned usable content.
+     *
+     * Note: Bilibili may create an empty comment shell before it inserts
+     * controls, an empty-state message, or comment rows.
+     *
+     * @param {Element | null} comments
+     * @returns {boolean}
+     */
+    hasUsableCommentContent(comments) {
+      if (!comments?.isConnected) {
+        return false;
+      }
+
+      if (comments.querySelector(COMMENT_USABLE_CONTENT_SELECTOR)) {
+        return true;
+      }
+
+      if (this.hasRenderedCommentSurface(comments)) {
+        return true;
+      }
+
+      const text = DomProbe.compactText(comments);
+
+      return (
+        COMMENT_USABLE_TEXT_PATTERN.test(text) ||
+        text.length >= COMMENT_MIN_USABLE_TEXT_LENGTH
+      );
+    }
+
+    /**
+     * Tests whether Bilibili has laid out a native comment surface.
+     *
+     * Note: Current Bilibili comment hosts can render visible comment UI while
+     * exposing little or no text to ordinary content-script DOM queries.
+     *
+     * @param {Element} comments
+     * @returns {boolean}
+     */
+    hasRenderedCommentSurface(comments) {
+      const surfaces = [
+        comments,
+        ...DomProbe.queryAll(comments, COMMENT_RENDERED_SURFACE_SELECTOR)
+      ];
+
+      return surfaces.some((surface) => {
+        if (!surface.matches(COMMENT_RENDERED_SURFACE_SELECTOR)) {
+          return false;
+        }
+
+        const rect = surface.getBoundingClientRect();
+
+        return (
+          rect.width > 0 &&
+          rect.height >= COMMENT_MIN_RENDERED_SURFACE_HEIGHT
+        );
+      });
     }
 
     /**
@@ -3930,6 +4118,9 @@
       this.playerTitleOverlay = null;
       this.playerTitleText = null;
       this.commentPane = null;
+      this.commentRetryView = null;
+      this.commentRetryMessage = null;
+      this.commentReloadButton = null;
       this.dock = null;
       this.sourceBar = null;
       this.rail = null;
@@ -3941,6 +4132,7 @@
       this.sourceButtons = new Map();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.onCommentReload = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -3955,15 +4147,17 @@
      * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
      * @param {string} language
+     * @param {() => void} onCommentReload
      */
-    render(regions, resetSourceRoute, activationControl, language) {
+    render(regions, resetSourceRoute, activationControl, language, onCommentReload) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+      this.onCommentReload = onCommentReload;
       this.setLanguage(language);
       this.setTheme(ThemeResolver.resolve(this.document));
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
-      this.setComments(regions.comments);
+      this.setComments(regions.comments, regions.commentState);
       this.setSources(regions.sources, resetSourceRoute, activationControl);
     }
 
@@ -3988,6 +4182,9 @@
       this.playerTitleOverlay = null;
       this.playerTitleText = null;
       this.commentPane = null;
+      this.commentRetryView = null;
+      this.commentRetryMessage = null;
+      this.commentReloadButton = null;
       this.dock = null;
       this.sourceBar = null;
       this.rail = null;
@@ -3997,9 +4194,28 @@
       this.sourceButtons.clear();
       this.currentSources = [];
       this.currentActivationControl = null;
+      this.onCommentReload = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
+      this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+    }
+
+    /**
+     * Temporarily restores page-owned nodes so native lazy observers can run.
+     *
+     * Note: Bilibili comment hydration may depend on the original page layout
+     * being present while the native document scrolls.
+     */
+    releaseForNativePrime() {
+      this.unmarkSourceRoots();
+      this.restoreNode(this.playerNode);
+      this.restoreNode(this.commentNode);
+
+      if (this.root?.isConnected) {
+        this.root.remove();
+      }
+
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
 
@@ -4074,6 +4290,7 @@
         "aria-label",
         UiStrings.message(UiMessage.VIDEO_LISTS_LABEL, this.language)
       );
+      this.updateCommentRetryLabels();
     }
 
     /**
@@ -4156,28 +4373,134 @@
     }
 
     /**
-     * Moves the current comment node into the comment pane.
+     * Renders the current comment pane state.
      *
      * @param {Element | null} comments
+     * @param {string} state
      */
-    setComments(comments) {
+    setComments(comments, state) {
       if (!this.root || !this.commentPane) {
         return;
       }
 
+      if (state === CommentPaneState.LOADED && comments) {
+        this.setLoadedComments(comments);
+        return;
+      }
+
+      if (state === CommentPaneState.RETRY) {
+        this.setCommentRetry();
+        return;
+      }
+
+      this.hideComments();
+    }
+
+    /**
+     * Restores moved comments and hides the comment pane.
+     */
+    hideComments() {
+      if (this.commentNode) {
+        this.restoreNode(this.commentNode);
+        this.commentNode = null;
+      }
+
+      this.root.classList.remove("bibilili-has-comments");
+      this.root.classList.remove("bibilili-has-comment-retry");
+    }
+
+    /**
+     * Moves the current usable comment node into the comment pane.
+     *
+     * @param {Element} comments
+     */
+    setLoadedComments(comments) {
       if (this.commentNode && this.commentNode !== comments) {
         this.restoreNode(this.commentNode);
         this.commentNode = null;
       }
 
-      if (!comments) {
-        this.root.classList.remove("bibilili-has-comments");
-        return;
-      }
-
       this.commentNode = comments;
       this.movePageNode(comments, this.commentPane, "comments");
       this.root.classList.add("bibilili-has-comments");
+      this.root.classList.remove("bibilili-has-comment-retry");
+    }
+
+    /**
+     * Renders the extension-owned comment reload state.
+     */
+    setCommentRetry() {
+      this.hideComments();
+      this.ensureCommentRetryView();
+      this.updateCommentRetryLabels();
+
+      if (
+        this.commentRetryView.parentElement !== this.commentPane ||
+        this.commentPane.firstElementChild !== this.commentRetryView ||
+        this.commentPane.children.length !== 1
+      ) {
+        this.commentPane.replaceChildren(this.commentRetryView);
+      }
+
+      this.root.classList.add("bibilili-has-comment-retry");
+    }
+
+    /**
+     * Ensures the stable retry view and reload button exist.
+     */
+    ensureCommentRetryView() {
+      if (this.commentRetryView) {
+        return;
+      }
+
+      this.commentRetryView = this.document.createElement("div");
+      this.commentRetryView.className = "bibilili-comment-retry";
+
+      this.commentRetryMessage = this.document.createElement("p");
+      this.commentRetryMessage.className = "bibilili-comment-retry-message";
+      this.commentRetryMessage.setAttribute("aria-live", "polite");
+
+      this.commentReloadButton = this.document.createElement("button");
+      this.commentReloadButton.type = "button";
+      this.commentReloadButton.className = "bibilili-comment-reload-button";
+      this.commentReloadButton.addEventListener("click", () => {
+        this.requestCommentReload();
+      });
+
+      this.commentRetryView.append(
+        this.commentRetryMessage,
+        this.commentReloadButton
+      );
+    }
+
+    /**
+     * Updates localized retry text in place.
+     */
+    updateCommentRetryLabels() {
+      if (!this.commentRetryMessage || !this.commentReloadButton) {
+        return;
+      }
+
+      const message = UiStrings.message(
+        UiMessage.COMMENT_RETRY_MESSAGE,
+        this.language
+      );
+      const label = UiStrings.message(
+        UiMessage.COMMENT_RELOAD_LABEL,
+        this.language
+      );
+
+      this.commentRetryMessage.textContent = message;
+      this.commentReloadButton.textContent = label;
+      this.commentReloadButton.title = label;
+      this.commentReloadButton.setAttribute("aria-label", label);
+    }
+
+    /**
+     * Runs the controller-owned comment reload callback.
+     */
+    requestCommentReload() {
+      this.onCommentReload?.();
     }
 
     /**
@@ -4985,6 +5308,33 @@
     }
 
     /**
+     * Retries native comment hydration without reloading the watch page.
+     *
+     * Note: Bilibili may leave comments unhydrated until the native document
+     * scrolls near the comment region.
+     */
+    reloadComments() {
+      if (!this.enabled || !this.isWatchPage()) {
+        return;
+      }
+
+      this.reconcileScheduler.cancel();
+      this.cancelSettlingReconciles();
+      this.layout.releaseForNativePrime();
+
+      const afterPrime = () => {
+        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        this.scheduleSettlingReconciles();
+      };
+
+      if (this.lazyPrimer.prime(this.pageKey, afterPrime, { force: true })) {
+        return;
+      }
+
+      afterPrime();
+    }
+
+    /**
      * Rebuilds the transformed layout from current DOM regions.
      *
      * @param {boolean} resetSourceRoute
@@ -5020,6 +5370,7 @@
 
       this.lastPlayerWaitDiagnostic = "";
       regions.sources = this.videoPreviews.hydrateSources(sources);
+      const commentStateBeforePrime = regions.commentState;
 
       if (
         this.lazyPrimer.prime(this.pageKey, () => {
@@ -5027,13 +5378,18 @@
         })
       ) {
         regions.comments = null;
+        regions.commentState =
+          commentStateBeforePrime === CommentPaneState.LOADED
+            ? CommentPaneState.HIDDEN
+            : CommentPaneState.RETRY;
       }
 
       this.layout.render(
         regions,
         resetSourceRoute,
         this.activationControl,
-        language
+        language,
+        () => this.reloadComments()
       );
     }
 
@@ -5243,6 +5599,7 @@
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
    * @property {Element | null} comments Page-owned comment region.
+   * @property {string} commentState Closed comment pane render state.
    * @property {VideoListSource[]} sources Valid video-list sources.
    */
 

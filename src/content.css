@@ -111,7 +111,8 @@
   background: var(--bibilili-stage);
 }
 
-#bibilili-layout-root.bibilili-has-comments .bibilili-stage {
+#bibilili-layout-root.bibilili-has-comments .bibilili-stage,
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
   grid-template-columns: minmax(0, 1fr) clamp(280px, 25vw, 430px);
 }
 
@@ -208,17 +209,61 @@
   overscroll-behavior: contain;
 }
 
-#bibilili-layout-root.bibilili-has-comments .bibilili-comment-pane {
+#bibilili-layout-root.bibilili-has-comments .bibilili-comment-pane,
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-comment-pane {
   display: block;
 }
 
-.bibilili-comment-pane > * {
+.bibilili-comment-pane > :not(.bibilili-comment-retry) {
   box-sizing: border-box;
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;
   margin: 0 !important;
   padding: 12px !important;
+}
+
+.bibilili-comment-retry {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--bibilili-muted);
+  text-align: center;
+}
+
+.bibilili-comment-retry-message {
+  max-width: 220px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.bibilili-comment-reload-button {
+  flex: 0 0 auto;
+  min-width: 112px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--bibilili-selected-border);
+  border-radius: 6px;
+  color: var(--bibilili-selected-text);
+  background: var(--bibilili-selected-bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 30px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bibilili-comment-reload-button:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
 }
 
 .bibilili-list-dock {

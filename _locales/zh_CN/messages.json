@@ -31,6 +31,14 @@
     "message": "关闭 Bibilili",
     "description": "Accessible name for disabling the transformed layout."
   },
+  "commentRetryMessage": {
+    "message": "评论未加载。",
+    "description": "Message shown in the comment pane when comments are missing or empty."
+  },
+  "commentReloadLabel": {
+    "message": "重新加载评论",
+    "description": "Button label for retrying comment hydration."
+  },
   "sourceCollectionLabel": {
     "message": "合集",
     "description": "Label for a collection video-list source."

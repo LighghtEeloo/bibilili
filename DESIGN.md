@@ -125,6 +125,11 @@ moving comments. The pass briefly scrolls the page-owned document toward
 comment and source regions, restores the previous scroll position, and
 reconciles after Bilibili has had a chance to create lazy nodes and attributes.
 
+Manual comment reload uses the same lazy-primer behavior after the transformed
+layout is mounted. The forced pass temporarily releases the transformed layout,
+restores page-owned nodes to their native positions, restores the native scroll
+position, and then reconciles.
+
 Page-owned source roots remain measurable while hidden from the transformed
 viewport. Bibilili hides them with source-root bookkeeping styles that preserve
 layout geometry, so Bilibili lazy observers can continue to resolve list data
@@ -155,6 +160,19 @@ not move the player or list dock.
 
 The comment pane contains page-owned comment nodes. Bibilili may wrap the
 comment region, while comment controls remain page-owned markup.
+
+The comment retry state is extension-owned chrome shown in the comment pane
+when no usable comment region is available. It keeps the comment column visible
+and provides a manual reload control.
+
+A usable comment region has page-owned comment controls, comment rows, a
+page-owned empty-state marker, or a visibly laid out Bilibili comment host.
+Empty comment shells remain in their native page position so Bilibili can
+continue hydrating them.
+
+Activating comment reload runs a forced lazy-primer pass and then reconciles the
+current watch page. It does not reload the browser page or replace Bilibili
+comment controls.
 
 ## Video List Source
 
@@ -383,7 +401,8 @@ is absent, its height contribution is zero.
 
 Bibilili mounts only after it discovers a player region.
 
-If comments are unavailable, the stage uses the player pane alone.
+If comments are unavailable or only an empty shell is present, the comment pane
+shows the comment retry state.
 
 If the watch title is unavailable, the player title overlay is not shown.
 

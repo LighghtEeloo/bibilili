@@ -31,6 +31,14 @@
     "message": "Turn Bibilili off",
     "description": "Accessible name for disabling the transformed layout."
   },
+  "commentRetryMessage": {
+    "message": "Comments did not load.",
+    "description": "Message shown in the comment pane when comments are missing or empty."
+  },
+  "commentReloadLabel": {
+    "message": "Reload comments",
+    "description": "Button label for retrying comment hydration."
+  },
   "sourceCollectionLabel": {
     "message": "Collection",
     "description": "Label for a collection video-list source."
