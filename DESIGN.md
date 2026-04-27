@@ -29,6 +29,24 @@ Video-list sources contain page-owned list data or Bilibili account list data.
 Bibilili reads them into uniform list items and routes one source at a time
 into the bottom dock.
 
+## DOM Ownership
+
+Bibilili owns the layout root, stage, panes, player title overlay, list dock,
+source bar, list rail, video cards, extension classes, and bookkeeping
+attributes.
+
+Bilibili owns the player, comments, source roots, links, controls, and
+network-backed content.
+
+Bibilili may move page-owned player and comment nodes into extension
+containers. It keeps page-owned video-list roots available for observation and
+extraction.
+
+Bibilili reads Bilibili account list APIs and renders the returned records into
+extension-owned cards. It does not modify account lists.
+
+Bibilili removes only nodes it owns.
+
 ## Layout Root
 
 The layout root is the extension-owned container for the transformed page. It
@@ -38,14 +56,17 @@ comment pane; the list dock sits below the stage.
 The layout root owns viewport-level sizing. It assigns bounded height to the
 list dock and gives the remaining height to the stage.
 
-The layout root owns extension theme state. It reads explicit Bilibili
-appearance markers first, then computed page colors, then the browser
-color-scheme preference.
+## Theme
+
+The theme is the extension-owned color state applied to extension surfaces. It
+does not restyle page-owned player, comment, or source roots.
+
+Bibilili resolves the theme from explicit Bilibili appearance markers, then
+computed page colors, then the browser color-scheme preference.
 
 Extension-owned surfaces use theme tokens for backgrounds, borders, text, and
-controls. Page-owned player, comment, and source roots keep native styling.
-Theme tokens define clear foreground and background pairs for primary text,
-muted text, selected controls, and badges in light and dark modes.
+controls. Theme tokens define clear foreground and background pairs for primary
+text, muted text, selected controls, and badges in light and dark modes.
 
 ## UI Language
 
@@ -118,9 +139,10 @@ comment region, while comment controls remain page-owned markup.
 
 A video list source is a Bilibili list that can produce video items.
 
-The source kind is a closed set represented as an enum. The initial kinds are
-collection, recommendations, watch later, and history. A source kind is shown
-when page markup or an account list exposes matching content.
+The source kind is a closed set represented by source-kind constants. The
+initial kinds are collection, recommendations, watch later, and history. A
+source kind is shown when page markup or an account list exposes matching
+content.
 
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items.
@@ -184,6 +206,23 @@ In controls-only state, the list dock keeps the activation control and any
 available source buttons visible, and closes the list rail. The stage receives
 the viewport height minus the source bar height.
 
+## Source Route
+
+The source route is the selected source kind for the list dock.
+
+The route defaults to the first available source in source-kind order:
+collection, recommendations, watch later, history. Reconciliation preserves the
+current route while its source remains available. When the route disappears, the
+first available source becomes selected.
+
+Selecting a source route replaces the list rail with that source's video items.
+Selecting the current route while the rail is open closes the rail without
+clearing the route. Selecting the current route while the rail is closed reopens
+the rail.
+
+Source routes do not toggle a source off and do not combine multiple sources in
+one rail.
+
 ## Source Bar
 
 The source bar is the control row inside the enabled list dock.
@@ -192,16 +231,6 @@ It begins with the activation control, then contains one route button per
 discovered source kind. The initial source buttons represent collection,
 recommendations, watch later, and history when those sources are available.
 Their labels use the current UI language.
-
-The buttons are list routers. Selecting a source replaces the list rail with
-that source's video items. Clicking the selected source while the rail is open
-closes the rail without clearing the route. Clicking the selected source while
-closed reopens the rail. Source buttons do not toggle a source off and do not
-combine multiple sources in one rail.
-
-The selected route defaults to the first available source in source-kind order.
-Reconciliation preserves the current route while its source remains available.
-When the route disappears, the first available source becomes selected.
 
 The selected source button keeps `aria-current` for the remembered route. It
 exposes the rail open state with `aria-expanded`. The selected visual treatment
@@ -220,15 +249,13 @@ interaction while Bilibili mutates the page.
 
 The list rail is the horizontal scroll surface inside the list dock.
 
-It renders one group for the selected source. Source route fallback uses
-source-kind order: collection, recommendations, watch later, history.
+It renders one group for the selected source while the source route is open.
 
 Every group uses the same card layout. Native Bilibili list styling has no role
 in the bottom presentation.
 
 The rail scrolls horizontally across the selected source's cards. Route changes
-replace the group in place and reopen the rail. Closing the rail preserves the
-selected route for later expansion.
+replace the group in place and reopen the rail.
 
 ## Video Card
 
@@ -240,13 +267,18 @@ the rail height stable.
 The card links to the item's target URL. Activating it uses normal page
 navigation unless the browser or Bilibili intercepts the link.
 
-## Reconciler
+## Runtime Controller
 
-The reconciler maintains the transformed layout after initial mount.
+The runtime controller coordinates discovery, activation, layout updates,
+mutation observation, account source loading, and same-tab navigation
+detection.
 
 It observes same-tab navigation, lazy region insertion, list updates, account
 source completion, and page theme marker changes. When the watched video
 changes, it starts a new page session and rebuilds discovered regions.
+
+Reconciliation is the controller's idempotent update pass over the current watch
+page.
 
 Reconciliation requests carry a priority and a source-reset flag. The reset
 flag clears the page-session source route when the visible video session
@@ -275,31 +307,13 @@ re-extracted and the list rail is re-rendered from the current source route.
 When the comment region changes, the comment pane receives the current
 page-owned comment tree.
 
-When the comment region is absent before first mount, the reconciler may run
-one native comment-primer pass. The pass briefly scrolls the original document
+When the comment region is absent before first mount, the controller may run one
+native comment-primer pass. The pass briefly scrolls the original document
 toward the comment area, restores the previous scroll position, and reconciles
 again after Bilibili has had a chance to create lazy comment nodes.
 
 When the watch title changes, the player title overlay receives the current
 title during reconciliation.
-
-## DOM Ownership
-
-Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, list rail, video cards, extension classes, and bookkeeping
-attributes.
-
-Bilibili owns the player, comments, source roots, links, controls, and
-network-backed content.
-
-Bibilili may move page-owned player and comment nodes into extension
-containers. It keeps page-owned video-list roots available for observation and
-extraction.
-
-Bibilili reads Bilibili account list APIs and renders the returned records into
-extension-owned cards. It does not modify account lists.
-
-Bibilili removes only nodes it owns.
 
 ## Sizing Rules
 
