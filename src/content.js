@@ -16,6 +16,7 @@
   const MAX_ITEMS_PER_SOURCE = 80;
   const COLLECTION_CARD_LOG_SAMPLE_SIZE = 12;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
+  const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
   const URGENT_RECONCILE_DELAY_MS = 0;
   const LAZY_SETTLING_RECONCILE_DELAYS_MS = Object.freeze([
@@ -29,6 +30,8 @@
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
+  const VIDEO_INFO_SOURCE_URL =
+    "https://api.bilibili.com/x/web-interface/view";
 
   const PLAYER_SELECTORS = [
     "#bilibili-player",
@@ -2226,6 +2229,55 @@
     }
 
     /**
+     * Returns the Bilibili archive identity needed for video-info cover fetches.
+     *
+     * @param {string | URL} value
+     * @returns {ArchiveVideoIdentity | null}
+     */
+    static archiveIdentityForUrl(value) {
+      try {
+        const url =
+          value instanceof URL ? value : new URL(value, window.location.href);
+
+        if (url.hostname !== "www.bilibili.com") {
+          return null;
+        }
+
+        const path = url.pathname.replace(/\/+$/u, "");
+        const match = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/i);
+
+        if (!match) {
+          return null;
+        }
+
+        const videoId = match[1];
+        const bvid = SourceAdapter.cleanBvid(videoId);
+
+        if (bvid) {
+          return {
+            key: `bvid:${bvid}`,
+            queryName: "bvid",
+            queryValue: bvid
+          };
+        }
+
+        const aid = SourceAdapter.cleanAid(videoId);
+
+        if (aid) {
+          return {
+            key: `aid:${aid}`,
+            queryName: "aid",
+            queryValue: aid
+          };
+        }
+
+        return null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
      * Returns true when a target points at the current watch route.
      *
      * Note: Bilibili can surface the current video inside recommendation
@@ -2549,6 +2601,32 @@
 
       try {
         return new URL(raw, window.location.href).href;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Normalizes an image URL and upgrades plain HTTP to HTTPS.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static secureAssetUrl(value) {
+      const assetUrl = SourceAdapter.assetUrl(value);
+
+      if (!assetUrl) {
+        return null;
+      }
+
+      try {
+        const url = new URL(assetUrl);
+
+        if (url.protocol === "http:") {
+          url.protocol = "https:";
+        }
+
+        return url.href;
       } catch (_error) {
         return null;
       }
@@ -3151,6 +3229,226 @@
      */
     static isSuccessfulPayload(payload) {
       return payload?.code === 0;
+    }
+  }
+
+  /**
+   * Fetches missing archive preview images without blocking layout rendering.
+   */
+  class VideoPreviewStore {
+    /**
+     * Creates a preview store.
+     *
+     * @param {() => void} onChange
+     */
+    constructor(onChange) {
+      this.onChange = onChange;
+      /** @type {Map<string, VideoPreviewRecord>} */
+      this.records = new Map();
+      this.queue = [];
+      this.controllers = new Map();
+      this.activeCount = 0;
+      this.sequence = 0;
+    }
+
+    /**
+     * Returns sources with cached fetched thumbnails applied.
+     *
+     * @param {VideoListSource[]} sources
+     * @returns {VideoListSource[]}
+     */
+    hydrateSources(sources) {
+      return sources.map((source) => {
+        let changed = false;
+        const items = source.items.map((item) => {
+          const hydrated = this.hydrateItem(item);
+
+          if (hydrated !== item) {
+            changed = true;
+          }
+
+          return hydrated;
+        });
+
+        return changed ? { ...source, items } : source;
+      });
+    }
+
+    /**
+     * Applies a cached fetched thumbnail or queues one archive preview request.
+     *
+     * @param {VideoItem} item
+     * @returns {VideoItem}
+     */
+    hydrateItem(item) {
+      if (item.thumbnailUrl) {
+        return item;
+      }
+
+      const identity = SourceAdapter.archiveIdentityForUrl(item.targetUrl);
+      if (!identity) {
+        return item;
+      }
+
+      const record = this.records.get(identity.key);
+      if (record?.state === "available" && record.thumbnailUrl) {
+        return {
+          ...item,
+          thumbnailUrl: record.thumbnailUrl
+        };
+      }
+
+      if (!record) {
+        this.enqueue(identity);
+      }
+
+      return item;
+    }
+
+    /**
+     * Queues one preview request unless fetch is unavailable.
+     *
+     * @param {ArchiveVideoIdentity} identity
+     */
+    enqueue(identity) {
+      if (typeof fetch !== "function") {
+        this.records.set(identity.key, { state: "unavailable" });
+        return;
+      }
+
+      this.records.set(identity.key, {
+        state: "queued",
+        identity
+      });
+      this.queue.push(identity);
+      this.pump();
+    }
+
+    /**
+     * Starts queued preview requests up to the concurrency limit.
+     */
+    pump() {
+      while (
+        this.activeCount < MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES &&
+        this.queue.length > 0
+      ) {
+        const identity = this.queue.shift();
+        const record = this.records.get(identity.key);
+
+        if (record?.state !== "queued") {
+          continue;
+        }
+
+        this.startFetch(identity);
+      }
+    }
+
+    /**
+     * Starts one preview fetch and records its advisory result.
+     *
+     * @param {ArchiveVideoIdentity} identity
+     */
+    startFetch(identity) {
+      const sequence = this.sequence;
+      const controller =
+        typeof AbortController === "function" ? new AbortController() : null;
+
+      this.activeCount += 1;
+      this.controllers.set(identity.key, controller);
+      this.records.set(identity.key, {
+        state: "loading",
+        identity
+      });
+
+      VideoPreviewStore.fetchPreview(identity, controller?.signal)
+        .then((thumbnailUrl) => {
+          if (sequence !== this.sequence) {
+            return;
+          }
+
+          if (thumbnailUrl) {
+            this.records.set(identity.key, {
+              state: "available",
+              thumbnailUrl
+            });
+            this.onChange();
+            return;
+          }
+
+          this.records.set(identity.key, { state: "unavailable" });
+        })
+        .catch((error) => {
+          if (sequence !== this.sequence || error?.name === "AbortError") {
+            return;
+          }
+
+          this.records.set(identity.key, { state: "unavailable" });
+          DiagnosticLog.info("video preview unavailable", {
+            key: identity.key,
+            message: error?.message ?? String(error)
+          });
+        })
+        .finally(() => {
+          if (sequence !== this.sequence) {
+            return;
+          }
+
+          this.activeCount -= 1;
+          this.controllers.delete(identity.key);
+          this.pump();
+        });
+    }
+
+    /**
+     * Cancels pending preview requests and clears the page-session cache.
+     */
+    stop() {
+      this.sequence += 1;
+
+      for (const controller of this.controllers.values()) {
+        controller?.abort();
+      }
+
+      this.records.clear();
+      this.queue = [];
+      this.controllers.clear();
+      this.activeCount = 0;
+    }
+
+    /**
+     * Fetches one archive cover from Bilibili video metadata.
+     *
+     * Note: Bilibili can return application-level errors for private, deleted,
+     * or unavailable videos. Those videos keep the title placeholder.
+     *
+     * @param {ArchiveVideoIdentity} identity
+     * @param {AbortSignal | undefined} signal
+     * @returns {Promise<string | null>}
+     */
+    static async fetchPreview(identity, signal) {
+      const payload = await AccountSourceStore.fetchApiPayload(
+        VideoPreviewStore.sourceUrl(identity),
+        signal
+      );
+
+      if (!AccountSourceStore.isSuccessfulPayload(payload)) {
+        return null;
+      }
+
+      return SourceAdapter.secureAssetUrl(payload?.data?.pic);
+    }
+
+    /**
+     * Builds a Bilibili video-info URL for one archive identity.
+     *
+     * @param {ArchiveVideoIdentity} identity
+     * @returns {string}
+     */
+    static sourceUrl(identity) {
+      const url = new URL(VIDEO_INFO_SOURCE_URL);
+      url.searchParams.set(identity.queryName, identity.queryValue);
+
+      return url.href;
     }
   }
 
@@ -4052,6 +4350,7 @@
      * @param {boolean} resetScroll
      */
     renderRail(source, resetScroll) {
+      const preservedScrollLeft = resetScroll ? 0 : this.rail.scrollLeft;
       this.rail.replaceChildren();
 
       const group = this.document.createElement("section");
@@ -4123,12 +4422,16 @@
         detectionSamples,
         resetScroll
       );
-      this.locateCurrentCollectionCard(
+      const didLocateCurrentCard = this.locateCurrentCollectionCard(
         source.kind,
         currentCard,
         currentRouteKey,
         resetScroll
       );
+
+      if (!didLocateCurrentCard && !resetScroll) {
+        this.rail.scrollLeft = preservedScrollLeft;
+      }
     }
 
     /**
@@ -4224,6 +4527,7 @@
      * @param {HTMLAnchorElement | null} currentCard
      * @param {string | null} currentRouteKey
      * @param {boolean} resetScroll
+     * @returns {boolean}
      */
     locateCurrentCollectionCard(
       sourceKind,
@@ -4250,7 +4554,7 @@
             afterScrollLeft: this.rail.scrollLeft
           });
         }
-        return;
+        return resetScroll;
       }
 
       if (
@@ -4271,7 +4575,7 @@
             railScrollWidth: this.rail.scrollWidth
           });
         });
-        return;
+        return true;
       }
 
       DiagnosticLog.info("collection card scroll skipped", {
@@ -4281,6 +4585,7 @@
         beforeScrollLeft,
         afterScrollLeft: this.rail.scrollLeft
       });
+      return false;
     }
 
     /**
@@ -4558,6 +4863,9 @@
       this.accountSources = new AccountSourceStore(() => {
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       });
+      this.videoPreviews = new VideoPreviewStore(() => {
+        this.scheduleReconcile(false, ReconcilePriority.LAZY);
+      });
       this.enabled = ActivationPreference.readEnabled();
       this.activationControl = new ActivationControl(document, (enabled) => {
         this.setEnabled(enabled);
@@ -4624,6 +4932,7 @@
       this.lazyPrimer.stop();
       this.cancelSettlingReconciles();
       this.accountSources.stop();
+      this.videoPreviews.stop();
       this.layout.destroy();
       this.activationControl.destroy();
     }
@@ -4682,12 +4991,14 @@
      */
     reconcile(resetSourceRoute) {
       if (!this.isWatchPage()) {
+        this.videoPreviews.stop();
         this.layout.destroy();
         this.activationControl.destroy();
         return;
       }
 
       if (!this.enabled) {
+        this.videoPreviews.stop();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -4695,7 +5006,7 @@
 
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
-      regions.sources = SourceMerger.merge(
+      const sources = SourceMerger.merge(
         regions.sources,
         this.accountSources.currentSources()
       );
@@ -4708,6 +5019,7 @@
       }
 
       this.lastPlayerWaitDiagnostic = "";
+      regions.sources = this.videoPreviews.hydrateSources(sources);
 
       if (
         this.lazyPrimer.prime(this.pageKey, () => {
@@ -4786,6 +5098,7 @@
 
       this.lazyPrimer.stop(false);
       this.cancelSettlingReconciles();
+      this.videoPreviews.stop();
       this.pageKey = nextPageKey;
       this.layout.destroy();
       this.refreshAccountSources();
@@ -4807,6 +5120,7 @@
         this.lazyPrimer.stop();
         this.cancelSettlingReconciles();
         this.accountSources.stop();
+        this.videoPreviews.stop();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -4937,6 +5251,20 @@
    * @property {string} kind Closed source kind.
    * @property {string[]} selectors Root selector probes.
    * @property {RegExp} pattern Heading text pattern.
+   */
+
+  /**
+   * @typedef {object} ArchiveVideoIdentity
+   * @property {string} key Per-session preview cache key.
+   * @property {"bvid" | "aid"} queryName Bilibili video-info query name.
+   * @property {string} queryValue Bilibili archive id query value.
+   */
+
+  /**
+   * @typedef {object} VideoPreviewRecord
+   * @property {"queued" | "loading" | "available" | "unavailable"} state
+   * @property {ArchiveVideoIdentity} [identity] Queued or loading identity.
+   * @property {string} [thumbnailUrl] Fetched archive cover URL.
    */
 
   /**

@@ -210,6 +210,18 @@ Recommendation sources omit the current watch video. Collection sources
 preserve Bilibili's ordered list entries so the current item remains
 addressable in the rail.
 
+## Video Preview Hydration
+
+Video preview hydration is advisory metadata enrichment for video items whose
+page-owned source does not expose a thumbnail.
+
+Bibilili may fetch archive metadata from Bilibili's video-info API using a BV
+or AV id derived from the item's target URL. It uses the returned archive cover
+as the thumbnail. Page-owned thumbnails have precedence over fetched covers.
+
+Preview fetches do not block rendering. Failed, unsupported, private, deleted,
+or unavailable videos keep the title placeholder for the page session.
+
 ## List Dock
 
 The list dock is the bottom container for the selected video-list source. It
