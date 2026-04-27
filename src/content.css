@@ -301,13 +301,11 @@
 
 .bibilili-toggle-button:hover {
   border-color: #19b7e8;
-  color: #ffffff;
   background: #007aa6;
 }
 
 .bibilili-toggle-button[aria-pressed="true"] {
   border-color: var(--bibilili-selected-border);
-  color: #ffffff;
   background: #006f96;
 }
 

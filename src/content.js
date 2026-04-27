@@ -549,7 +549,7 @@
      * @returns {Element[]}
      */
     static queryAll(root, selector) {
-      return Array.from(root.querySelectorAll(selector)).filter(DomProbe.isElement);
+      return Array.from(root.querySelectorAll(selector));
     }
 
     /**
@@ -1163,22 +1163,6 @@
         }
       }
 
-      if (
-        document.querySelector(
-          "html[data-theme='dark'], html[data-color-mode='dark'], body[data-theme='dark'], body[data-color-mode='dark']"
-        )
-      ) {
-        return ThemeMode.DARK;
-      }
-
-      if (
-        document.querySelector(
-          "html[data-theme='light'], html[data-color-mode='light'], body[data-theme='light'], body[data-color-mode='light']"
-        )
-      ) {
-        return ThemeMode.LIGHT;
-      }
-
       return null;
     }
 
@@ -1512,16 +1496,6 @@
     }
 
     /**
-     * Returns true when this page has already had its native comment load pass.
-     *
-     * @param {string} pageKey
-     * @returns {boolean}
-     */
-    hasPrimed(pageKey) {
-      return this.primedPageKeys.has(pageKey);
-    }
-
-    /**
      * Requests one native scroll pass so Bilibili can instantiate lazy comments.
      *
      * @param {string} pageKey
@@ -1529,7 +1503,7 @@
      * @returns {boolean} true when a prime pass was scheduled
      */
     prime(pageKey, afterPrime) {
-      if (this.hasPrimed(pageKey)) {
+      if (this.primedPageKeys.has(pageKey)) {
         return false;
       }
 
@@ -2833,44 +2807,18 @@
      * @returns {Promise<VideoListSource[]>}
      */
     static async fetchSources(signal, language) {
-      const [watchLaterSource, historySource] = await Promise.all([
-        AccountSourceStore.fetchWatchLaterSource(signal, language),
-        AccountSourceStore.fetchHistorySource(signal, language)
-      ]);
+      const requests = [
+        { kind: SourceKind.WATCH_LATER, url: WATCH_LATER_SOURCE_URL },
+        { kind: SourceKind.HISTORY, url: HISTORY_SOURCE_URL }
+      ];
 
-      return [watchLaterSource, historySource].filter(Boolean);
-    }
-
-    /**
-     * Fetches the account watch-later list through Bilibili's to-view endpoint.
-     *
-     * @param {AbortSignal | undefined} signal
-     * @param {string} language
-     * @returns {Promise<VideoListSource | null>}
-     */
-    static async fetchWatchLaterSource(signal, language) {
-      return AccountSourceStore.fetchSource(
-        SourceKind.WATCH_LATER,
-        WATCH_LATER_SOURCE_URL,
-        signal,
-        language
+      const sources = await Promise.all(
+        requests.map(({ kind, url }) =>
+          AccountSourceStore.fetchSource(kind, url, signal, language)
+        )
       );
-    }
 
-    /**
-     * Fetches the account history list through Bilibili's cursor endpoint.
-     *
-     * @param {AbortSignal | undefined} signal
-     * @param {string} language
-     * @returns {Promise<VideoListSource | null>}
-     */
-    static async fetchHistorySource(signal, language) {
-      return AccountSourceStore.fetchSource(
-        SourceKind.HISTORY,
-        HISTORY_SOURCE_URL,
-        signal,
-        language
-      );
+      return sources.filter(Boolean);
     }
 
     /**
@@ -2975,11 +2923,7 @@
     static merge(pageSources, accountSources) {
       const byKind = new Map();
 
-      for (const source of pageSources) {
-        byKind.set(source.kind, source);
-      }
-
-      for (const source of accountSources) {
+      for (const source of [...pageSources, ...accountSources]) {
         byKind.set(source.kind, source);
       }
 
@@ -3326,7 +3270,7 @@
       const roots = [];
       const containers = DomProbe.queryAll(
         this.document,
-        ".right-container, #right-container, aside, [class*='right-container'], [class*='sidebar']"
+        SIDEBAR_BOUNDARY_SELECTOR
       );
 
       for (const container of containers) {
@@ -3724,14 +3668,13 @@
       }
 
       const selectedSource = this.selectedSource(sources);
-      const hasSelectedSource = Boolean(selectedSource);
-      const hasOpenRail = hasSelectedSource && this.isRailOpen;
+      const hasOpenRail = Boolean(selectedSource && this.isRailOpen);
 
       this.root.classList.toggle("bibilili-has-dock", hasOpenRail);
       this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
 
-      if (selectedSource && this.isRailOpen) {
+      if (hasOpenRail) {
         this.renderRail(
           selectedSource,
           selectedSource.kind !== this.renderedSourceKind
@@ -4117,7 +4060,7 @@
       this.observer?.disconnect();
       this.observer = null;
 
-      this.cancelScheduledReconcile();
+      this.reconcileScheduler.cancel();
 
       if (this.urlTimer) {
         window.clearInterval(this.urlTimer);
@@ -4157,13 +4100,6 @@
       priority = ReconcilePriority.LAZY
     ) {
       this.reconcileScheduler.request(resetSourceRoute, priority);
-    }
-
-    /**
-     * Clears any queued reconciliation pass.
-     */
-    cancelScheduledReconcile() {
-      this.reconcileScheduler.cancel();
     }
 
     /**
@@ -4299,7 +4235,7 @@
     setEnabled(enabled) {
       this.enabled = enabled;
       ActivationPreference.writeEnabled(enabled);
-      this.cancelScheduledReconcile();
+      this.reconcileScheduler.cancel();
 
       if (!enabled) {
         this.commentPrimer.stop();
