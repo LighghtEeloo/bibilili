@@ -9,6 +9,15 @@
     "48": "assets/bibilili-logo-48.png",
     "128": "assets/bibilili-logo-128.png"
   },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@bibilili",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
   "host_permissions": ["https://api.bilibili.com/*"],
   "web_accessible_resources": [
     {

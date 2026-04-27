@@ -1,7 +1,7 @@
 # Contributing
 
-Bibilili is a no-build Chrome extension. The repository uses `make` for local
-checks, packaging, and Chrome Web Store release commands.
+Bibilili is a no-build Manifest V3 browser extension. The repository uses
+`make` for local checks, packaging, and browser store release commands.
 
 ## Node
 

@@ -29,12 +29,13 @@ validate:
 
 manual-checklist:
 	@printf '%s\n' 'Manual browser checks before publishing:'
-	@printf '%s\n' '  1. Load this directory as an unpacked extension in chrome://extensions.'
-	@printf '%s\n' '  2. Refresh a https://www.bilibili.com/video/* page after reloading the extension.'
-	@printf '%s\n' '  3. Verify the player remains playable and comments scroll on the right when available.'
-	@printf '%s\n' '  4. Verify valid video lists render in the bottom dock.'
-	@printf '%s\n' '  5. Toggle each visible source button and confirm DOM mutations do not reset disabled sources.'
-	@printf '%s\n' '  6. Navigate to another Bilibili video in the same tab and confirm the layout rebuilds.'
+	@printf '%s\n' '  1. Chrome: load this directory as an unpacked extension in chrome://extensions.'
+	@printf '%s\n' '  2. Firefox: load this directory manifest as a temporary add-on in about:debugging.'
+	@printf '%s\n' '  3. Refresh a https://www.bilibili.com/video/* page after reloading the extension.'
+	@printf '%s\n' '  4. Verify the player remains playable and comments scroll on the right when available.'
+	@printf '%s\n' '  5. Verify valid video lists render in the bottom dock.'
+	@printf '%s\n' '  6. Toggle each visible source button and confirm DOM mutations do not reset disabled sources.'
+	@printf '%s\n' '  7. Navigate to another Bilibili video in the same tab and confirm the layout rebuilds.'
 
 $(DIST_DIR):
 	mkdir -p $(DIST_DIR)

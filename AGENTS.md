@@ -2,7 +2,7 @@
 
 > `CLAUDE.md` is a symlink to this file. Do not edit `CLAUDE.md` directly -- edit `AGENTS.md` instead.
 
-Bibilili is a Chrome Manifest V3 extension for Bilibili watch pages. The extension is currently a no-build project made of `manifest.json`, `src/content.js`, `src/content.css`, and `DESIGN.md`.
+Bibilili is a Manifest V3 browser extension for Bilibili watch pages. The extension is currently a no-build project made of `manifest.json`, `src/content.js`, `src/content.css`, and `DESIGN.md`.
 
 Above all: keep the implementation aligned with `DESIGN.md` and keep design knowledge close to the code that implements it. Use concise JSDoc comments for classes, methods, object shapes, and unusual DOM compromises. Write `Note: ` in a comment when a selector, fallback, or lifecycle rule exists because of Bilibili page behavior rather than local design preference.
 
@@ -98,6 +98,7 @@ node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 
 Manual browser testing is required for behavior changes because the extension depends on live Bilibili DOM:
 - Load `/Users/arctic/Arc/bibilili` as an unpacked extension in `chrome://extensions`.
+- Load `/Users/arctic/Arc/bibilili/manifest.json` as a temporary add-on in `about:debugging`.
 - Refresh a `https://www.bilibili.com/video/*` page after reloading the extension.
 - Verify that the player remains playable, comments scroll on the right when available, and valid video lists render in the bottom dock.
 - Toggle each visible source button and confirm ordinary DOM mutations do not reset disabled sources.

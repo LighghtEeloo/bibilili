@@ -1,11 +1,15 @@
 # Design
 
-Bibilili is a Chrome extension for Bilibili watch pages. It transposes the
-watch layout: comments move to the right of the player, and video lists move to
-the bottom.
+Bibilili is a Manifest V3 browser extension for Bilibili watch pages. It
+transposes the watch layout: comments move to the right of the player, and
+video lists move to the bottom.
 
 The player remains the visual anchor. Comments and video lists become bounded
 scroll surfaces around it.
+
+Chrome and Firefox use the same manifest, content script, stylesheet, and
+assets. Firefox-specific add-on metadata lives in the shared manifest under
+`browser_specific_settings`.
 
 ## Watch Page
 
