@@ -31,6 +31,44 @@
     "message": "Turn Bibilili off",
     "description": "Accessible name for disabling the transformed layout."
   },
+  "watchActionsLabel": {
+    "message": "Watch actions",
+    "description": "Accessible name for the docked group of mirrored Bilibili watch actions."
+  },
+  "watchActionCountLabel": {
+    "message": "$ACTION$: $COUNT$",
+    "description": "Accessible name for a mirrored Bilibili watch action with a visible count.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Like"
+      },
+      "count": {
+        "content": "$2",
+        "example": "379"
+      }
+    }
+  },
+  "watchActionLikeLabel": {
+    "message": "Like",
+    "description": "Accessible label for the mirrored like action."
+  },
+  "watchActionCoinLabel": {
+    "message": "Coin",
+    "description": "Accessible label for the mirrored coin action."
+  },
+  "watchActionFavoriteLabel": {
+    "message": "Favorite",
+    "description": "Accessible label for the mirrored favorite action."
+  },
+  "watchActionShareLabel": {
+    "message": "Share",
+    "description": "Accessible label for the mirrored share action."
+  },
+  "watchActionCopyLinkLabel": {
+    "message": "Copy link",
+    "description": "Accessible label for the dock share action that copies the current watch URL."
+  },
   "commentRetryMessage": {
     "message": "Comments did not load.",
     "description": "Message shown in the comment pane when comments are missing or empty."

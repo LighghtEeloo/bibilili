@@ -32,6 +32,7 @@
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
   const VIDEO_INFO_SOURCE_URL =
     "https://api.bilibili.com/x/web-interface/view";
+  const SVG_NS = "http://www.w3.org/2000/svg";
 
   const PLAYER_SELECTORS = [
     "#bilibili-player",
@@ -292,6 +293,72 @@
     ]
   };
 
+  const WATCH_ACTION_CONTEXT_SELECTOR = [
+    "#arc_toolbar_report",
+    ".video-toolbar",
+    ".video-toolbar-left",
+    ".video-toolbar-left-main",
+    ".toolbar-left",
+    ".ops",
+    "[class*='video-toolbar']",
+    "[class*='toolbar-left']"
+  ].join(",");
+
+  const WATCH_ACTION_TRIGGER_SELECTOR = [
+    "button",
+    "a[href]",
+    "[role='button']",
+    ".video-toolbar-left-item",
+    ".video-toolbar-left-item-wrap",
+    ".video-toolbar-item",
+    ".video-like",
+    ".video-coin",
+    ".video-fav",
+    ".video-favorite",
+    ".video-share"
+  ].join(",");
+
+  const WATCH_ACTION_ACTIVE_SELECTOR = [
+    "[aria-pressed='true']",
+    "[aria-selected='true']",
+    "[data-selected='true']",
+    "[data-active='true']",
+    ".on",
+    ".active",
+    ".is-active",
+    ".selected"
+  ].join(",");
+
+  const WATCH_ACTION_COUNT_TEXT_LIMIT = 18;
+  const WATCH_ACTION_CLONE_REMOVED_ATTRIBUTES = new Set([
+    "id",
+    "tabindex",
+    "role",
+    "href",
+    "target",
+    "rel",
+    "download",
+    "type",
+    "name",
+    "value",
+    "form",
+    "formaction",
+    "formenctype",
+    "formmethod",
+    "formnovalidate",
+    "formtarget",
+    "for"
+  ]);
+  const WATCH_ACTION_CLONE_INTERACTIVE_TAGS = new Set([
+    "a",
+    "button",
+    "input",
+    "label",
+    "option",
+    "select",
+    "textarea"
+  ]);
+
   /**
    * Closed source kinds used by discovery, state, rendering, and DOM markers.
    */
@@ -300,6 +367,16 @@
     WATCH_LATER: "watch_later",
     HISTORY: "history",
     RECOMMENDATIONS: "recommendations"
+  });
+
+  /**
+   * Closed watch action kinds mirrored by the bottom dock.
+   */
+  const WatchActionKind = Object.freeze({
+    LIKE: "like",
+    COIN: "coin",
+    FAVORITE: "favorite",
+    SHARE: "share"
   });
 
   /**
@@ -316,6 +393,19 @@
     SourceKind.RECOMMENDATIONS,
     SourceKind.WATCH_LATER,
     SourceKind.HISTORY
+  ]);
+
+  const WATCH_ACTION_ORDER = Object.freeze([
+    WatchActionKind.LIKE,
+    WatchActionKind.COIN,
+    WatchActionKind.FAVORITE,
+    WatchActionKind.SHARE
+  ]);
+
+  const WATCH_ACTION_STATEFUL_KINDS = new Set([
+    WatchActionKind.LIKE,
+    WatchActionKind.COIN,
+    WatchActionKind.FAVORITE
   ]);
 
   /**
@@ -339,6 +429,13 @@
     VIDEO_LISTS_LABEL: "videoListsLabel",
     TURN_ON_LABEL: "turnOnLabel",
     TURN_OFF_LABEL: "turnOffLabel",
+    WATCH_ACTIONS_LABEL: "watchActionsLabel",
+    WATCH_ACTION_COUNT_LABEL: "watchActionCountLabel",
+    WATCH_ACTION_LIKE_LABEL: "watchActionLikeLabel",
+    WATCH_ACTION_COIN_LABEL: "watchActionCoinLabel",
+    WATCH_ACTION_FAVORITE_LABEL: "watchActionFavoriteLabel",
+    WATCH_ACTION_SHARE_LABEL: "watchActionShareLabel",
+    WATCH_ACTION_COPY_LINK_LABEL: "watchActionCopyLinkLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
     COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
@@ -351,6 +448,13 @@
     [SourceKind.WATCH_LATER]: "sourceWatchLaterLabel",
     [SourceKind.HISTORY]: "sourceHistoryLabel",
     [SourceKind.RECOMMENDATIONS]: "sourceRecommendationsLabel"
+  });
+
+  const WATCH_ACTION_LABEL_MESSAGE_NAMES = Object.freeze({
+    [WatchActionKind.LIKE]: UiMessage.WATCH_ACTION_LIKE_LABEL,
+    [WatchActionKind.COIN]: UiMessage.WATCH_ACTION_COIN_LABEL,
+    [WatchActionKind.FAVORITE]: UiMessage.WATCH_ACTION_FAVORITE_LABEL,
+    [WatchActionKind.SHARE]: UiMessage.WATCH_ACTION_SHARE_LABEL
   });
 
   const I18N_MESSAGE_DIRECTORIES = Object.freeze({
@@ -629,6 +733,142 @@
   ]);
 
   /**
+   * Static watch-action discovery configuration.
+   *
+   * Note: Bilibili has used several toolbar generations. The selectors prefer
+   * named action classes and use title or accessible-name fallbacks only after
+   * checking that the candidate belongs to a watch toolbar context.
+   */
+  const WATCH_ACTION_DEFINITIONS = Object.freeze([
+    {
+      kind: WatchActionKind.LIKE,
+      selectors: [
+        "#arc_toolbar_report .video-like",
+        ".video-toolbar .video-like",
+        ".video-toolbar-left .video-like",
+        ".video-toolbar-left-main .video-like",
+        ".ops .like",
+        ".video-like",
+        "[class*='video-like']",
+        "[title*='点赞']",
+        "[aria-label*='点赞']",
+        "[title*='Like']",
+        "[aria-label*='Like']",
+        "[title*='like']",
+        "[aria-label*='like']"
+      ],
+      countSelectors: [
+        ".video-like-info",
+        "[class*='like-info']",
+        ".video-toolbar-item-text",
+        ".video-toolbar-left-item-text",
+        ".toolbar-left-item-text",
+        "[class*='count']",
+        "span"
+      ],
+      labelPattern: /(?:点赞|已点赞|取消点赞|like|liked)/iu,
+      activePattern: /(?:\bon\b|\bactive\b|\bis-active\b|\bselected\b|\bliked\b|已点赞)/iu
+    },
+    {
+      kind: WatchActionKind.COIN,
+      selectors: [
+        "#arc_toolbar_report .video-coin",
+        ".video-toolbar .video-coin",
+        ".video-toolbar-left .video-coin",
+        ".video-toolbar-left-main .video-coin",
+        ".ops .coin",
+        ".video-coin",
+        "[class*='video-coin']",
+        "[title*='投币']",
+        "[aria-label*='投币']",
+        "[title*='Coin']",
+        "[aria-label*='Coin']",
+        "[title*='coin']",
+        "[aria-label*='coin']"
+      ],
+      countSelectors: [
+        ".video-coin-info",
+        "[class*='coin-info']",
+        ".video-toolbar-item-text",
+        ".video-toolbar-left-item-text",
+        ".toolbar-left-item-text",
+        "[class*='count']",
+        "span"
+      ],
+      labelPattern: /(?:投币|已投币|coin|coins?)/iu,
+      activePattern: /(?:\bon\b|\bactive\b|\bis-active\b|\bselected\b|已投币)/iu
+    },
+    {
+      kind: WatchActionKind.FAVORITE,
+      selectors: [
+        "#arc_toolbar_report .video-fav",
+        "#arc_toolbar_report .video-favorite",
+        ".video-toolbar .video-fav",
+        ".video-toolbar .video-favorite",
+        ".video-toolbar-left .video-fav",
+        ".video-toolbar-left .video-favorite",
+        ".video-toolbar-left-main .video-fav",
+        ".video-toolbar-left-main .video-favorite",
+        ".ops .collect",
+        ".video-fav",
+        ".video-favorite",
+        "[class*='video-fav']",
+        "[class*='video-favorite']",
+        "[title*='收藏']",
+        "[aria-label*='收藏']",
+        "[title*='Favorite']",
+        "[aria-label*='Favorite']",
+        "[title*='Favourite']",
+        "[aria-label*='Favourite']",
+        "[title*='favorite']",
+        "[aria-label*='favorite']"
+      ],
+      countSelectors: [
+        ".video-fav-info",
+        ".video-favorite-info",
+        "[class*='fav-info']",
+        "[class*='favorite-info']",
+        ".video-toolbar-item-text",
+        ".video-toolbar-left-item-text",
+        ".toolbar-left-item-text",
+        "[class*='count']",
+        "span"
+      ],
+      labelPattern: /(?:收藏|已收藏|取消收藏|favorite|favourite|favou?rites?|collect(?:ed)?)/iu,
+      activePattern: /(?:\bon\b|\bactive\b|\bis-active\b|\bselected\b|\bfavou?rited\b|\bcollected\b|已收藏)/iu
+    },
+    {
+      kind: WatchActionKind.SHARE,
+      selectors: [
+        "#arc_toolbar_report .video-share",
+        ".video-toolbar .video-share",
+        ".video-toolbar-left .video-share",
+        ".video-toolbar-left-main .video-share",
+        ".ops .share",
+        ".video-share",
+        "[class*='video-share']",
+        "[title*='分享']",
+        "[aria-label*='分享']",
+        "[title*='Share']",
+        "[aria-label*='Share']",
+        "[title*='share']",
+        "[aria-label*='share']"
+      ],
+      countSelectors: [
+        ".video-share-info",
+        "[class*='share-info']",
+        ".video-toolbar-item-text",
+        ".video-toolbar-left-item-text",
+        ".toolbar-left-item-text",
+        "[class*='count']",
+        "span"
+      ],
+      labelPattern: /(?:分享|share|shared)/iu,
+      activePattern: /$^/u
+    }
+  ]);
+
+  /**
    * Utility methods for querying page-owned DOM while avoiding extension-owned
    * surfaces.
    */
@@ -650,11 +890,17 @@
      * @returns {boolean}
      */
     static isOwned(node) {
-      if (!DomProbe.isElement(node)) {
+      const element = DomProbe.isElement(node)
+        ? node
+        : node instanceof Node
+          ? node.parentElement
+          : null;
+
+      if (!element) {
         return false;
       }
 
-      return Boolean(node.closest(`#${OWNED_ROOT_ID}, #${FLOATING_TOGGLE_ROOT_ID}`));
+      return Boolean(element.closest(`#${OWNED_ROOT_ID}, #${FLOATING_TOGGLE_ROOT_ID}`));
     }
 
     /**
@@ -814,6 +1060,44 @@
       const messageName = SOURCE_LABEL_MESSAGE_NAMES[kind];
 
       return messageName ? UiStrings.message(messageName, language) : kind;
+    }
+
+    /**
+     * Returns the localized label for a closed watch action kind.
+     *
+     * @param {string} kind
+     * @param {string} language
+     * @returns {string}
+     */
+    static watchActionLabel(kind, language) {
+      const messageName = WATCH_ACTION_LABEL_MESSAGE_NAMES[kind];
+
+      return messageName ? UiStrings.message(messageName, language) : kind;
+    }
+
+    /**
+     * Returns the accessible label for one mirrored watch action button.
+     *
+     * @param {string} kind
+     * @param {string | null} countText
+     * @param {string} language
+     * @returns {string}
+     */
+    static watchActionButtonLabel(kind, countText, language) {
+      const label =
+        kind === WatchActionKind.SHARE
+          ? UiStrings.message(UiMessage.WATCH_ACTION_COPY_LINK_LABEL, language)
+          : UiStrings.watchActionLabel(kind, language);
+
+      if (!countText) {
+        return label;
+      }
+
+      return UiStrings.message(
+        UiMessage.WATCH_ACTION_COUNT_LABEL,
+        language,
+        [label, countText]
+      );
     }
 
     /**
@@ -3624,6 +3908,7 @@
       return {
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
+        actions: this.findActions(),
         comments: hasUsableComments ? comments : null,
         commentState: hasUsableComments
           ? CommentPaneState.LOADED
@@ -3710,6 +3995,243 @@
         .trim();
 
       return title || null;
+    }
+
+    /**
+     * Finds page-owned watch actions that the bottom dock can mirror.
+     *
+     * @returns {WatchAction[]}
+     */
+    findActions() {
+      const actions = [];
+      const usedTriggers = new Set();
+
+      for (const definition of WATCH_ACTION_DEFINITIONS) {
+        const action = this.findAction(definition, usedTriggers);
+
+        if (action) {
+          actions.push(action);
+        }
+      }
+
+      return actions;
+    }
+
+    /**
+     * Finds one native action trigger for a watch action definition.
+     *
+     * @param {WatchActionDefinition} definition
+     * @param {Set<Element>} usedTriggers
+     * @returns {WatchAction | null}
+     */
+    findAction(definition, usedTriggers) {
+      for (const candidate of this.actionCandidates(definition)) {
+        const trigger = this.actionTriggerFor(candidate);
+
+        if (
+          usedTriggers.has(trigger) ||
+          !this.isWatchActionTrigger(trigger, definition)
+        ) {
+          continue;
+        }
+
+        usedTriggers.add(trigger);
+        return {
+          kind: definition.kind,
+          trigger,
+          visualSource: this.watchActionVisualSource(trigger),
+          countSelectors: definition.countSelectors,
+          countText: this.watchActionCountText(trigger, definition),
+          isActive: this.isWatchActionActive(trigger, definition)
+        };
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns the native visual source for an action trigger.
+     *
+     * @param {Element} trigger
+     * @returns {Element | null}
+     */
+    watchActionVisualSource(trigger) {
+      return trigger;
+    }
+
+    /**
+     * Returns action candidates from watch toolbars first, then page fallbacks.
+     *
+     * @param {WatchActionDefinition} definition
+     * @returns {Element[]}
+     */
+    actionCandidates(definition) {
+      const candidates = [];
+      const roots = this.watchActionRoots();
+
+      for (const root of roots) {
+        for (const selector of definition.selectors) {
+          candidates.push(...DomProbe.queryAll(root, selector));
+        }
+      }
+
+      for (const selector of definition.selectors) {
+        candidates.push(...DomProbe.queryAll(this.document, selector));
+      }
+
+      return DomProbe.unique(
+        candidates.filter((element) => !DomProbe.isOwned(element))
+      );
+    }
+
+    /**
+     * Returns likely page-owned watch toolbar containers.
+     *
+     * @returns {Element[]}
+     */
+    watchActionRoots() {
+      return DomProbe.unique(
+        DomProbe.queryAll(this.document, WATCH_ACTION_CONTEXT_SELECTOR).filter(
+          (element) => !DomProbe.isOwned(element)
+        )
+      );
+    }
+
+    /**
+     * Chooses the clickable native element for an action candidate.
+     *
+     * @param {Element} element
+     * @returns {Element}
+     */
+    actionTriggerFor(element) {
+      return DomProbe.closestBySelectors(element, [
+        WATCH_ACTION_TRIGGER_SELECTOR
+      ]);
+    }
+
+    /**
+     * Tests whether a candidate belongs to the native watch action toolbar.
+     *
+     * @param {Element} trigger
+     * @param {WatchActionDefinition} definition
+     * @returns {boolean}
+     */
+    isWatchActionTrigger(trigger, definition) {
+      if (!trigger.isConnected || DomProbe.isOwned(trigger)) {
+        return false;
+      }
+
+      if (trigger === this.document.body || trigger === this.document.documentElement) {
+        return false;
+      }
+
+      if (trigger.closest(WATCH_ACTION_CONTEXT_SELECTOR)) {
+        return true;
+      }
+
+      return definition.selectors.some((selector) => {
+        if (!/(?:video-|\.ops)/u.test(selector)) {
+          return false;
+        }
+
+        try {
+          return trigger.matches(selector);
+        } catch (_error) {
+          return false;
+        }
+      });
+    }
+
+    /**
+     * Reads the native count text for one action without reformatting it.
+     *
+     * @param {Element} trigger
+     * @param {WatchActionDefinition} definition
+     * @returns {string | null}
+     */
+    watchActionCountText(trigger, definition) {
+      const values = [];
+
+      for (const selector of definition.countSelectors) {
+        for (const element of DomProbe.queryAll(trigger, selector)) {
+          values.push(DomProbe.compactText(element));
+        }
+      }
+
+      values.push(
+        DomProbe.compactText(trigger),
+        trigger.getAttribute("title") ?? "",
+        trigger.getAttribute("aria-label") ?? ""
+      );
+
+      for (const value of values) {
+        const countText = RegionDiscovery.cleanWatchActionCountText(
+          value,
+          definition
+        );
+
+        if (countText) {
+          return countText;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Removes action labels from a native count fragment.
+     *
+     * @param {string | null | undefined} value
+     * @param {WatchActionDefinition} definition
+     * @returns {string | null}
+     */
+    static cleanWatchActionCountText(value, definition) {
+      const text = (value ?? "").replace(/\s+/g, " ").trim();
+
+      if (!text) {
+        return null;
+      }
+
+      const labelPattern = new RegExp(definition.labelPattern.source, "giu");
+      const countText = text
+        .replace(labelPattern, " ")
+        .replace(/[()（）:：]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!/[\d０-９]/u.test(countText)) {
+        return null;
+      }
+
+      return countText.slice(0, WATCH_ACTION_COUNT_TEXT_LIMIT);
+    }
+
+    /**
+     * Returns true when the native action exposes an active state.
+     *
+     * @param {Element} trigger
+     * @param {WatchActionDefinition} definition
+     * @returns {boolean}
+     */
+    isWatchActionActive(trigger, definition) {
+      if (
+        trigger.matches(WATCH_ACTION_ACTIVE_SELECTOR) ||
+        Boolean(trigger.querySelector(WATCH_ACTION_ACTIVE_SELECTOR))
+      ) {
+        return true;
+      }
+
+      const stateText = [
+        trigger.getAttribute("class"),
+        trigger.getAttribute("title"),
+        trigger.getAttribute("aria-label"),
+        trigger.getAttribute("data-state"),
+        trigger.getAttribute("data-status")
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return definition.activePattern.test(stateText);
     }
 
     /**
@@ -4123,16 +4645,20 @@
       this.commentReloadButton = null;
       this.dock = null;
       this.sourceBar = null;
+      this.actionGroup = null;
       this.rail = null;
       this.playerNode = null;
       this.commentNode = null;
       this.selectedSourceKind = null;
       this.isRailOpen = false;
       this.renderedSourceKind = null;
+      this.actionButtons = new Map();
       this.sourceButtons = new Map();
+      this.currentActions = [];
       this.currentSources = [];
       this.currentActivationControl = null;
       this.onCommentReload = null;
+      this.onWatchActionForward = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -4148,16 +4674,26 @@
      * @param {ActivationControl} activationControl
      * @param {string} language
      * @param {() => void} onCommentReload
+     * @param {() => void} onWatchActionForward
      */
-    render(regions, resetSourceRoute, activationControl, language, onCommentReload) {
+    render(
+      regions,
+      resetSourceRoute,
+      activationControl,
+      language,
+      onCommentReload,
+      onWatchActionForward
+    ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
       this.onCommentReload = onCommentReload;
+      this.onWatchActionForward = onWatchActionForward;
       this.setLanguage(language);
       this.setTheme(ThemeResolver.resolve(this.document));
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
       this.setComments(regions.comments, regions.commentState);
+      this.currentActions = regions.actions;
       this.setSources(regions.sources, resetSourceRoute, activationControl);
     }
 
@@ -4187,14 +4723,18 @@
       this.commentReloadButton = null;
       this.dock = null;
       this.sourceBar = null;
+      this.actionGroup = null;
       this.rail = null;
       this.selectedSourceKind = null;
       this.isRailOpen = false;
       this.renderedSourceKind = null;
+      this.actionButtons.clear();
       this.sourceButtons.clear();
+      this.currentActions = [];
       this.currentSources = [];
       this.currentActivationControl = null;
       this.onCommentReload = null;
+      this.onWatchActionForward = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -4252,6 +4792,10 @@
       this.sourceBar.className = "bibilili-source-bar";
       this.sourceBar.setAttribute("role", "toolbar");
 
+      this.actionGroup = this.document.createElement("div");
+      this.actionGroup.className = "bibilili-action-group";
+      this.actionGroup.setAttribute("role", "group");
+
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
       this.rail.className = "bibilili-list-rail";
@@ -4289,6 +4833,10 @@
       this.dock?.setAttribute(
         "aria-label",
         UiStrings.message(UiMessage.VIDEO_LISTS_LABEL, this.language)
+      );
+      this.actionGroup?.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.WATCH_ACTIONS_LABEL, this.language)
       );
       this.updateCommentRetryLabels();
     }
@@ -4600,6 +5148,666 @@
       }
 
       this.removeStaleSourceButtons(availableKinds);
+      this.renderWatchActionGroup(this.currentActions, previous);
+    }
+
+    /**
+     * Renders mirrored watch action controls after the provided dock control.
+     *
+     * @param {WatchAction[]} actions
+     * @param {Element} placementAnchor
+     * @returns {Element | null}
+     */
+    renderWatchActionGroup(actions, placementAnchor) {
+      if (!this.sourceBar || !this.actionGroup) {
+        return null;
+      }
+
+      const orderedActions = WATCH_ACTION_ORDER
+        .map((kind) => actions.find((action) => action.kind === kind))
+        .filter(Boolean);
+      const availableKinds = new Set();
+
+      if (orderedActions.length === 0) {
+        this.actionGroup.remove();
+        this.removeStaleWatchActionButtons(availableKinds);
+        return null;
+      }
+
+      this.actionGroup.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.WATCH_ACTIONS_LABEL, this.language)
+      );
+
+      const groupReference = placementAnchor.nextSibling;
+      if (groupReference !== this.actionGroup) {
+        this.sourceBar.insertBefore(this.actionGroup, groupReference);
+      }
+
+      let previous = null;
+      for (const action of orderedActions) {
+        const button = this.watchActionButtonFor(action.kind);
+        availableKinds.add(action.kind);
+        this.updateWatchActionButton(button, action);
+
+        const reference = previous
+          ? previous.nextSibling
+          : this.actionGroup.firstChild;
+        if (reference !== button) {
+          this.actionGroup.insertBefore(button, reference);
+        }
+
+        previous = button;
+      }
+
+      this.removeStaleWatchActionButtons(availableKinds);
+      return this.actionGroup;
+    }
+
+    /**
+     * Returns the keyed dock button for a mirrored watch action.
+     *
+     * @param {string} kind
+     * @returns {HTMLButtonElement}
+     */
+    watchActionButtonFor(kind) {
+      const existing = this.actionButtons.get(kind);
+      if (existing) {
+        return existing;
+      }
+
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.className = "bibilili-action-button";
+      button.dataset.watchActionKind = kind;
+      button.append(this.watchActionNativeVisualNode());
+
+      button.append(this.watchActionCountNode());
+      button.addEventListener("click", () => {
+        this.handleWatchActionButtonClick(kind);
+      });
+      this.actionButtons.set(kind, button);
+      return button;
+    }
+
+    /**
+     * Creates the native visual wrapper used by one watch action button.
+     *
+     * @returns {HTMLSpanElement}
+     */
+    watchActionNativeVisualNode() {
+      const visual = this.document.createElement("span");
+      visual.className = "bibilili-action-native-visual";
+      visual.setAttribute("aria-hidden", "true");
+      return visual;
+    }
+
+    /**
+     * Creates the count node used by one watch action button.
+     *
+     * @returns {HTMLSpanElement}
+     */
+    watchActionCountNode() {
+      const count = this.document.createElement("span");
+      count.className = "bibilili-action-count";
+      return count;
+    }
+
+    /**
+     * Updates a mirrored watch action button in place.
+     *
+     * @param {HTMLButtonElement} button
+     * @param {WatchAction} action
+     */
+    updateWatchActionButton(button, action) {
+      const label = UiStrings.watchActionButtonLabel(
+        action.kind,
+        action.countText,
+        this.language
+      );
+      const visual = button.querySelector(".bibilili-action-native-visual");
+      const count = button.querySelector(".bibilili-action-count");
+      const nativeVisualHasCount = this.updateWatchActionNativeVisual(
+        visual,
+        action
+      );
+
+      button.title = label;
+      button.setAttribute("aria-label", label);
+
+      if (WATCH_ACTION_STATEFUL_KINDS.has(action.kind)) {
+        button.setAttribute("aria-pressed", String(action.isActive));
+      } else {
+        button.removeAttribute("aria-pressed");
+      }
+
+      if (count) {
+        count.textContent = action.countText ?? "";
+        count.hidden = !action.countText || nativeVisualHasCount;
+      }
+    }
+
+    /**
+     * Updates a mirrored action button with sanitized native visual markup.
+     *
+     * @param {Element | null} visual
+     * @param {WatchAction} action
+     * @returns {boolean} True when the native visual contains the count text.
+     */
+    updateWatchActionNativeVisual(visual, action) {
+      if (!visual) {
+        return false;
+      }
+
+      visual.replaceChildren();
+      visual.removeAttribute("data-bibilili-fallback");
+
+      const fragment = LayoutRoot.watchActionVisualFragment(
+        this.document,
+        action
+      );
+      if (fragment) {
+        visual.append(fragment);
+      } else {
+        visual.dataset.bibililiFallback = "true";
+        visual.textContent = UiStrings.watchActionLabel(
+          action.kind,
+          this.language
+        );
+      }
+
+      if (action.kind === WatchActionKind.SHARE) {
+        LayoutRoot.insertWatchActionCopyIcon(this.document, visual);
+      }
+
+      return LayoutRoot.watchActionVisualContainsCount(
+        visual,
+        action.countText
+      );
+    }
+
+    /**
+     * Removes keyed watch action buttons that are absent on the current page.
+     *
+     * @param {Set<string>} availableKinds
+     */
+    removeStaleWatchActionButtons(availableKinds) {
+      for (const [kind, button] of this.actionButtons) {
+        if (availableKinds.has(kind)) {
+          continue;
+        }
+
+        button.remove();
+        this.actionButtons.delete(kind);
+      }
+    }
+
+    /**
+     * Activates a dock watch action.
+     *
+     * @param {string} kind
+     */
+    handleWatchActionButtonClick(kind) {
+      const action = this.currentActions.find(
+        (candidate) => candidate.kind === kind
+      );
+
+      if (kind === WatchActionKind.SHARE) {
+        this.copyCurrentWatchUrl();
+        return;
+      }
+
+      if (!action?.trigger?.isConnected) {
+        return;
+      }
+
+      LayoutRoot.clickNativeTrigger(action.trigger);
+      this.onWatchActionForward?.();
+    }
+
+    /**
+     * Copies the current watch URL for the dock share action.
+     */
+    copyCurrentWatchUrl() {
+      LayoutRoot.copyTextToClipboard(this.document, window.location.href).catch(
+        (error) => {
+          DiagnosticLog.info("share link copy failed", {
+            message: error?.message ?? String(error)
+          });
+        }
+      );
+    }
+
+    /**
+     * Dispatches native click behavior from the page-owned trigger.
+     *
+     * @param {Element} trigger
+     */
+    static clickNativeTrigger(trigger) {
+      if (typeof trigger.click === "function") {
+        trigger.click();
+        return;
+      }
+
+      trigger.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          view: window
+        })
+      );
+    }
+
+    /**
+     * Copies text with the clipboard API or a textarea fallback.
+     *
+     * @param {Document} document
+     * @param {string} text
+     * @returns {Promise<void>}
+     */
+    static async copyTextToClipboard(document, text) {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (_error) {
+          // Fall through to the legacy copy path for browsers that expose but
+          // reject the async clipboard API in content scripts.
+        }
+      }
+
+      LayoutRoot.copyTextWithTextarea(document, text);
+    }
+
+    /**
+     * Copies text through a temporary document selection.
+     *
+     * @param {Document} document
+     * @param {string} text
+     */
+    static copyTextWithTextarea(document, text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.inset = "0 auto auto 0";
+      textarea.style.width = "1px";
+      textarea.style.height = "1px";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, text.length);
+
+      const didCopy =
+        typeof document.execCommand === "function" &&
+        document.execCommand("copy");
+      textarea.remove();
+
+      if (!didCopy) {
+        throw new Error("Copy command failed");
+      }
+    }
+
+    /**
+     * Creates the copy icon shown by the dock share action on hover.
+     *
+     * @param {Document} document
+     * @returns {SVGSVGElement}
+     */
+    static watchActionCopyIcon(document) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.classList.add("bibilili-action-copy-icon");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      LayoutRoot.appendWatchActionCopyPaths(document, svg);
+      return svg;
+    }
+
+    /**
+     * Installs the copy mark inside the cloned native share icon when possible.
+     *
+     * @param {Document} document
+     * @param {Element} visual
+     */
+    static insertWatchActionCopyIcon(document, visual) {
+      const nativeIcon = visual.querySelector(
+        "[data-bibilili-action-icon-clone='true']"
+      );
+      const nativeSvg = LayoutRoot.watchActionSvgIconTarget(nativeIcon);
+
+      if (nativeSvg) {
+        LayoutRoot.installWatchActionCopyMark(document, nativeSvg);
+        return;
+      }
+
+      const icon = LayoutRoot.watchActionCopyIcon(document);
+
+      if (nativeIcon?.parentNode) {
+        nativeIcon.setAttribute(
+          "data-bibilili-action-fallback-icon-clone",
+          "true"
+        );
+        nativeIcon.parentNode.insertBefore(icon, nativeIcon.nextSibling);
+        return;
+      }
+
+      visual.prepend(icon);
+    }
+
+    /**
+     * Returns the SVG element that should own the share hover copy mark.
+     *
+     * @param {Element | null} nativeIcon
+     * @returns {SVGElement | null}
+     */
+    static watchActionSvgIconTarget(nativeIcon) {
+      if (!nativeIcon) {
+        return null;
+      }
+
+      if (nativeIcon.matches("svg")) {
+        return nativeIcon;
+      }
+
+      return nativeIcon.querySelector("svg");
+    }
+
+    /**
+     * Adds a hidden copy mark to the native-cloned share SVG.
+     *
+     * @param {Document} document
+     * @param {SVGElement} svg
+     */
+    static installWatchActionCopyMark(document, svg) {
+      for (const child of Array.from(svg.children)) {
+        child.setAttribute("data-bibilili-action-native-icon-part", "true");
+      }
+
+      const mark = document.createElementNS(SVG_NS, "g");
+      const transform = LayoutRoot.watchActionCopyMarkTransform(svg);
+
+      if (transform) {
+        mark.setAttribute("transform", transform);
+      }
+
+      mark.classList.add("bibilili-action-copy-mark");
+      LayoutRoot.appendWatchActionCopyPaths(document, mark);
+      svg.append(mark);
+    }
+
+    /**
+     * Returns a transform that fits the 24-unit copy mark to a native SVG.
+     *
+     * @param {SVGElement} svg
+     * @returns {string | null}
+     */
+    static watchActionCopyMarkTransform(svg) {
+      const viewBox = svg.viewBox?.baseVal;
+
+      if (!viewBox?.width || !viewBox.height) {
+        return null;
+      }
+
+      const scale = Math.min(viewBox.width, viewBox.height) / 24;
+      const x = viewBox.x + (viewBox.width - 24 * scale) / 2;
+      const y = viewBox.y + (viewBox.height - 24 * scale) / 2;
+
+      if (
+        Math.abs(scale - 1) < 0.001 &&
+        Math.abs(x) < 0.001 &&
+        Math.abs(y) < 0.001
+      ) {
+        return null;
+      }
+
+      return `translate(${LayoutRoot.svgNumber(x)} ${LayoutRoot.svgNumber(
+        y
+      )}) scale(${LayoutRoot.svgNumber(scale)})`;
+    }
+
+    /**
+     * Formats a small SVG transform number.
+     *
+     * @param {number} value
+     * @returns {string}
+     */
+    static svgNumber(value) {
+      return Number(value.toFixed(4)).toString();
+    }
+
+    /**
+     * Appends copy-symbol paths to an SVG container.
+     *
+     * @param {Document} document
+     * @param {SVGElement} container
+     */
+    static appendWatchActionCopyPaths(document, container) {
+      for (const pathData of [
+        "M8 8.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-8Z",
+        "M5 15.5V6.5a2 2 0 0 1 2-2h8"
+      ]) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", pathData);
+        container.append(path);
+      }
+    }
+
+    /**
+     * Builds a sanitized clone of native action visuals.
+     *
+     * @param {Document} document
+     * @param {WatchAction} action
+     * @returns {DocumentFragment | null}
+     */
+    static watchActionVisualFragment(document, action) {
+      const source = action.visualSource?.isConnected
+        ? action.visualSource
+        : action.trigger;
+      const fragment = document.createDocumentFragment();
+
+      if (!source?.isConnected) {
+        return null;
+      }
+
+      for (const child of source.childNodes) {
+        const clone = LayoutRoot.safeWatchActionVisualClone(
+          document,
+          child,
+          action
+        );
+
+        if (clone && LayoutRoot.hasWatchActionVisualContent(clone)) {
+          fragment.append(clone);
+        }
+      }
+
+      if (!fragment.hasChildNodes()) {
+        const text = DomProbe.compactText(source);
+
+        if (text) {
+          fragment.append(document.createTextNode(text));
+        }
+      }
+
+      return LayoutRoot.hasWatchActionVisualContent(fragment)
+        ? fragment
+        : null;
+    }
+
+    /**
+     * Clones one native visual node while removing interactive behavior.
+     *
+     * @param {Document} document
+     * @param {Node} node
+     * @param {WatchAction} action
+     * @returns {Node | null}
+     */
+    static safeWatchActionVisualClone(document, node, action) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return (node.textContent ?? "").trim()
+          ? document.createTextNode(node.textContent)
+          : null;
+      }
+
+      if (!(node instanceof Element)) {
+        return null;
+      }
+
+      const clone = LayoutRoot.createWatchActionVisualElement(document, node);
+
+      for (const attribute of Array.from(node.attributes)) {
+        if (!LayoutRoot.shouldCopyWatchActionVisualAttribute(attribute)) {
+          continue;
+        }
+
+        clone.setAttribute(attribute.name, attribute.value);
+      }
+
+      if (LayoutRoot.isWatchActionCountSource(node, action)) {
+        clone.dataset.bibililiActionCountClone = "true";
+      }
+
+      if (LayoutRoot.isWatchActionIconSource(node)) {
+        clone.dataset.bibililiActionIconClone = "true";
+      }
+
+      for (const child of node.childNodes) {
+        const childClone = LayoutRoot.safeWatchActionVisualClone(
+          document,
+          child,
+          action
+        );
+
+        if (childClone) {
+          clone.append(childClone);
+        }
+      }
+
+      return clone;
+    }
+
+    /**
+     * Creates a non-interactive element for a native visual clone.
+     *
+     * @param {Document} document
+     * @param {Element} source
+     * @returns {Element}
+     */
+    static createWatchActionVisualElement(document, source) {
+      if (WATCH_ACTION_CLONE_INTERACTIVE_TAGS.has(source.localName)) {
+        return document.createElement("span");
+      }
+
+      if (
+        source.namespaceURI &&
+        source.namespaceURI !== document.documentElement.namespaceURI
+      ) {
+        return document.createElementNS(source.namespaceURI, source.localName);
+      }
+
+      return document.createElement(source.localName);
+    }
+
+    /**
+     * Returns true when a native visual attribute is safe for a clone.
+     *
+     * @param {Attr} attribute
+     * @returns {boolean}
+     */
+    static shouldCopyWatchActionVisualAttribute(attribute) {
+      const name = attribute.name.toLowerCase();
+
+      return (
+        !name.startsWith("on") &&
+        !WATCH_ACTION_CLONE_REMOVED_ATTRIBUTES.has(name) &&
+        name !== "contenteditable" &&
+        name !== "xlink:href"
+      );
+    }
+
+    /**
+     * Returns true when a cloned node can produce visible action content.
+     *
+     * @param {Node} node
+     * @returns {boolean}
+     */
+    static hasWatchActionVisualContent(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return Boolean((node.textContent ?? "").trim());
+      }
+
+      if (node instanceof Element) {
+        return (
+          node.matches("svg, path, use, img, picture, canvas") ||
+          Boolean(node.querySelector("svg, path, use, img, picture, canvas")) ||
+          Boolean(DomProbe.compactText(node))
+        );
+      }
+
+      return Array.from(node.childNodes).some((child) =>
+        LayoutRoot.hasWatchActionVisualContent(child)
+      );
+    }
+
+    /**
+     * Returns true when a native node is the action count visual.
+     *
+     * @param {Element} source
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static isWatchActionCountSource(source, action) {
+      const countText = action.countText;
+
+      if (!countText) {
+        return false;
+      }
+
+      const text = DomProbe.compactText(source);
+
+      if (text !== countText) {
+        return false;
+      }
+
+      return (action.countSelectors ?? []).some((selector) => {
+        try {
+          return source.matches(selector);
+        } catch (_error) {
+          return false;
+        }
+      });
+    }
+
+    /**
+     * Returns true when a native node is the action icon visual.
+     *
+     * @param {Element} source
+     * @returns {boolean}
+     */
+    static isWatchActionIconSource(source) {
+      const className = source.getAttribute("class") ?? "";
+      const text = DomProbe.compactText(source);
+
+      return (
+        source.matches("svg, img, picture, canvas") ||
+        /(?:^|[-_\s])icon(?:[-_\s]|$)/iu.test(className) ||
+        (!text && Boolean(source.querySelector("svg, img, picture, canvas")))
+      );
+    }
+
+    /**
+     * Returns true when the sanitized native visual already contains the count.
+     *
+     * @param {Element} visual
+     * @param {string | null} countText
+     * @returns {boolean}
+     */
+    static watchActionVisualContainsCount(visual, countText) {
+      return Boolean(
+        countText &&
+        DomProbe.compactText(visual).includes(countText)
+      );
     }
 
     /**
@@ -5389,7 +6597,8 @@
         resetSourceRoute,
         this.activationControl,
         language,
-        () => this.reloadComments()
+        () => this.reloadComments(),
+        () => this.scheduleReconcile(false, ReconcilePriority.LAZY)
       );
     }
 
@@ -5409,6 +6618,7 @@
       this.observer.observe(this.document.documentElement, {
         attributes: true,
         attributeFilter: LAZY_MUTATION_ATTRIBUTE_FILTER,
+        characterData: true,
         childList: true,
         subtree: true
       });
@@ -5595,9 +6805,20 @@
    */
 
   /**
+   * @typedef {object} WatchAction
+   * @property {string} kind Closed watch action kind.
+   * @property {Element} trigger Page-owned native action trigger.
+   * @property {Element | null} visualSource Native source for visual cloning.
+   * @property {string[]} countSelectors Native count text probes.
+   * @property {string | null} countText Native count text.
+   * @property {boolean} isActive Native active state.
+   */
+
+  /**
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
+   * @property {WatchAction[]} actions Page-owned watch action controls.
    * @property {Element | null} comments Page-owned comment region.
    * @property {string} commentState Closed comment pane render state.
    * @property {VideoListSource[]} sources Valid video-list sources.
@@ -5608,6 +6829,15 @@
    * @property {string} kind Closed source kind.
    * @property {string[]} selectors Root selector probes.
    * @property {RegExp} pattern Heading text pattern.
+   */
+
+  /**
+   * @typedef {object} WatchActionDefinition
+   * @property {string} kind Closed watch action kind.
+   * @property {string[]} selectors Native action trigger probes.
+   * @property {string[]} countSelectors Native count text probes.
+   * @property {RegExp} labelPattern Native action label pattern.
+   * @property {RegExp} activePattern Native active-state pattern.
    */
 
   /**

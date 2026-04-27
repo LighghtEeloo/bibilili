@@ -328,6 +328,152 @@
   background: var(--bibilili-selected-bg);
 }
 
+.bibilili-action-group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: 4px;
+  padding-left: 4px;
+  border-left: 1px solid var(--bibilili-border);
+}
+
+.bibilili-action-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 72px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--bibilili-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 28px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bibilili-action-button:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
+  background: var(--bibilili-control-bg);
+}
+
+.bibilili-action-button[aria-pressed="true"] {
+  border-color: var(--bibilili-selected-border);
+  color: var(--bibilili-selected-text);
+  background: var(--bibilili-selected-bg);
+}
+
+.bibilili-action-native-visual {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: scale(0.86);
+  transform-origin: center;
+}
+
+.bibilili-action-native-visual,
+.bibilili-action-native-visual * {
+  box-sizing: border-box;
+  max-width: 100%;
+  pointer-events: none !important;
+}
+
+.bibilili-action-native-visual > * {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.bibilili-action-native-visual svg,
+.bibilili-action-native-visual img {
+  display: block;
+  flex: 0 0 auto;
+  width: 22px !important;
+  max-width: 22px;
+  height: 22px !important;
+  max-height: 22px;
+  color: inherit;
+  fill: currentColor;
+}
+
+.bibilili-action-native-visual .bibilili-action-copy-icon {
+  display: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.bibilili-action-native-visual .bibilili-action-copy-mark {
+  display: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.bibilili-action-button[data-watch-action-kind="share"]:hover
+  [data-bibilili-action-native-icon-part="true"],
+.bibilili-action-button[data-watch-action-kind="share"]:hover
+  [data-bibilili-action-fallback-icon-clone="true"] {
+  display: none !important;
+}
+
+.bibilili-action-button[data-watch-action-kind="share"]:hover
+  .bibilili-action-copy-mark {
+  display: inline;
+}
+
+.bibilili-action-button[data-watch-action-kind="share"]:hover
+  .bibilili-action-native-visual
+  .bibilili-action-copy-icon {
+  display: block;
+}
+
+.bibilili-action-native-visual[data-bibilili-fallback="true"] {
+  max-width: 100%;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bibilili-action-count {
+  display: block;
+  flex: 0 1 auto;
+  max-width: 4.5ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bibilili-toggle-button {
   flex: 0 0 auto;
   height: 30px;

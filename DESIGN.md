@@ -32,11 +32,11 @@ into the bottom dock.
 ## DOM Ownership
 
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, list rail, video cards, extension classes, and bookkeeping
-attributes.
+source bar, watch action group, list rail, video cards, extension classes, and
+bookkeeping attributes.
 
-Bilibili owns the player, comments, source roots, links, controls, and
-network-backed content.
+Bilibili owns the player, comments, source roots, links, watch action triggers,
+controls, and network-backed content.
 
 Bibilili may move page-owned player and comment nodes into extension
 containers. It keeps page-owned video-list roots available for observation and
@@ -44,6 +44,10 @@ extraction.
 
 Bibilili reads Bilibili account list APIs and renders the returned records into
 extension-owned cards. It does not modify account lists.
+
+Bibilili mirrors native watch action state with extension-owned buttons. Like,
+coin, and favorite forward clicks to Bilibili's page-owned triggers. Share
+copies the current watch URL.
 
 Bibilili removes only nodes it owns.
 
@@ -254,9 +258,33 @@ The list dock has two enabled states. It is open when a selected source is
 showing its rail. It is controls-only when no discovered source yields valid
 video items or when the selected source route is closed.
 
-In controls-only state, the list dock keeps the activation control and any
-available source buttons visible, and closes the list rail. The stage receives
-the viewport height minus the source bar height.
+In controls-only state, the list dock keeps the activation control, available
+watch action buttons, and available source buttons visible. It closes the list
+rail. The stage receives the viewport height minus the source bar height.
+
+## Watch Action Control
+
+A watch action control is an extension-owned dock control derived from a native
+Bilibili watch action. The initial action kinds are like, coin, favorite, and
+share. The action kind is a closed set with that stable order.
+
+Bibilili discovers native watch action triggers from the page toolbar. It reads
+the displayed count text and active state when Bilibili exposes them. Missing
+native actions are absent from the dock.
+
+The like, coin, and favorite buttons present sanitized clones of native visual
+content and dispatch clicks to their native triggers. Bibilili does not call
+their action APIs directly and does not replace native action dialogs or account
+logic.
+
+The share button presents the native share count and copies the current watch
+URL when activated. It shows the native share visual normally and replaces only
+the cloned share icon with a Bibilili-owned copy icon while hovered. It does
+not proxy Bilibili's native share popover.
+
+Watch action buttons are keyed by action kind. Reconciliation updates them in
+place, replaces cloned visuals from current native markup, and removes buttons
+for absent native triggers.
 
 ## Source Route
 
@@ -280,7 +308,8 @@ one rail.
 The source bar is the control row inside the enabled list dock.
 
 It begins with the activation control, then contains one route button per
-discovered source kind. The initial source buttons represent collection,
+discovered source kind, then contains the watch action group when native watch
+actions are available. The initial source buttons represent collection,
 recommendations, watch later, and history when those sources are available.
 Their labels use the current UI language.
 
@@ -290,12 +319,13 @@ applies only while `aria-expanded` is `true`. A source with no valid video items
 is omitted from the source bar.
 
 The source bar is rendered whenever the enabled list dock is present. With no
-available source, it contains the activation control alone.
+available source, it contains the activation control and any available watch
+action buttons.
 
 Source buttons are keyed by source kind. Reconciliation updates keyed buttons in
-place, orders them after the activation control, and removes buttons for absent
-sources. Stable button identity preserves in-progress pointer and keyboard
-interaction while Bilibili mutates the page.
+place, orders them after the activation control and before the watch action
+group, and removes buttons for absent sources. Stable button identity preserves
+in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 ## List Rail
 

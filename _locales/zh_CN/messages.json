@@ -31,6 +31,44 @@
     "message": "关闭 Bibilili",
     "description": "Accessible name for disabling the transformed layout."
   },
+  "watchActionsLabel": {
+    "message": "观看操作",
+    "description": "Accessible name for the docked group of mirrored Bilibili watch actions."
+  },
+  "watchActionCountLabel": {
+    "message": "$ACTION$：$COUNT$",
+    "description": "Accessible name for a mirrored Bilibili watch action with a visible count.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "点赞"
+      },
+      "count": {
+        "content": "$2",
+        "example": "379"
+      }
+    }
+  },
+  "watchActionLikeLabel": {
+    "message": "点赞",
+    "description": "Accessible label for the mirrored like action."
+  },
+  "watchActionCoinLabel": {
+    "message": "投币",
+    "description": "Accessible label for the mirrored coin action."
+  },
+  "watchActionFavoriteLabel": {
+    "message": "收藏",
+    "description": "Accessible label for the mirrored favorite action."
+  },
+  "watchActionShareLabel": {
+    "message": "分享",
+    "description": "Accessible label for the mirrored share action."
+  },
+  "watchActionCopyLinkLabel": {
+    "message": "复制链接",
+    "description": "Accessible label for the dock share action that copies the current watch URL."
+  },
   "commentRetryMessage": {
     "message": "评论未加载。",
     "description": "Message shown in the comment pane when comments are missing or empty."
