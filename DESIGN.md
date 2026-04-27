@@ -294,6 +294,9 @@ the rail height stable.
 The card links to the item's target URL. Activating it uses normal page
 navigation unless the browser or Bilibili intercepts the link.
 
+When a thumbnail is unavailable, the thumbnail area presents the video title
+and clamps it within the fixed preview height.
+
 A collection card matching the current watch route exposes `aria-current` and
 uses selected border and title colors.
 

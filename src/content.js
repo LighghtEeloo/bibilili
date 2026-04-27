@@ -4313,7 +4313,7 @@
       } else {
         const placeholder = this.document.createElement("span");
         placeholder.className = "bibilili-card-placeholder";
-        placeholder.textContent = item.title.slice(0, 1).toUpperCase();
+        placeholder.textContent = item.title;
         thumb.append(placeholder);
       }
 
