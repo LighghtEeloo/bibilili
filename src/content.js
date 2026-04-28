@@ -6436,11 +6436,6 @@
      */
     resolveSourceRoute(sources, resetSourceRoute) {
       const availableKinds = new Set(sources.map((source) => source.kind));
-      const currentCollection = this.currentCollectionSource(sources);
-
-      if (currentCollection && !this.hasUserInteractedWithSources) {
-        return currentCollection.kind;
-      }
 
       if (
         !resetSourceRoute &&
@@ -6448,6 +6443,12 @@
         availableKinds.has(this.selectedSourceKind)
       ) {
         return this.selectedSourceKind;
+      }
+
+      const currentCollection = this.currentCollectionSource(sources);
+
+      if (currentCollection && !this.hasUserInteractedWithSources) {
+        return currentCollection.kind;
       }
 
       return sources[0]?.kind ?? null;
