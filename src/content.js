@@ -2841,7 +2841,7 @@
     static thumbnailFor(target, card) {
       const image = card.querySelector("img") || target.querySelector("img");
       const imageUrl = image
-        ? SourceAdapter.assetUrl(
+        ? SourceAdapter.secureAssetUrl(
             image.currentSrc ||
               image.getAttribute("src") ||
               image.getAttribute("data-src") ||
@@ -3012,6 +3012,10 @@
     /**
      * Normalizes an image URL and upgrades plain HTTP to HTTPS.
      *
+     * Note: Bilibili image CDNs can expose HTTP thumbnail URLs on HTTPS watch
+     * pages. Extension-owned image nodes use HTTPS to avoid mixed-content
+     * upgrade warnings.
+     *
      * @param {string | null | undefined} value
      * @returns {string | null}
      */
@@ -3049,7 +3053,7 @@
         return null;
       }
 
-      return SourceAdapter.assetUrl(match[1]);
+      return SourceAdapter.secureAssetUrl(match[1]);
     }
   }
 
@@ -3239,7 +3243,7 @@
     static thumbnailFor(entry) {
       const cover = Array.isArray(entry.covers) ? entry.covers[0] : null;
 
-      return SourceAdapter.assetUrl(
+      return SourceAdapter.secureAssetUrl(
         entry.pic ||
           entry.cover ||
           entry.first_frame ||
@@ -6232,12 +6236,14 @@
       const thumb = this.document.createElement("span");
       thumb.className = "bibilili-card-thumb";
 
-      if (item.thumbnailUrl) {
+      const thumbnailUrl = SourceAdapter.secureAssetUrl(item.thumbnailUrl);
+
+      if (thumbnailUrl) {
         const image = this.document.createElement("img");
         image.loading = "lazy";
         image.decoding = "async";
         image.alt = "";
-        image.src = item.thumbnailUrl;
+        image.src = thumbnailUrl;
         thumb.append(image);
       } else {
         const placeholder = this.document.createElement("span");
