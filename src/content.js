@@ -4670,6 +4670,8 @@
       this.renderedSourceKind = null;
       this.actionButtons = new Map();
       this.sourceButtons = new Map();
+      /** @type {WeakMap<HTMLAnchorElement, VideoCardRenderState>} */
+      this.videoCardStates = new WeakMap();
       this.currentActions = [];
       this.currentSources = [];
       this.accountControl = null;
@@ -4681,6 +4683,17 @@
       this.language = DEFAULT_UI_LANGUAGE;
       this.movedNodes = new Map();
       this.markedSourceRoots = new Set();
+      this.pendingRailRenderSourceKind = null;
+      this.videoCardPointerActive = false;
+      this.videoCardPointerId = null;
+      this.videoCardPointerFlushTimer = null;
+      this.hasRailPointerListeners = false;
+      this.handleRailVideoCardPointerDown = (event) => {
+        this.handleRailPointerDown(event);
+      };
+      this.handleDocumentVideoCardPointerEnd = (event) => {
+        this.handleRailPointerEnd(event);
+      };
     }
 
     /**
@@ -4720,6 +4733,8 @@
      */
     destroy() {
       LayoutRoot.clearNativeAccountOverlayLift(this.document);
+      this.removeRailPointerListeners();
+      this.clearVideoCardPointerState();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -4749,6 +4764,7 @@
       this.renderedSourceKind = null;
       this.actionButtons.clear();
       this.sourceButtons.clear();
+      this.videoCardStates = new WeakMap();
       this.currentActions = [];
       this.currentSources = [];
       this.accountControl = null;
@@ -4769,6 +4785,8 @@
      */
     releaseForNativePrime() {
       LayoutRoot.clearNativeAccountOverlayLift(this.document);
+      this.removeRailPointerListeners();
+      this.clearVideoCardPointerState();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -4787,6 +4805,9 @@
       if (this.root?.isConnected) {
         return;
       }
+
+      this.removeRailPointerListeners();
+      this.clearVideoCardPointerState();
 
       const existing = this.document.getElementById(OWNED_ROOT_ID);
       if (existing) {
@@ -4827,6 +4848,7 @@
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
       this.rail.className = "bibilili-list-rail";
+      this.addRailPointerListeners();
 
       this.stage.append(this.playerPane, this.commentPane);
       this.dock.append(this.sourceBar, this.rail);
@@ -5204,7 +5226,9 @@
         );
         this.renderedSourceKind = selectedSource.kind;
       } else {
+        this.clearPendingRailRender();
         this.renderedSourceKind = null;
+        this.videoCardStates = new WeakMap();
         this.rail.replaceChildren();
       }
     }
@@ -6086,34 +6110,216 @@
     }
 
     /**
+     * Installs rail pointer listeners used to protect native link activation.
+     */
+    addRailPointerListeners() {
+      if (!this.rail || this.hasRailPointerListeners) {
+        return;
+      }
+
+      this.rail.addEventListener(
+        "pointerdown",
+        this.handleRailVideoCardPointerDown,
+        true
+      );
+      this.document.addEventListener(
+        "pointerup",
+        this.handleDocumentVideoCardPointerEnd,
+        true
+      );
+      this.document.addEventListener(
+        "pointercancel",
+        this.handleDocumentVideoCardPointerEnd,
+        true
+      );
+      this.hasRailPointerListeners = true;
+    }
+
+    /**
+     * Removes rail pointer listeners before the rail node is discarded.
+     */
+    removeRailPointerListeners() {
+      if (!this.hasRailPointerListeners) {
+        return;
+      }
+
+      this.rail?.removeEventListener(
+        "pointerdown",
+        this.handleRailVideoCardPointerDown,
+        true
+      );
+      this.document.removeEventListener(
+        "pointerup",
+        this.handleDocumentVideoCardPointerEnd,
+        true
+      );
+      this.document.removeEventListener(
+        "pointercancel",
+        this.handleDocumentVideoCardPointerEnd,
+        true
+      );
+      this.hasRailPointerListeners = false;
+    }
+
+    /**
+     * Records a pointer gesture that starts on an extension-owned video card.
+     *
+     * @param {PointerEvent} event
+     */
+    handleRailPointerDown(event) {
+      const card = LayoutRoot.videoCardFromEventTarget(event.target);
+
+      if (!card || !this.rail?.contains(card)) {
+        return;
+      }
+
+      this.videoCardPointerActive = true;
+      this.videoCardPointerId = event.pointerId;
+
+      if (this.videoCardPointerFlushTimer !== null) {
+        window.clearTimeout(this.videoCardPointerFlushTimer);
+        this.videoCardPointerFlushTimer = null;
+      }
+    }
+
+    /**
+     * Releases the current video-card gesture after pointer completion.
+     *
+     * @param {PointerEvent} event
+     */
+    handleRailPointerEnd(event) {
+      if (!this.videoCardPointerActive) {
+        return;
+      }
+
+      if (
+        this.videoCardPointerId !== null &&
+        event.pointerId !== this.videoCardPointerId
+      ) {
+        return;
+      }
+
+      this.videoCardPointerActive = false;
+      this.videoCardPointerId = null;
+      this.schedulePendingRailRenderFlush();
+    }
+
+    /**
+     * Clears pointer and deferred rail-render state.
+     */
+    clearVideoCardPointerState() {
+      this.videoCardPointerActive = false;
+      this.videoCardPointerId = null;
+      this.clearPendingRailRender();
+    }
+
+    /**
+     * Clears any deferred rail render and its scheduled flush.
+     */
+    clearPendingRailRender() {
+      this.pendingRailRenderSourceKind = null;
+
+      if (this.videoCardPointerFlushTimer !== null) {
+        window.clearTimeout(this.videoCardPointerFlushTimer);
+        this.videoCardPointerFlushTimer = null;
+      }
+    }
+
+    /**
+     * Returns true when a same-route rail update should wait for click delivery.
+     *
+     * @param {VideoListSource} source
+     * @param {boolean} resetScroll
+     * @returns {boolean}
+     */
+    shouldDeferRailRender(source, resetScroll) {
+      return (
+        this.videoCardPointerActive &&
+        !resetScroll &&
+        this.renderedSourceKind === source.kind
+      );
+    }
+
+    /**
+     * Stores the latest same-route rail render until the pointer gesture ends.
+     *
+     * @param {VideoListSource} source
+     */
+    deferRailRender(source) {
+      this.pendingRailRenderSourceKind = source.kind;
+    }
+
+    /**
+     * Flushes a pending same-route rail render after native click dispatch.
+     */
+    schedulePendingRailRenderFlush() {
+      if (!this.pendingRailRenderSourceKind) {
+        return;
+      }
+
+      if (this.videoCardPointerFlushTimer !== null) {
+        window.clearTimeout(this.videoCardPointerFlushTimer);
+      }
+
+      this.videoCardPointerFlushTimer = window.setTimeout(() => {
+        this.videoCardPointerFlushTimer = null;
+        this.flushPendingRailRender();
+      }, 0);
+    }
+
+    /**
+     * Applies the latest deferred rail render if the route is still visible.
+     */
+    flushPendingRailRender() {
+      const sourceKind = this.pendingRailRenderSourceKind;
+      this.pendingRailRenderSourceKind = null;
+
+      if (!sourceKind || !this.root?.isConnected || !this.rail || !this.isRailOpen) {
+        return;
+      }
+
+      const source = this.currentSources.find(
+        (candidate) => candidate.kind === sourceKind
+      );
+
+      if (!source || source.kind !== this.selectedSourceKind) {
+        return;
+      }
+
+      this.renderRail(source, false);
+      this.renderedSourceKind = source.kind;
+    }
+
+    /**
      * Renders the selected source group in the horizontal rail.
      *
      * @param {VideoListSource} source
      * @param {boolean} resetScroll
      */
     renderRail(source, resetScroll) {
+      if (this.shouldDeferRailRender(source, resetScroll)) {
+        this.deferRailRender(source);
+        return;
+      }
+
+      this.clearPendingRailRender();
       const preservedScrollLeft = resetScroll ? 0 : this.rail.scrollLeft;
-      this.rail.replaceChildren();
-
-      const group = this.document.createElement("section");
-      group.className = "bibilili-source-group";
-      group.dataset.sourceKind = source.kind;
-
-      const title = this.document.createElement("h2");
-      title.className = "bibilili-source-title";
+      const { title, row } = this.ensureRailSourceGroup(source, resetScroll);
       title.textContent = UiStrings.sourceLabel(source.kind, this.language);
-
-      const row = this.document.createElement("div");
-      row.className = "bibilili-card-row";
 
       const currentRouteKey =
         source.kind === SourceKind.COLLECTION
           ? SourceAdapter.currentWatchRouteKey()
           : null;
+      const existingCards = this.videoCardsByKey(row);
+      const usedKeys = new Set();
+      const keyCounts = new Map();
+      let previous = null;
       let currentCard = null;
 
       for (let index = 0; index < source.items.length; index += 1) {
         const item = source.items[index];
+        const cardKey = this.videoCardRenderKey(item, keyCounts);
         const itemRouteKey = currentRouteKey
           ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
           : null;
@@ -6124,17 +6330,28 @@
           itemRouteKey
         );
         const isCurrent = Boolean(matchReason);
-        const card = this.videoCard(item, isCurrent);
+        let card = existingCards.get(cardKey);
+
+        if (card) {
+          this.updateVideoCard(card, item, isCurrent, cardKey);
+        } else {
+          card = this.videoCard(item, isCurrent, cardKey);
+        }
+        usedKeys.add(cardKey);
 
         if (isCurrent && !currentCard) {
           currentCard = card;
         }
 
-        row.append(card);
+        const reference = previous ? previous.nextSibling : row.firstChild;
+        if (reference !== card) {
+          row.insertBefore(card, reference);
+        }
+
+        previous = card;
       }
 
-      group.append(title, row);
-      this.rail.append(group);
+      this.removeStaleVideoCards(row, usedKeys);
       const didLocateCurrentCard = this.locateCurrentCollectionCard(
         source.kind,
         currentCard,
@@ -6144,6 +6361,120 @@
 
       if (!didLocateCurrentCard && !resetScroll) {
         this.rail.scrollLeft = preservedScrollLeft;
+      }
+    }
+
+    /**
+     * Ensures the selected-source group exists for the current rail route.
+     *
+     * @param {VideoListSource} source
+     * @param {boolean} resetScroll
+     * @returns {{ title: HTMLElement, row: HTMLElement }}
+     */
+    ensureRailSourceGroup(source, resetScroll) {
+      const existingGroup = resetScroll ? null : this.rail.firstElementChild;
+
+      if (
+        existingGroup instanceof HTMLElement &&
+        existingGroup.classList.contains("bibilili-source-group") &&
+        existingGroup.dataset.sourceKind === source.kind
+      ) {
+        const title = existingGroup.querySelector(".bibilili-source-title");
+        const row = existingGroup.querySelector(".bibilili-card-row");
+
+        if (title instanceof HTMLElement && row instanceof HTMLElement) {
+          return { title, row };
+        }
+      }
+
+      this.videoCardStates = new WeakMap();
+
+      const group = this.document.createElement("section");
+      group.className = "bibilili-source-group";
+      group.dataset.sourceKind = source.kind;
+
+      const title = this.document.createElement("h2");
+      title.className = "bibilili-source-title";
+
+      const row = this.document.createElement("div");
+      row.className = "bibilili-card-row";
+
+      group.append(title, row);
+      this.rail.replaceChildren(group);
+
+      return { title, row };
+    }
+
+    /**
+     * Returns reusable video cards currently rendered in one card row.
+     *
+     * @param {HTMLElement} row
+     * @returns {Map<string, HTMLAnchorElement>}
+     */
+    videoCardsByKey(row) {
+      const cards = new Map();
+
+      for (const child of row.children) {
+        if (
+          child instanceof HTMLAnchorElement &&
+          child.classList.contains("bibilili-video-card")
+        ) {
+          const key = child.dataset.bibililiCardKey;
+
+          if (key && !cards.has(key)) {
+            cards.set(key, child);
+          }
+        }
+      }
+
+      return cards;
+    }
+
+    /**
+     * Builds a stable render key for one card in the current source pass.
+     *
+     * @param {VideoItem} item
+     * @param {Map<string, number>} keyCounts
+     * @returns {string}
+     */
+    videoCardRenderKey(item, keyCounts) {
+      const baseKey = LayoutRoot.videoCardBaseRenderKey(item);
+      const count = keyCounts.get(baseKey) ?? 0;
+      keyCounts.set(baseKey, count + 1);
+
+      return count === 0 ? baseKey : `${baseKey}\n${count + 1}`;
+    }
+
+    /**
+     * Builds the base render key from the target watch route when available.
+     *
+     * @param {VideoItem} item
+     * @returns {string}
+     */
+    static videoCardBaseRenderKey(item) {
+      const routeKey = SourceAdapter.watchRouteKeyForUrl(item.targetUrl);
+
+      return routeKey
+        ? `route:${routeKey}`
+        : `item:${item.targetUrl}\n${item.title}`;
+    }
+
+    /**
+     * Removes card nodes that are absent from the latest source render.
+     *
+     * @param {HTMLElement} row
+     * @param {Set<string>} usedKeys
+     */
+    removeStaleVideoCards(row, usedKeys) {
+      for (const child of Array.from(row.children)) {
+        const key =
+          child instanceof HTMLAnchorElement
+            ? child.dataset.bibililiCardKey
+            : null;
+
+        if (!key || !usedKeys.has(key)) {
+          child.remove();
+        }
       }
     }
 
@@ -6220,54 +6551,135 @@
      *
      * @param {VideoItem} item
      * @param {boolean} [isCurrent]
+     * @param {string} [cardKey]
      * @returns {HTMLAnchorElement}
      */
-    videoCard(item, isCurrent = false) {
+    videoCard(item, isCurrent = false, cardKey = "") {
       const card = this.document.createElement("a");
+      this.updateVideoCard(card, item, isCurrent, cardKey);
+      return card;
+    }
+
+    /**
+     * Updates one extension-owned video card without replacing its anchor node.
+     *
+     * @param {HTMLAnchorElement} card
+     * @param {VideoItem} item
+     * @param {boolean} isCurrent
+     * @param {string} cardKey
+     */
+    updateVideoCard(card, item, isCurrent, cardKey) {
+      const state = this.videoCardRenderState(item, isCurrent);
+
       card.className = "bibilili-video-card";
-      card.href = item.targetUrl;
-      card.title = item.title;
+      card.dataset.bibililiCardKey = cardKey;
+      card.href = state.targetUrl;
+      card.title = state.title;
 
       if (isCurrent) {
         card.setAttribute("aria-current", "page");
+      } else {
+        card.removeAttribute("aria-current");
+      }
+
+      const previousState = this.videoCardStates.get(card);
+      if (
+        previousState &&
+        LayoutRoot.sameVideoCardRenderState(previousState, state)
+      ) {
+        return;
       }
 
       const thumb = this.document.createElement("span");
       thumb.className = "bibilili-card-thumb";
 
-      const thumbnailUrl = SourceAdapter.secureAssetUrl(item.thumbnailUrl);
-
-      if (thumbnailUrl) {
+      if (state.thumbnailUrl) {
         const image = this.document.createElement("img");
         image.loading = "lazy";
         image.decoding = "async";
         image.alt = "";
-        image.src = thumbnailUrl;
+        image.src = state.thumbnailUrl;
         thumb.append(image);
       } else {
         const placeholder = this.document.createElement("span");
         placeholder.className = "bibilili-card-placeholder";
-        placeholder.textContent = item.title;
+        placeholder.textContent = state.title;
         thumb.append(placeholder);
       }
 
-      if (item.duration) {
+      if (state.duration) {
         const duration = this.document.createElement("span");
         duration.className = "bibilili-card-duration";
-        duration.textContent = item.duration;
+        duration.textContent = state.duration;
         thumb.append(duration);
       }
 
       const title = this.document.createElement("span");
       title.className = "bibilili-card-title";
-      title.textContent = item.title;
+      title.textContent = state.title;
 
       const meta = this.document.createElement("span");
       meta.className = "bibilili-card-meta";
-      meta.textContent = [item.author, item.viewCount, item.progress].filter(Boolean).join(" · ");
+      meta.textContent = state.metaText;
 
-      card.append(thumb, title, meta);
-      return card;
+      card.replaceChildren(thumb, title, meta);
+      this.videoCardStates.set(card, state);
+    }
+
+    /**
+     * Returns the rendering state used to detect meaningful card updates.
+     *
+     * @param {VideoItem} item
+     * @param {boolean} isCurrent
+     * @returns {VideoCardRenderState}
+     */
+    videoCardRenderState(item, isCurrent) {
+      return {
+        targetUrl: item.targetUrl,
+        title: item.title,
+        thumbnailUrl: SourceAdapter.secureAssetUrl(item.thumbnailUrl) ?? "",
+        duration: item.duration ?? "",
+        metaText: [item.author, item.viewCount, item.progress]
+          .filter(Boolean)
+          .join(" · "),
+        isCurrent
+      };
+    }
+
+    /**
+     * Tests whether a card render state has changed.
+     *
+     * @param {VideoCardRenderState} previousState
+     * @param {VideoCardRenderState} nextState
+     * @returns {boolean}
+     */
+    static sameVideoCardRenderState(previousState, nextState) {
+      return (
+        previousState.targetUrl === nextState.targetUrl &&
+        previousState.title === nextState.title &&
+        previousState.thumbnailUrl === nextState.thumbnailUrl &&
+        previousState.duration === nextState.duration &&
+        previousState.metaText === nextState.metaText &&
+        previousState.isCurrent === nextState.isCurrent
+      );
+    }
+
+    /**
+     * Returns the extension-owned video-card anchor for an event target.
+     *
+     * @param {EventTarget | null} target
+     * @returns {HTMLAnchorElement | null}
+     */
+    static videoCardFromEventTarget(target) {
+      const element =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      const card = element?.closest(".bibilili-video-card");
+
+      return card instanceof HTMLAnchorElement ? card : null;
     }
 
     /**
@@ -6843,6 +7255,16 @@
    * @property {string | null} author Optional author label.
    * @property {string | null} viewCount Optional view count label.
    * @property {string | null} progress Optional watch progress label.
+   */
+
+  /**
+   * @typedef {object} VideoCardRenderState
+   * @property {string} targetUrl Current anchor navigation target.
+   * @property {string} title Current title and fallback thumbnail text.
+   * @property {string} thumbnailUrl Secure thumbnail URL or empty string.
+   * @property {string} duration Compact duration text or empty string.
+   * @property {string} metaText Rendered metadata line.
+   * @property {boolean} isCurrent Current watch-route state.
    */
 
   /**
