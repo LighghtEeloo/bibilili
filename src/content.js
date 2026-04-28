@@ -172,6 +172,35 @@
   const BVID_DATA_ATTRS = ["data-bvid", "data-bv-id", "data-bv", "data-key"];
   const AID_DATA_ATTRS = ["data-aid", "data-avid"];
   const PAGE_DATA_ATTRS = ["data-page", "data-p", "data-part"];
+  const THUMBNAIL_IMAGE_URL_ATTRS = Object.freeze([
+    "data-cover",
+    "data-lazyload-src",
+    "data-src",
+    "data-original",
+    "data-lazy-src",
+    "src"
+  ]);
+  const THUMBNAIL_IMAGE_SRCSET_ATTRS = Object.freeze(["srcset"]);
+  const THUMBNAIL_ATTRIBUTE_SELECTOR = [
+    "img",
+    ...THUMBNAIL_IMAGE_URL_ATTRS.map((attribute) => `[${attribute}]`),
+    ...THUMBNAIL_IMAGE_SRCSET_ATTRS.map((attribute) => `[${attribute}]`)
+  ].join(",");
+  const THUMBNAIL_BACKGROUND_SELECTOR = [
+    "[style*='background']",
+    "[class*='Cover']",
+    "[class*='Image']",
+    "[class*='Pic']",
+    "[class*='Poster']",
+    "[class*='Thumb']",
+    "[class*='cover']",
+    "[class*='image']",
+    "[class*='pic']",
+    "[class*='poster']",
+    "[class*='thumb']"
+  ].join(",");
+  const THUMBNAIL_PLACEHOLDER_NAME_PATTERN =
+    /(?:^|[._-])(?:blank|default(?:[._-]?(?:cover|image|pic))?|empty|gray|grey|lazyload|loading|no[._-]?(?:cover|image|pic)|placeholder|spacer|transparent)(?:[._-]|$)/i;
 
   const LAZY_MUTATION_ATTRIBUTE_FILTER = Object.freeze([
     "class",
@@ -2838,22 +2867,18 @@
      * @returns {string | null}
      */
     static thumbnailFor(target, card) {
-      const image = card.querySelector("img") || target.querySelector("img");
-      const imageUrl = image
-        ? SourceAdapter.secureAssetUrl(
-            image.currentSrc ||
-              image.getAttribute("src") ||
-              image.getAttribute("data-src") ||
-              image.getAttribute("data-original") ||
-              image.getAttribute("data-lazy-src")
-          )
-        : null;
+      const imageUrl =
+        SourceAdapter.thumbnailAttributeUrl(card) ||
+        SourceAdapter.thumbnailAttributeUrl(target);
 
       if (imageUrl) {
         return imageUrl;
       }
 
-      return SourceAdapter.backgroundImageUrl(card);
+      return (
+        SourceAdapter.backgroundImageUrl(card) ||
+        SourceAdapter.backgroundImageUrl(target)
+      );
     }
 
     /**
@@ -3039,20 +3064,161 @@
     }
 
     /**
+     * Returns a secure thumbnail URL only when it is a real content image.
+     *
+     * Note: Bilibili lazy lists can expose loading or static placeholder assets
+     * before mutating a card with the real cover URL.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static usableThumbnailUrl(value) {
+      const assetUrl = SourceAdapter.secureAssetUrl(value);
+
+      if (!assetUrl || SourceAdapter.isPlaceholderThumbnailUrl(assetUrl)) {
+        return null;
+      }
+
+      return assetUrl;
+    }
+
+    /**
+     * Tests whether a normalized thumbnail URL points at a placeholder asset.
+     *
+     * @param {string} assetUrl
+     * @returns {boolean}
+     */
+    static isPlaceholderThumbnailUrl(assetUrl) {
+      try {
+        const url = new URL(assetUrl);
+        const pathname = decodeURIComponent(url.pathname).toLowerCase();
+        const filename = pathname.split("/").pop() ?? "";
+
+        return (
+          !filename ||
+          pathname.includes("/bfs/static/") ||
+          THUMBNAIL_PLACEHOLDER_NAME_PATTERN.test(filename)
+        );
+      } catch (_error) {
+        return true;
+      }
+    }
+
+    /**
+     * Finds a usable thumbnail URL in image and lazy image attributes.
+     *
+     * @param {Element} element
+     * @returns {string | null}
+     */
+    static thumbnailAttributeUrl(element) {
+      const candidates = SourceAdapter.thumbnailAttributeCandidates(element);
+
+      for (const candidate of candidates) {
+        for (const value of SourceAdapter.thumbnailAttributeValues(candidate)) {
+          const thumbnailUrl = SourceAdapter.usableThumbnailUrl(value);
+
+          if (thumbnailUrl) {
+            return thumbnailUrl;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns candidate elements that may hold a native thumbnail URL.
+     *
+     * @param {Element} element
+     * @returns {Element[]}
+     */
+    static thumbnailAttributeCandidates(element) {
+      const candidates = element.matches(THUMBNAIL_ATTRIBUTE_SELECTOR)
+        ? [element]
+        : [];
+
+      candidates.push(...DomProbe.queryAll(element, THUMBNAIL_ATTRIBUTE_SELECTOR));
+
+      return DomProbe.unique(candidates);
+    }
+
+    /**
+     * Returns possible image URLs from one thumbnail candidate.
+     *
+     * @param {Element} element
+     * @returns {string[]}
+     */
+    static thumbnailAttributeValues(element) {
+      const values = [];
+
+      if (element instanceof HTMLImageElement) {
+        values.push(element.currentSrc);
+      }
+
+      for (const attribute of THUMBNAIL_IMAGE_URL_ATTRS) {
+        values.push(element.getAttribute(attribute));
+      }
+
+      for (const attribute of THUMBNAIL_IMAGE_SRCSET_ATTRS) {
+        values.push(
+          ...SourceAdapter.imageUrlsFromSrcset(element.getAttribute(attribute))
+        );
+      }
+
+      return values.filter(Boolean);
+    }
+
+    /**
+     * Extracts URL candidates from a `srcset` attribute.
+     *
+     * @param {string | null} value
+     * @returns {string[]}
+     */
+    static imageUrlsFromSrcset(value) {
+      return (
+        value
+          ?.split(",")
+          .map((candidate) => candidate.trim().split(/\s+/)[0])
+          .filter(Boolean) ?? []
+      );
+    }
+
+    /**
      * Extracts a CSS background image URL when no image node is available.
      *
      * @param {Element} element
      * @returns {string | null}
      */
     static backgroundImageUrl(element) {
-      const background = window.getComputedStyle(element).backgroundImage;
-      const match = background.match(/url\(["']?(.+?)["']?\)/);
+      for (const candidate of SourceAdapter.backgroundImageCandidates(element)) {
+        const background = window.getComputedStyle(candidate).backgroundImage;
+        const match = background.match(/url\(["']?(.+?)["']?\)/);
 
-      if (!match) {
-        return null;
+        if (!match) {
+          continue;
+        }
+
+        const thumbnailUrl = SourceAdapter.usableThumbnailUrl(match[1]);
+
+        if (thumbnailUrl) {
+          return thumbnailUrl;
+        }
       }
 
-      return SourceAdapter.secureAssetUrl(match[1]);
+      return null;
+    }
+
+    /**
+     * Returns elements whose computed background may carry a thumbnail.
+     *
+     * @param {Element} element
+     * @returns {Element[]}
+     */
+    static backgroundImageCandidates(element) {
+      return DomProbe.unique([
+        element,
+        ...DomProbe.queryAll(element, THUMBNAIL_BACKGROUND_SELECTOR)
+      ]);
     }
   }
 
@@ -3241,14 +3407,23 @@
      */
     static thumbnailFor(entry) {
       const cover = Array.isArray(entry.covers) ? entry.covers[0] : null;
+      const candidates = [
+        entry.pic,
+        entry.cover,
+        entry.first_frame,
+        cover,
+        entry.bangumi?.cover
+      ];
 
-      return SourceAdapter.secureAssetUrl(
-        entry.pic ||
-          entry.cover ||
-          entry.first_frame ||
-          cover ||
-          entry.bangumi?.cover
-      );
+      for (const candidate of candidates) {
+        const thumbnailUrl = SourceAdapter.usableThumbnailUrl(candidate);
+
+        if (thumbnailUrl) {
+          return thumbnailUrl;
+        }
+      }
+
+      return null;
     }
 
     /**
@@ -3679,7 +3854,7 @@
      * @returns {VideoItem}
      */
     hydrateItem(item) {
-      if (item.thumbnailUrl) {
+      if (SourceAdapter.usableThumbnailUrl(item.thumbnailUrl)) {
         return item;
       }
 
@@ -3829,7 +4004,7 @@
         return null;
       }
 
-      return SourceAdapter.secureAssetUrl(payload?.data?.pic);
+      return SourceAdapter.usableThumbnailUrl(payload?.data?.pic);
     }
 
     /**
@@ -6459,20 +6634,26 @@
      * @param {VideoCardRenderState} state
      */
     updateVideoCardParts(parts, state) {
+      parts.thumb.dataset.bibililiThumbnailState = state.thumbnailUrl
+        ? "image"
+        : "placeholder";
+      parts.thumb.dataset.bibililiHasDuration = state.duration
+        ? "true"
+        : "false";
+
+      parts.image.removeAttribute("hidden");
+      parts.placeholder.removeAttribute("hidden");
+      parts.duration.removeAttribute("hidden");
+
       if (state.thumbnailUrl) {
         if (parts.image.getAttribute("src") !== state.thumbnailUrl) {
           parts.image.src = state.thumbnailUrl;
         }
-        parts.image.hidden = false;
-        parts.placeholder.hidden = true;
       } else {
-        parts.image.hidden = true;
         parts.image.removeAttribute("src");
-        parts.placeholder.hidden = false;
       }
 
       parts.placeholder.textContent = state.title;
-      parts.duration.hidden = !state.duration;
       parts.duration.textContent = state.duration;
       parts.title.textContent = state.title;
       parts.meta.textContent = state.metaText;
@@ -6489,7 +6670,7 @@
       return {
         targetUrl: item.targetUrl,
         title: item.title,
-        thumbnailUrl: SourceAdapter.secureAssetUrl(item.thumbnailUrl) ?? "",
+        thumbnailUrl: SourceAdapter.usableThumbnailUrl(item.thumbnailUrl) ?? "",
         duration: item.duration ?? "",
         metaText: [item.author, item.viewCount, item.progress]
           .filter(Boolean)

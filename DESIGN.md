@@ -219,8 +219,10 @@ page-owned source does not expose a thumbnail.
 Bibilili may fetch archive metadata from Bilibili's video-info API using a BV
 or AV id derived from the item's target URL. It uses the returned archive cover
 as the thumbnail. Page-owned thumbnails have precedence over fetched covers.
-Preview fetches do not block rendering. Failed, unsupported, private, deleted,
-or unavailable videos keep the title placeholder for the page session.
+Placeholder, loading, and static page assets are not page-owned thumbnails.
+They fall through to fetched covers when an archive id is available. Preview
+fetches do not block rendering. Failed, unsupported, private, deleted, or
+unavailable videos keep the title placeholder for the page session.
 
 ## List Dock
 
@@ -346,8 +348,8 @@ is unavailable, the thumbnail area presents the video title and clamps it within
 the fixed preview height.
 
 During same-route reconciliation, existing card anchors and stable child nodes
-are reused. Advisory list or thumbnail updates change card content in place so
-normal link activation is not interrupted.
+are reused. Advisory list or thumbnail updates change card content and explicit
+thumbnail state in place so normal link activation is not interrupted.
 
 A collection card matching the current watch route exposes `aria-current` and
 uses selected border and title colors. For collection cards, a native

@@ -630,6 +630,12 @@
   white-space: nowrap;
 }
 
+.bibilili-card-thumb[data-bibilili-thumbnail-state="placeholder"] img,
+.bibilili-card-thumb[data-bibilili-thumbnail-state="image"] .bibilili-card-placeholder,
+.bibilili-card-thumb[data-bibilili-has-duration="false"] .bibilili-card-duration {
+  display: none;
+}
+
 .bibilili-card-title,
 .bibilili-card-meta {
   box-sizing: border-box;
