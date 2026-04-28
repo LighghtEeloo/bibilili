@@ -660,6 +660,16 @@
   pointer-events: none !important;
 }
 
+[data-bibilili-account-overlay="true"] {
+  pointer-events: auto !important;
+  overflow: visible !important;
+  z-index: 2147483647 !important;
+}
+
+[data-bibilili-account-overlay-positioned="true"] {
+  position: relative !important;
+}
+
 @media (max-width: 920px) {
   #bibilili-layout-root.bibilili-has-comments .bibilili-stage {
     grid-template-columns: minmax(0, 1fr) clamp(240px, 34vw, 320px);

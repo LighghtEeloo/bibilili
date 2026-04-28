@@ -5,6 +5,8 @@
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
   const LIST_RAIL_ID = "bibilili-list-rail";
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
+  const ACCOUNT_OVERLAY_ATTR = "data-bibilili-account-overlay";
+  const ACCOUNT_OVERLAY_POSITION_ATTR = "data-bibilili-account-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
@@ -358,6 +360,31 @@
     "select",
     "textarea"
   ]);
+
+  /**
+   * Static account-control and comment-composer discovery configuration.
+   *
+   * Note: Bilibili has multiple header and comment generations. These probes
+   * stay scoped to native header roots and comment composer roots so ordinary
+   * commenter avatars remain under page ownership.
+   */
+  const ACCOUNT_CONTROL_SELECTORS = [
+    "#i_cecream .right-entry .header-avatar-wrap",
+    "#i_cecream [class*='BiliHeader'] .header-avatar-wrap",
+    ".bili-header .right-entry .header-avatar-wrap",
+    ".international-header .header-avatar-wrap",
+    ".mini-header .header-avatar-wrap",
+    ".right-entry .header-avatar-wrap"
+  ];
+  const ACCOUNT_POPOVER_SELECTOR = [
+    ".v-popover",
+    ".avatar-panel-popover",
+    "[class*='avatar-panel']",
+    "[class*='AvatarPanel']"
+  ].join(",");
+  const ACCOUNT_POPOVER_SETTLE_DELAY_MS = 80;
+  const COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH = 92;
+  const COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT = 220;
 
   /**
    * Closed source kinds used by discovery, state, rendering, and DOM markers.
@@ -3909,6 +3936,7 @@
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
         actions: this.findActions(),
+        accountControl: this.findAccountControl(),
         comments: hasUsableComments ? comments : null,
         commentState: hasUsableComments
           ? CommentPaneState.LOADED
@@ -4232,6 +4260,34 @@
         .join(" ");
 
       return definition.activePattern.test(stateText);
+    }
+
+    /**
+     * Finds the native account control used by Bilibili's page header.
+     *
+     * @returns {AccountControl | null}
+     */
+    findAccountControl() {
+      for (const candidate of this.accountControlCandidates()) {
+        if (candidate.isConnected && DomProbe.hasBox(candidate)) {
+          return { trigger: candidate };
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns account-control candidates from native header regions.
+     *
+     * @returns {Element[]}
+     */
+    accountControlCandidates() {
+      return DomProbe.unique(
+        ACCOUNT_CONTROL_SELECTORS.flatMap((selector) =>
+          DomProbe.queryAll(this.document, selector)
+        )
+      ).filter((element) => !DomProbe.isOwned(element));
     }
 
     /**
@@ -4656,6 +4712,7 @@
       this.sourceButtons = new Map();
       this.currentActions = [];
       this.currentSources = [];
+      this.accountControl = null;
       this.currentActivationControl = null;
       this.onCommentReload = null;
       this.onWatchActionForward = null;
@@ -4694,6 +4751,7 @@
       this.setPlayerTitle(regions.title);
       this.setComments(regions.comments, regions.commentState);
       this.currentActions = regions.actions;
+      this.accountControl = regions.accountControl;
       this.setSources(regions.sources, resetSourceRoute, activationControl);
     }
 
@@ -4701,6 +4759,7 @@
      * Restores moved nodes and removes extension-owned markup.
      */
     destroy() {
+      LayoutRoot.clearNativeAccountOverlayLift(this.document);
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -4732,6 +4791,7 @@
       this.sourceButtons.clear();
       this.currentActions = [];
       this.currentSources = [];
+      this.accountControl = null;
       this.currentActivationControl = null;
       this.onCommentReload = null;
       this.onWatchActionForward = null;
@@ -4748,6 +4808,7 @@
      * being present while the native document scrolls.
      */
     releaseForNativePrime() {
+      LayoutRoot.clearNativeAccountOverlayLift(this.document);
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -4784,6 +4845,13 @@
 
       this.commentPane = this.document.createElement("aside");
       this.commentPane.className = "bibilili-comment-pane";
+      this.commentPane.addEventListener(
+        "click",
+        (event) => {
+          this.handleCommentPaneClick(event);
+        },
+        true
+      );
 
       this.dock = this.document.createElement("section");
       this.dock.className = "bibilili-list-dock";
@@ -5049,6 +5117,79 @@
      */
     requestCommentReload() {
       this.onCommentReload?.();
+    }
+
+    /**
+     * Forwards current-user avatar clicks in the comment composer to Bilibili's
+     * native account control.
+     *
+     * @param {MouseEvent} event
+     */
+    handleCommentPaneClick(event) {
+      const trigger = this.accountControl?.trigger;
+
+      if (!trigger?.isConnected || !this.isCommentAccountAvatarClick(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      LayoutRoot.activateNativeAccountControl(trigger);
+    }
+
+    /**
+     * Returns true when a click lands in the current-user avatar zone.
+     *
+     * Note: Bilibili's current comment component retargets clicks to the
+     * comment host, hiding inner avatar markup from content scripts. The bridge
+     * is scoped to the top-left composer avatar area.
+     *
+     * @param {Event} event
+     * @returns {boolean}
+     */
+    isCommentAccountAvatarClick(event) {
+      if (!(event instanceof MouseEvent) || !this.commentNode?.isConnected) {
+        return false;
+      }
+
+      const target =
+        event.target instanceof Node
+          ? event.target.nodeType === Node.ELEMENT_NODE
+            ? event.target
+            : event.target.parentElement
+          : null;
+
+      if (
+        target &&
+        target !== this.commentNode &&
+        !this.commentNode.contains(target)
+      ) {
+        return false;
+      }
+
+      const rect = this.commentNode.getBoundingClientRect();
+      const localX = event.clientX - rect.left;
+      const localY = event.clientY - rect.top;
+      const zone = {
+        x: 0,
+        y: 0,
+        width: Math.min(COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH, rect.width),
+        height: Math.min(COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT, rect.height)
+      };
+      const isNearComposer =
+        localX >= 0 &&
+        localY >= 0 &&
+        localX <= rect.width &&
+        localY <= zone.height;
+      const isInAvatarZone =
+        isNearComposer &&
+        localX >= zone.x &&
+        localX <= zone.x + zone.width &&
+        localY >= zone.y &&
+        localY <= zone.y + zone.height;
+
+      return isInAvatarZone;
     }
 
     /**
@@ -5363,6 +5504,120 @@
 
       LayoutRoot.clickNativeTrigger(action.trigger);
       this.onWatchActionForward?.();
+    }
+
+    /**
+     * Activates the native account control from the comment composer avatar.
+     *
+     * @param {Element} trigger
+     */
+    static activateNativeAccountControl(trigger) {
+      LayoutRoot.clickNativeTrigger(
+        LayoutRoot.nativeAccountActivationTarget(trigger)
+      );
+      window.setTimeout(() => {
+        LayoutRoot.liftNativeAccountPopover(trigger);
+      }, ACCOUNT_POPOVER_SETTLE_DELAY_MS);
+    }
+
+    /**
+     * Returns the best click target inside the native account control.
+     *
+     * @param {Element} trigger
+     * @returns {Element}
+     */
+    static nativeAccountActivationTarget(trigger) {
+      const wrap = LayoutRoot.nativeAccountWrap(trigger);
+      return (
+        DomProbe.queryAll(wrap, "a[href], button, [role='button']").find(
+          (element) => !DomProbe.isOwned(element)
+        ) ?? trigger
+      );
+    }
+
+    /**
+     * Lifts Bilibili's native account popover above the transformed viewport.
+     *
+     * @param {Element} trigger
+     */
+    static liftNativeAccountPopover(trigger) {
+      const popover = LayoutRoot.accountPopoverForTrigger(trigger);
+
+      if (popover) {
+        LayoutRoot.markNativeAccountOverlay(popover);
+      }
+    }
+
+    /**
+     * Finds the native account popover paired with the header account trigger.
+     *
+     * @param {Element} trigger
+     * @returns {Element | null}
+     */
+    static accountPopoverForTrigger(trigger) {
+      const wrap = LayoutRoot.nativeAccountWrap(trigger);
+      const directChild =
+        Array.from(wrap.children).find((child) =>
+          child.matches(ACCOUNT_POPOVER_SELECTOR)
+        ) ?? null;
+
+      if (directChild) {
+        return directChild;
+      }
+
+      if (wrap.nextElementSibling?.matches(ACCOUNT_POPOVER_SELECTOR)) {
+        return wrap.nextElementSibling;
+      }
+
+      const document = trigger.ownerDocument;
+      return (
+        document.querySelector(".right-entry .header-avatar-wrap + .v-popover") ||
+        document.querySelector(".right-entry .header-avatar-wrap .v-popover") ||
+        document.querySelector(".right-entry .avatar-panel-popover") ||
+        document.querySelector(".bili-header .header-avatar-wrap + .v-popover") ||
+        document.querySelector(".bili-header .header-avatar-wrap .v-popover") ||
+        document.querySelector(".bili-header .avatar-panel-popover") ||
+        document.querySelector(".header-avatar-wrap + .v-popover") ||
+        document.querySelector(".header-avatar-wrap > .v-popover") ||
+        document.querySelector(".header-avatar-wrap .avatar-panel-popover")
+      );
+    }
+
+    /**
+     * Returns the native account wrapper for a header account trigger.
+     *
+     * @param {Element} trigger
+     * @returns {Element}
+     */
+    static nativeAccountWrap(trigger) {
+      return trigger.closest(".header-avatar-wrap, .v-popover-wrap") ?? trigger;
+    }
+
+    /**
+     * Marks a native overlay so it can paint over the transformed viewport.
+     *
+     * @param {Element} element
+     */
+    static markNativeAccountOverlay(element) {
+      element.setAttribute(ACCOUNT_OVERLAY_ATTR, "true");
+
+      if (window.getComputedStyle(element).position === "static") {
+        element.setAttribute(ACCOUNT_OVERLAY_POSITION_ATTR, "true");
+      } else {
+        element.removeAttribute(ACCOUNT_OVERLAY_POSITION_ATTR);
+      }
+    }
+
+    /**
+     * Removes account-overlay lift markers from page-owned overlay nodes.
+     *
+     * @param {Document} document
+     */
+    static clearNativeAccountOverlayLift(document) {
+      for (const element of DomProbe.queryAll(document, `[${ACCOUNT_OVERLAY_ATTR}]`)) {
+        element.removeAttribute(ACCOUNT_OVERLAY_ATTR);
+        element.removeAttribute(ACCOUNT_OVERLAY_POSITION_ATTR);
+      }
     }
 
     /**
@@ -6815,10 +7070,16 @@
    */
 
   /**
+   * @typedef {object} AccountControl
+   * @property {Element} trigger Page-owned native account trigger.
+   */
+
+  /**
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
    * @property {WatchAction[]} actions Page-owned watch action controls.
+   * @property {AccountControl | null} accountControl Page-owned account control.
    * @property {Element | null} comments Page-owned comment region.
    * @property {string} commentState Closed comment pane render state.
    * @property {VideoListSource[]} sources Valid video-list sources.

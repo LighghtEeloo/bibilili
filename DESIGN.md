@@ -13,8 +13,8 @@ assets. Firefox-specific add-on metadata lives in the shared manifest under
 
 ## Watch Page
 
-The watch page is the Bilibili document for one visible video. Bibilili treats
-it as discovered regions: player, comments, and page video-list sources.
+The watch page is the Bilibili document for one visible video. Bibilili
+discovers its player, comments, account control, and page video-list sources.
 
 The player region contains the video player and immediate playback controls.
 Bibilili moves its surrounding layout context while preserving playback logic.
@@ -36,7 +36,7 @@ source bar, watch action group, list rail, video cards, extension classes, and
 bookkeeping attributes.
 
 Bilibili owns the player, comments, source roots, links, watch action triggers,
-controls, and network-backed content.
+account controls, and network-backed content.
 
 Bibilili may move page-owned player and comment nodes into extension
 containers. It keeps page-owned video-list roots available for observation and
@@ -48,6 +48,10 @@ extension-owned cards. It does not modify account lists.
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
 coin, and favorite forward clicks to Bilibili's page-owned triggers. Share
 copies the current watch URL.
+
+Bibilili forwards current-user comment avatar activation to the page-owned
+account control when that control is available. Account menus, login prompts,
+and account navigation remain under Bilibili ownership.
 
 Bibilili removes only nodes it owns.
 
@@ -164,6 +168,9 @@ not move the player or list dock.
 
 The comment pane contains page-owned comment nodes. Bibilili may wrap the
 comment region, while comment controls remain page-owned markup.
+
+The current-user avatar inside a comment composer is the account-control bridge
+entry point.
 
 The comment retry state is extension-owned chrome shown in the comment pane
 when no usable comment region is available. It keeps the comment column visible
@@ -285,6 +292,31 @@ not proxy Bilibili's native share popover.
 Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
 for absent native triggers.
+
+## Account Control Bridge
+
+The account control bridge maps the current-user avatar in the comment composer
+to Bilibili's native header account control.
+
+Bibilili discovers the page-owned header account trigger during reconciliation.
+When the composer avatar is activated inside the transformed comment pane,
+Bibilili clicks that trigger. Login prompts, account menus, and account
+navigation remain owned by Bilibili.
+
+The bridge is click-activated from the composer avatar.
+
+The bridge target is the native header account control. Native comment-section
+avatars are never account-control targets, even before the comment tree is moved
+into the transformed pane.
+
+Native account overlays may be marked with a Bibilili bookkeeping attribute so
+they paint above the transformed viewport. The attribute changes only stacking
+order and is removed when the transformed layout is released or destroyed.
+Static overlay nodes receive a companion positioning marker so their stacking
+order can take effect without changing Bilibili account behavior.
+
+The bridge is scoped to the current-user avatar zone at the top of the comment
+pane. Comment-row avatars retain their native link and profile behavior.
 
 ## Source Route
 
