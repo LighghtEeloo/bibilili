@@ -221,8 +221,10 @@ or AV id derived from the item's target URL. It uses the returned archive cover
 as the thumbnail. Page-owned thumbnails have precedence over fetched covers.
 Placeholder, loading, and static page assets are not page-owned thumbnails.
 They fall through to fetched covers when an archive id is available. Preview
-fetches do not block rendering. Failed, unsupported, private, deleted, or
-unavailable videos keep the title placeholder for the page session.
+fetches do not block rendering. Collection preview requests start at the
+current watch item and then proceed outward through neighboring items, without
+changing rail order. Failed, unsupported, private, deleted, or unavailable
+videos keep the title placeholder for the page session.
 
 ## List Dock
 

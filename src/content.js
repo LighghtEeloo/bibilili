@@ -3831,6 +3831,8 @@
      * @returns {VideoListSource[]}
      */
     hydrateSources(sources) {
+      this.warmCurrentCollectionPreviews(sources);
+
       return sources.map((source) => {
         let changed = false;
         const items = source.items.map((item) => {
@@ -3848,6 +3850,36 @@
     }
 
     /**
+     * Queues collection previews near the current item before normal hydration.
+     *
+     * @param {VideoListSource[]} sources
+     */
+    warmCurrentCollectionPreviews(sources) {
+      const source = sources.find(
+        (candidate) => candidate.kind === SourceKind.COLLECTION
+      );
+
+      if (!source) {
+        return;
+      }
+
+      const indexes = VideoPreviewStore.hydrationOrderForSource(source);
+
+      if (!indexes.length) {
+        return;
+      }
+
+      for (const index of indexes) {
+        const item = source.items[index];
+        const identity = this.previewIdentityForItem(item);
+
+        if (identity && !this.records.has(identity.key)) {
+          this.enqueue(identity);
+        }
+      }
+    }
+
+    /**
      * Applies a cached fetched thumbnail or queues one archive preview request.
      *
      * @param {VideoItem} item
@@ -3858,7 +3890,7 @@
         return item;
       }
 
-      const identity = SourceAdapter.archiveIdentityForUrl(item.targetUrl);
+      const identity = this.previewIdentityForItem(item);
       if (!identity) {
         return item;
       }
@@ -3876,6 +3908,18 @@
       }
 
       return item;
+    }
+
+    /**
+     * Returns the archive identity needed for one missing preview request.
+     *
+     * @param {VideoItem} item
+     * @returns {ArchiveVideoIdentity | null}
+     */
+    previewIdentityForItem(item) {
+      return SourceAdapter.usableThumbnailUrl(item.thumbnailUrl)
+        ? null
+        : SourceAdapter.archiveIdentityForUrl(item.targetUrl);
     }
 
     /**
@@ -4005,6 +4049,77 @@
       }
 
       return SourceAdapter.usableThumbnailUrl(payload?.data?.pic);
+    }
+
+    /**
+     * Returns item indexes in the order preview requests should be started.
+     *
+     * @param {VideoListSource} source
+     * @returns {number[]}
+     */
+    static hydrationOrderForSource(source) {
+      const indexes = source.items.map((_item, index) => index);
+
+      if (source.kind !== SourceKind.COLLECTION) {
+        return indexes;
+      }
+
+      const currentIndex = VideoPreviewStore.currentCollectionItemIndex(source);
+
+      return currentIndex === -1
+        ? indexes
+        : VideoPreviewStore.indexesAround(currentIndex, source.items.length);
+    }
+
+    /**
+     * Finds the collection item matching the current watch route.
+     *
+     * @param {VideoListSource} source
+     * @returns {number}
+     */
+    static currentCollectionItemIndex(source) {
+      const nativeIndex = source.items.findIndex((item) => item.isCurrent);
+
+      if (nativeIndex !== -1) {
+        return nativeIndex;
+      }
+
+      const currentRouteKey = SourceAdapter.currentWatchRouteKey();
+
+      if (!currentRouteKey) {
+        return -1;
+      }
+
+      return source.items.findIndex(
+        (item) =>
+          SourceAdapter.watchRouteKeyForUrl(item.targetUrl) === currentRouteKey
+      );
+    }
+
+    /**
+     * Returns indexes from the center outward without changing rendered order.
+     *
+     * @param {number} centerIndex
+     * @param {number} length
+     * @returns {number[]}
+     */
+    static indexesAround(centerIndex, length) {
+      const indexes = [centerIndex];
+
+      for (let distance = 1; indexes.length < length; distance += 1) {
+        const previous = centerIndex - distance;
+        const next = centerIndex + distance;
+
+        if (previous >= 0) {
+          indexes.push(previous);
+        }
+
+        if (next < length) {
+          indexes.push(next);
+        }
+      }
+
+      return indexes;
     }
 
     /**
