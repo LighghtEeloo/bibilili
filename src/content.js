@@ -408,7 +408,6 @@
    * Closed comment pane states used by discovery and layout reconciliation.
    */
   const CommentPaneState = Object.freeze({
-    HIDDEN: "hidden",
     LOADED: "loaded",
     RETRY: "retry"
   });
@@ -6645,18 +6644,19 @@
       }
 
       regions.sources = this.videoPreviews.hydrateSources(sources);
-      const commentStateBeforePrime = regions.commentState;
 
       if (
         this.lazyPrimer.prime(this.pageKey, () => {
           this.scheduleReconcile(false, ReconcilePriority.LAZY);
         })
       ) {
+        /*
+         * Note: Bilibili lazy priming needs the comment tree to stay in the
+         * native page briefly, but the transformed frame should keep its
+         * comment column reserved while the usable tree is withheld.
+         */
         regions.comments = null;
-        regions.commentState =
-          commentStateBeforePrime === CommentPaneState.LOADED
-            ? CommentPaneState.HIDDEN
-            : CommentPaneState.RETRY;
+        regions.commentState = CommentPaneState.RETRY;
       }
 
       this.layout.render(

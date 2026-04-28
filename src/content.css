@@ -673,7 +673,8 @@
 }
 
 @media (max-width: 920px) {
-  #bibilili-layout-root.bibilili-has-comments .bibilili-stage {
+  #bibilili-layout-root.bibilili-has-comments .bibilili-stage,
+  #bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
     grid-template-columns: minmax(0, 1fr) clamp(240px, 34vw, 320px);
   }
 
