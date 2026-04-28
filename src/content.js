@@ -16,7 +16,6 @@
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
-  const COLLECTION_CARD_LOG_SAMPLE_SIZE = 12;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
@@ -27,7 +26,6 @@
     2600,
     5000
   ]);
-  const LOG_PREFIX = "[bibilili]";
   const BILIBILI_WEB_ORIGIN = "https://www.bilibili.com";
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
@@ -514,31 +512,6 @@
     URGENT: "urgent",
     LAZY: "lazy"
   });
-
-  /**
-   * Emits concise diagnostics for activation and reconciliation.
-   */
-  class DiagnosticLog {
-    /**
-     * Writes an informational diagnostic.
-     *
-     * @param {string} message
-     * @param {object} [details]
-     */
-    static info(message, details = {}) {
-      console.info(LOG_PREFIX, message, details);
-    }
-
-    /**
-     * Writes a diagnostic for a blocked transformed layout.
-     *
-     * @param {string} message
-     * @param {object} [details]
-     */
-    static warn(message, details = {}) {
-      console.warn(LOG_PREFIX, message, details);
-    }
-  }
 
   /**
    * Coalesces reconciliation requests into urgent and lazy execution lanes.
@@ -1061,12 +1034,8 @@
         .then((catalog) => {
           I18N_CATALOGS.set(normalizedLanguage, catalog);
         })
-        .catch((error) => {
+        .catch(() => {
           I18N_CATALOGS.set(normalizedLanguage, null);
-          DiagnosticLog.info("i18n catalog unavailable", {
-            language: normalizedLanguage,
-            message: error?.message ?? String(error)
-          });
         })
         .finally(() => {
           I18N_LOADS.delete(normalizedLanguage);
@@ -3526,10 +3495,6 @@
           if (sequence === this.sequence) {
             this.sources = [];
           }
-
-          DiagnosticLog.info("account source refresh failed", {
-            message: error?.message ?? String(error)
-          });
         })
         .finally(() => {
           if (sequence !== this.sequence) {
@@ -3601,10 +3566,6 @@
           throw error;
         }
 
-        DiagnosticLog.info("account source unavailable", {
-          kind,
-          message: error?.message ?? String(error)
-        });
         return null;
       }
     }
@@ -3817,10 +3778,6 @@
           }
 
           this.records.set(identity.key, { state: "unavailable" });
-          DiagnosticLog.info("video preview unavailable", {
-            key: identity.key,
-            message: error?.message ?? String(error)
-          });
         })
         .finally(() => {
           if (sequence !== this.sequence) {
@@ -5625,11 +5582,7 @@
      */
     copyCurrentWatchUrl() {
       LayoutRoot.copyTextToClipboard(this.document, window.location.href).catch(
-        (error) => {
-          DiagnosticLog.info("share link copy failed", {
-            message: error?.message ?? String(error)
-          });
-        }
+        () => undefined
       );
     }
 
@@ -6155,10 +6108,6 @@
           ? SourceAdapter.currentWatchRouteKey()
           : null;
       let currentCard = null;
-      let currentCardIndex = -1;
-      let currentCardDetails = null;
-      let currentCardReason = null;
-      const detectionSamples = [];
 
       for (let index = 0; index < source.items.length; index += 1) {
         const item = source.items[index];
@@ -6174,24 +6123,8 @@
         const isCurrent = Boolean(matchReason);
         const card = this.videoCard(item, isCurrent);
 
-        if (
-          source.kind === SourceKind.COLLECTION &&
-          detectionSamples.length < COLLECTION_CARD_LOG_SAMPLE_SIZE
-        ) {
-          detectionSamples.push(
-            LayoutRoot.collectionCardLogItem(index, item, itemRouteKey)
-          );
-        }
-
         if (isCurrent && !currentCard) {
           currentCard = card;
-          currentCardIndex = index;
-          currentCardDetails = LayoutRoot.collectionCardLogItem(
-            index,
-            item,
-            itemRouteKey
-          );
-          currentCardReason = matchReason;
         }
 
         row.append(card);
@@ -6199,15 +6132,6 @@
 
       group.append(title, row);
       this.rail.append(group);
-      this.logCollectionCardDetection(
-        source,
-        currentRouteKey,
-        currentCardIndex,
-        currentCardDetails,
-        currentCardReason,
-        detectionSamples,
-        resetScroll
-      );
       const didLocateCurrentCard = this.locateCurrentCollectionCard(
         source.kind,
         currentCard,
@@ -6218,62 +6142,6 @@
       if (!didLocateCurrentCard && !resetScroll) {
         this.rail.scrollLeft = preservedScrollLeft;
       }
-    }
-
-    /**
-     * Logs collection card matching inputs for debugging Bilibili markup.
-     *
-     * @param {VideoListSource} source
-     * @param {string | null} currentRouteKey
-     * @param {number} currentCardIndex
-     * @param {object | null} currentCardDetails
-     * @param {string | null} currentCardReason
-     * @param {object[]} detectionSamples
-     * @param {boolean} resetScroll
-     */
-    logCollectionCardDetection(
-      source,
-      currentRouteKey,
-      currentCardIndex,
-      currentCardDetails,
-      currentCardReason,
-      detectionSamples,
-      resetScroll
-    ) {
-      if (source.kind !== SourceKind.COLLECTION) {
-        return;
-      }
-
-      DiagnosticLog.info("collection card detection", {
-        currentRouteKey,
-        itemCount: source.items.length,
-        matchedIndex: currentCardIndex,
-        matchedItem: currentCardDetails,
-        matchedReason: currentCardReason,
-        resetScroll,
-        railOpen: this.isRailOpen,
-        selectedSourceKind: this.selectedSourceKind,
-        locatedCollectionRouteKey: this.locatedCollectionRouteKey,
-        sampledItems: detectionSamples
-      });
-    }
-
-    /**
-     * Builds one compact diagnostic record for a collection card candidate.
-     *
-     * @param {number} index
-     * @param {VideoItem} item
-     * @param {string | null} routeKey
-     * @returns {object}
-     */
-    static collectionCardLogItem(index, item, routeKey) {
-      return {
-        index,
-        isCurrent: Boolean(item.isCurrent),
-        routeKey,
-        title: item.title.slice(0, 80),
-        targetUrl: item.targetUrl
-      };
     }
 
     /**
@@ -6321,8 +6189,6 @@
       currentRouteKey,
       resetScroll
     ) {
-      const beforeScrollLeft = this.rail.scrollLeft;
-
       if (
         sourceKind !== SourceKind.COLLECTION ||
         !currentCard ||
@@ -6330,15 +6196,6 @@
       ) {
         if (resetScroll) {
           this.rail.scrollLeft = 0;
-        }
-        if (sourceKind === SourceKind.COLLECTION) {
-          DiagnosticLog.info("collection card scroll skipped", {
-            currentRouteKey,
-            reason: currentCard ? "missing-current-route-key" : "no-current-card",
-            resetScroll,
-            beforeScrollLeft,
-            afterScrollLeft: this.rail.scrollLeft
-          });
         }
         return resetScroll;
       }
@@ -6349,28 +6206,9 @@
       ) {
         currentCard.scrollIntoView({ block: "nearest", inline: "center" });
         this.locatedCollectionRouteKey = currentRouteKey;
-        window.requestAnimationFrame(() => {
-          DiagnosticLog.info("collection card scroll", {
-            currentRouteKey,
-            resetScroll,
-            beforeScrollLeft,
-            afterScrollLeft: this.rail.scrollLeft,
-            cardOffsetLeft: currentCard.offsetLeft,
-            cardWidth: currentCard.offsetWidth,
-            railClientWidth: this.rail.clientWidth,
-            railScrollWidth: this.rail.scrollWidth
-          });
-        });
         return true;
       }
 
-      DiagnosticLog.info("collection card scroll skipped", {
-        currentRouteKey,
-        reason: "already-located",
-        resetScroll,
-        beforeScrollLeft,
-        afterScrollLeft: this.rail.scrollLeft
-      });
       return false;
     }
 
@@ -6464,33 +6302,17 @@
       const collection = sources.find(
         (source) => source.kind === SourceKind.COLLECTION
       );
-      const sourceKinds = sources.map((source) => source.kind);
 
       if (!collection) {
-        DiagnosticLog.info("collection source detection", {
-          sourceKinds,
-          hasCollection: false,
-          currentRouteKey: SourceAdapter.currentWatchRouteKey(),
-          hasUserInteractedWithSources: this.hasUserInteractedWithSources
-        });
         return null;
       }
 
       const currentRouteKey = SourceAdapter.currentWatchRouteKey();
       if (!currentRouteKey) {
-        DiagnosticLog.info("collection source detection", {
-          sourceKinds,
-          hasCollection: true,
-          currentRouteKey,
-          itemCount: collection.items.length,
-          matchedIndex: -1,
-          hasUserInteractedWithSources: this.hasUserInteractedWithSources
-        });
         return null;
       }
 
-      let matchedReason = null;
-      const matchedIndex = collection.items.findIndex((item) => {
+      const hasCurrentItem = collection.items.some((item) => {
         const itemRouteKey = SourceAdapter.watchRouteKeyForUrl(item.targetUrl);
         const matchReason = this.currentCollectionItemMatchReason(
           collection.kind,
@@ -6499,24 +6321,10 @@
           itemRouteKey
         );
 
-        if (matchReason) {
-          matchedReason = matchReason;
-        }
-
         return Boolean(matchReason);
       });
 
-      DiagnosticLog.info("collection source detection", {
-        sourceKinds,
-        hasCollection: true,
-        currentRouteKey,
-        itemCount: collection.items.length,
-        matchedIndex,
-        matchedReason,
-        hasUserInteractedWithSources: this.hasUserInteractedWithSources
-      });
-
-      return matchedIndex >= 0 ? collection : null;
+      return hasCurrentItem ? collection : null;
     }
 
     /**
@@ -6668,7 +6476,6 @@
       this.hashchangeHandler = null;
       this.uiLanguage = LanguageResolver.resolve(document);
       this.pageKey = "";
-      this.lastPlayerWaitDiagnostic = "";
       this.settlingTimers = [];
     }
 
@@ -6826,13 +6633,11 @@
       );
 
       if (!regions.player) {
-        this.logWaitingForPlayer();
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
       }
 
-      this.lastPlayerWaitDiagnostic = "";
       regions.sources = this.videoPreviews.hydrateSources(sources);
       const commentStateBeforePrime = regions.commentState;
 
@@ -6981,25 +6786,6 @@
       }
 
       return this.uiLanguage;
-    }
-
-    /**
-     * Logs a changed missing-player diagnostic without flooding lazy page loads.
-     */
-    logWaitingForPlayer() {
-      const details = {
-        pageKey: this.pageKey,
-        playerCandidates: this.discovery.candidatesForSelectors(PLAYER_SELECTORS, true).length,
-        layoutMounted: Boolean(this.layout.root?.isConnected)
-      };
-      const key = JSON.stringify(details);
-
-      if (key === this.lastPlayerWaitDiagnostic) {
-        return;
-      }
-
-      this.lastPlayerWaitDiagnostic = key;
-      DiagnosticLog.warn("reconcile waiting for player region", details);
     }
 
     /**
