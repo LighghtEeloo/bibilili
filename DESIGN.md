@@ -345,9 +345,9 @@ navigation unless the browser or Bilibili intercepts the link. When a thumbnail
 is unavailable, the thumbnail area presents the video title and clamps it within
 the fixed preview height.
 
-During same-route reconciliation, existing card anchors are reused and updated in
-place. Advisory list or thumbnail updates wait for an active card pointer
-gesture to finish before changing the rail.
+During same-route reconciliation, existing card anchors and stable child nodes
+are reused. Advisory list or thumbnail updates change card content in place so
+normal link activation is not interrupted.
 
 A collection card matching the current watch route exposes `aria-current` and
 uses selected border and title colors. For collection cards, a native
