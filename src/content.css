@@ -591,8 +591,8 @@
 .bibilili-card-delete-button {
   position: absolute;
   z-index: 2;
-  top: 6px;
-  right: 6px;
+  top: 2px;
+  right: 2px;
   display: grid;
   width: 22px;
   height: 22px;
@@ -670,9 +670,9 @@
 
 .bibilili-card-duration {
   position: absolute;
-  right: 6px;
-  bottom: 5px;
-  max-width: calc(100% - 12px);
+  right: 2px;
+  bottom: 2px;
+  max-width: calc(100% - 4px);
   overflow: hidden;
   padding: 0 5px;
   border-radius: 4px;
