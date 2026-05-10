@@ -73,6 +73,10 @@
     "message": "Remove from Watch Later",
     "description": "Accessible label for removing one watch-later card from the list."
   },
+  "commentResizeLabel": {
+    "message": "Resize comments",
+    "description": "Accessible label for the divider that resizes the comment pane."
+  },
   "commentRetryMessage": {
     "message": "Comments did not load.",
     "description": "Message shown in the comment pane when comments are missing or empty."

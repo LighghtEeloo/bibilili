@@ -36,6 +36,8 @@
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
   --bibilili-card-width: 188px;
+  --bibilili-comment-pane-width: clamp(280px, 25vw, 430px);
+  --bibilili-comment-resize-width: 8px;
 
   color: var(--bibilili-text);
   color-scheme: light;
@@ -113,7 +115,13 @@
 
 #bibilili-layout-root.bibilili-has-comments .bibilili-stage,
 #bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 25vw, 430px);
+  grid-template-columns:
+    minmax(0, 1fr)
+    var(--bibilili-comment-resize-width)
+    minmax(
+      240px,
+      min(var(--bibilili-comment-pane-width), 50vw, 640px)
+    );
 }
 
 .bibilili-player-pane,
@@ -203,10 +211,47 @@
 .bibilili-comment-pane {
   display: none;
   overflow: auto;
-  border-left: 1px solid var(--bibilili-border);
   color: var(--bibilili-comment-text);
   background: var(--bibilili-comment-bg);
   overscroll-behavior: contain;
+}
+
+.bibilili-comment-resize-handle {
+  position: relative;
+  display: none;
+  min-width: 0;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--bibilili-comment-bg);
+}
+
+.bibilili-comment-resize-handle::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  content: "";
+  background: var(--bibilili-border);
+  transform: translateX(-50%);
+}
+
+.bibilili-comment-resize-handle:hover::before,
+.bibilili-comment-resize-handle:focus-visible::before {
+  width: 2px;
+  background: var(--bibilili-selected-border);
+}
+
+#bibilili-layout-root.bibilili-has-comments .bibilili-comment-resize-handle,
+#bibilili-layout-root.bibilili-has-comment-retry
+  .bibilili-comment-resize-handle {
+  display: block;
+}
+
+:root.bibilili-is-resizing-comment-pane,
+:root.bibilili-is-resizing-comment-pane * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 #bibilili-layout-root.bibilili-has-comments .bibilili-comment-pane,
@@ -737,12 +782,8 @@
 }
 
 @media (max-width: 920px) {
-  #bibilili-layout-root.bibilili-has-comments .bibilili-stage,
-  #bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
-    grid-template-columns: minmax(0, 1fr) clamp(240px, 34vw, 320px);
-  }
-
   #bibilili-layout-root {
+    --bibilili-comment-pane-width: clamp(240px, 34vw, 320px);
     --bibilili-card-width: 166px;
   }
 }

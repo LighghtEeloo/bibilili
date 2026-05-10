@@ -13,6 +13,7 @@
   const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
     "bibilili:card-navigation-origin";
   const SOURCE_ROUTE_STATE_STORAGE_KEY = "bibilili:source-route-state";
+  const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
@@ -25,6 +26,12 @@
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const IDLE_RECONCILE_TIMEOUT_MS = 900;
   const URGENT_RECONCILE_DELAY_MS = 0;
+  const COMMENT_PANE_WIDTH_PROPERTY = "--bibilili-comment-pane-width";
+  const COMMENT_PANE_MIN_WIDTH = 240;
+  const COMMENT_PANE_MAX_WIDTH = 640;
+  const COMMENT_PANE_MAX_STAGE_RATIO = 0.5;
+  const COMMENT_PANE_KEYBOARD_STEP = 24;
+  const COMMENT_PANE_RESIZING_CLASS = "bibilili-is-resizing-comment-pane";
   const LAZY_SETTLING_RECONCILE_DELAYS_MS = Object.freeze([
     400,
     1200,
@@ -534,6 +541,7 @@
     WATCH_ACTION_SHARE_LABEL: "watchActionShareLabel",
     WATCH_ACTION_COPY_LINK_LABEL: "watchActionCopyLinkLabel",
     WATCH_LATER_REMOVE_LABEL: "watchLaterRemoveLabel",
+    COMMENT_RESIZE_LABEL: "commentResizeLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
     COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
@@ -1788,6 +1796,62 @@
       } catch (_error) {
         return;
       }
+    }
+  }
+
+  /**
+   * Stores the preferred comment pane width across page loads.
+   */
+  class CommentPaneWidthPreference {
+    /**
+     * Returns the saved comment pane width.
+     *
+     * @returns {number | null}
+     */
+    static read() {
+      try {
+        const width = Number(
+          window.localStorage.getItem(COMMENT_PANE_WIDTH_STORAGE_KEY)
+        );
+
+        return CommentPaneWidthPreference.isValidWidth(width) ? width : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Persists the preferred comment pane width.
+     *
+     * @param {number} width
+     */
+    static write(width) {
+      if (!CommentPaneWidthPreference.isValidWidth(width)) {
+        return;
+      }
+
+      try {
+        window.localStorage.setItem(
+          COMMENT_PANE_WIDTH_STORAGE_KEY,
+          String(Math.round(width))
+        );
+      } catch (_error) {
+        return;
+      }
+    }
+
+    /**
+     * Returns true when a stored width is inside the supported range.
+     *
+     * @param {number} width
+     * @returns {boolean}
+     */
+    static isValidWidth(width) {
+      return (
+        Number.isFinite(width) &&
+        width >= COMMENT_PANE_MIN_WIDTH &&
+        width <= COMMENT_PANE_MAX_WIDTH
+      );
     }
   }
 
@@ -5351,6 +5415,9 @@
       this.playerTitleOverlay = null;
       this.playerTitleText = null;
       this.commentPane = null;
+      this.commentResizeHandle = null;
+      /** @type {{ pointerId: number } | null} */
+      this.commentResizeDrag = null;
       this.commentRetryView = null;
       this.commentRetryMessage = null;
       this.commentReloadButton = null;
@@ -5440,6 +5507,7 @@
      */
     destroy() {
       LayoutRoot.clearNativeOverlayLift(this.document);
+      this.endCommentPaneResize();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -5457,6 +5525,8 @@
       this.playerTitleOverlay = null;
       this.playerTitleText = null;
       this.commentPane = null;
+      this.commentResizeHandle = null;
+      this.commentResizeDrag = null;
       this.commentRetryView = null;
       this.commentRetryMessage = null;
       this.commentReloadButton = null;
@@ -5497,6 +5567,7 @@
      */
     releaseForNativePrime() {
       LayoutRoot.clearNativeOverlayLift(this.document);
+      this.endCommentPaneResize();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -5541,6 +5612,38 @@
         true
       );
 
+      this.commentResizeHandle = this.document.createElement("div");
+      this.commentResizeHandle.className = "bibilili-comment-resize-handle";
+      this.commentResizeHandle.tabIndex = 0;
+      this.commentResizeHandle.setAttribute("role", "separator");
+      this.commentResizeHandle.setAttribute("aria-orientation", "vertical");
+      this.commentResizeHandle.setAttribute(
+        "aria-valuemin",
+        String(COMMENT_PANE_MIN_WIDTH)
+      );
+      this.commentResizeHandle.setAttribute(
+        "aria-valuemax",
+        String(COMMENT_PANE_MAX_WIDTH)
+      );
+      this.commentResizeHandle.addEventListener("pointerdown", (event) => {
+        this.startCommentPaneResize(event);
+      });
+      this.commentResizeHandle.addEventListener("pointermove", (event) => {
+        this.dragCommentPaneResize(event);
+      });
+      this.commentResizeHandle.addEventListener("pointerup", (event) => {
+        this.endCommentPaneResize(event);
+      });
+      this.commentResizeHandle.addEventListener("pointercancel", (event) => {
+        this.endCommentPaneResize(event);
+      });
+      this.commentResizeHandle.addEventListener("lostpointercapture", () => {
+        this.endCommentPaneResize();
+      });
+      this.commentResizeHandle.addEventListener("keydown", (event) => {
+        this.handleCommentPaneResizeKeydown(event);
+      });
+
       this.dock = this.document.createElement("section");
       this.dock.className = "bibilili-list-dock";
 
@@ -5556,10 +5659,15 @@
       this.rail.id = LIST_RAIL_ID;
       this.rail.className = "bibilili-list-rail";
 
-      this.stage.append(this.playerPane, this.commentPane);
+      this.stage.append(
+        this.playerPane,
+        this.commentResizeHandle,
+        this.commentPane
+      );
       this.dock.append(this.sourceBar, this.rail);
       this.root.append(this.stage, this.dock);
       this.document.body.prepend(this.root);
+      this.applyStoredCommentPaneWidth();
     }
 
     /**
@@ -5586,6 +5694,7 @@
         "aria-label",
         UiStrings.message(UiMessage.COMMENTS_LABEL, this.language)
       );
+      this.updateCommentPaneResizeLabel();
       this.dock?.setAttribute(
         "aria-label",
         UiStrings.message(UiMessage.VIDEO_LISTS_LABEL, this.language)
@@ -5798,6 +5907,230 @@
       this.commentReloadButton.textContent = label;
       this.commentReloadButton.title = label;
       this.commentReloadButton.setAttribute("aria-label", label);
+    }
+
+    /**
+     * Updates the comment divider accessible label.
+     */
+    updateCommentPaneResizeLabel() {
+      if (!this.commentResizeHandle) {
+        return;
+      }
+
+      const label = UiStrings.message(
+        UiMessage.COMMENT_RESIZE_LABEL,
+        this.language
+      );
+      this.commentResizeHandle.title = label;
+      this.commentResizeHandle.setAttribute("aria-label", label);
+    }
+
+    /**
+     * Applies the persisted comment pane width to the current layout.
+     */
+    applyStoredCommentPaneWidth() {
+      const width = CommentPaneWidthPreference.read();
+
+      if (width !== null) {
+        this.setCommentPaneWidth(width, false);
+      }
+    }
+
+    /**
+     * Starts dragging the divider between the player and comments.
+     *
+     * @param {PointerEvent} event
+     */
+    startCommentPaneResize(event) {
+      if (event.button !== 0 || !this.commentResizeHandle) {
+        return;
+      }
+
+      event.preventDefault();
+      this.commentResizeDrag = { pointerId: event.pointerId };
+      this.document.documentElement.classList.add(COMMENT_PANE_RESIZING_CLASS);
+
+      try {
+        this.commentResizeHandle.setPointerCapture(event.pointerId);
+      } catch (_error) {
+        this.commentResizeDrag = null;
+        this.document.documentElement.classList.remove(
+          COMMENT_PANE_RESIZING_CLASS
+        );
+        return;
+      }
+
+      this.resizeCommentPaneFromClientX(event.clientX, false);
+    }
+
+    /**
+     * Updates the comment pane width during an active divider drag.
+     *
+     * @param {PointerEvent} event
+     */
+    dragCommentPaneResize(event) {
+      if (this.commentResizeDrag?.pointerId !== event.pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      this.resizeCommentPaneFromClientX(event.clientX, false);
+    }
+
+    /**
+     * Completes an active divider drag and persists the width.
+     *
+     * @param {PointerEvent} [event]
+     */
+    endCommentPaneResize(event) {
+      if (
+        event &&
+        this.commentResizeDrag &&
+        this.commentResizeDrag.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+
+      const shouldPersist = Boolean(this.commentResizeDrag);
+      const pointerId = event?.pointerId ?? this.commentResizeDrag?.pointerId;
+      this.commentResizeDrag = null;
+      this.document.documentElement.classList.remove(
+        COMMENT_PANE_RESIZING_CLASS
+      );
+
+      if (
+        pointerId !== undefined &&
+        this.commentResizeHandle?.hasPointerCapture(pointerId)
+      ) {
+        try {
+          this.commentResizeHandle.releasePointerCapture(pointerId);
+        } catch (_error) {
+          // Pointer capture may already be released by the browser.
+        }
+      }
+
+      if (shouldPersist) {
+        this.persistCurrentCommentPaneWidth();
+      }
+    }
+
+    /**
+     * Resizes the comment pane from keyboard interaction with the divider.
+     *
+     * @param {KeyboardEvent} event
+     */
+    handleCommentPaneResizeKeydown(event) {
+      const direction =
+        event.key === "ArrowLeft" ? 1 : event.key === "ArrowRight" ? -1 : 0;
+
+      if (!direction) {
+        return;
+      }
+
+      event.preventDefault();
+      this.setCommentPaneWidth(
+        this.currentCommentPaneWidth() +
+          direction * COMMENT_PANE_KEYBOARD_STEP,
+        true
+      );
+    }
+
+    /**
+     * Resizes the comment pane based on a viewport pointer position.
+     *
+     * @param {number} clientX
+     * @param {boolean} persist
+     */
+    resizeCommentPaneFromClientX(clientX, persist) {
+      if (!this.stage) {
+        return;
+      }
+
+      const stageRect = this.stage.getBoundingClientRect();
+      const handleWidth =
+        this.commentResizeHandle?.getBoundingClientRect().width ?? 0;
+      this.setCommentPaneWidth(
+        stageRect.right - clientX - handleWidth / 2,
+        persist
+      );
+    }
+
+    /**
+     * Applies a comment pane width to the layout root.
+     *
+     * @param {number} width
+     * @param {boolean} persist
+     */
+    setCommentPaneWidth(width, persist) {
+      if (!this.root) {
+        return;
+      }
+
+      const clampedWidth = this.clampCommentPaneWidth(width);
+      this.root.style.setProperty(
+        COMMENT_PANE_WIDTH_PROPERTY,
+        `${clampedWidth}px`
+      );
+      this.commentResizeHandle?.setAttribute(
+        "aria-valuenow",
+        String(clampedWidth)
+      );
+
+      if (persist) {
+        CommentPaneWidthPreference.write(clampedWidth);
+      }
+    }
+
+    /**
+     * Persists the currently rendered comment pane width.
+     */
+    persistCurrentCommentPaneWidth() {
+      const width = this.currentCommentPaneWidth();
+
+      if (width > 0) {
+        CommentPaneWidthPreference.write(this.clampCommentPaneWidth(width));
+      }
+    }
+
+    /**
+     * Returns the current comment pane width.
+     *
+     * @returns {number}
+     */
+    currentCommentPaneWidth() {
+      const width = this.commentPane?.getBoundingClientRect().width ?? 0;
+
+      if (Number.isFinite(width) && width > 0) {
+        return width;
+      }
+
+      return CommentPaneWidthPreference.read() ?? COMMENT_PANE_MIN_WIDTH;
+    }
+
+    /**
+     * Clamps comment pane width to stable viewport bounds.
+     *
+     * @param {number} width
+     * @returns {number}
+     */
+    clampCommentPaneWidth(width) {
+      const stageWidth = this.stage?.getBoundingClientRect().width ?? 0;
+      const stageMax =
+        stageWidth > 0
+          ? Math.floor(stageWidth * COMMENT_PANE_MAX_STAGE_RATIO)
+          : COMMENT_PANE_MAX_WIDTH;
+      const maxWidth = Math.max(
+        COMMENT_PANE_MIN_WIDTH,
+        Math.min(COMMENT_PANE_MAX_WIDTH, stageMax)
+      );
+
+      if (!Number.isFinite(width)) {
+        return COMMENT_PANE_MIN_WIDTH;
+      }
+
+      return Math.round(
+        Math.min(Math.max(width, COMMENT_PANE_MIN_WIDTH), maxWidth)
+      );
     }
 
     /**

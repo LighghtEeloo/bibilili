@@ -73,6 +73,10 @@
     "message": "从稍后再看移除",
     "description": "Accessible label for removing one watch-later card from the list."
   },
+  "commentResizeLabel": {
+    "message": "调整评论宽度",
+    "description": "Accessible label for the divider that resizes the comment pane."
+  },
   "commentRetryMessage": {
     "message": "评论未加载。",
     "description": "Message shown in the comment pane when comments are missing or empty."

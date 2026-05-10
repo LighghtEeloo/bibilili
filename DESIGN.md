@@ -153,6 +153,10 @@ height as the player pane and owns vertical scrolling, so comment scrolling does
 not move the player or list dock. It contains page-owned comment nodes and may
 wrap the comment region; comment controls remain page-owned markup.
 
+The divider between the player pane and comment pane resizes the comment pane.
+The saved width is a Bilibili-page preference. The player pane takes the
+remaining stage width.
+
 The current-user avatar inside a comment composer is the account-control bridge
 entry point.
 
