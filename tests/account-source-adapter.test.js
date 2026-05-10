@@ -1,23 +1,9 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-global.window = globalThis;
-global.location = {
-  href: "https://www.bilibili.com/video/BV1aa411c7mD"
-};
-global.document = {
-  readyState: "loading",
-  addEventListener: () => undefined
-};
-global.__bibililiExposeInternals = true;
+const { loadContentRuntime } = require("./helpers/content-runtime.js");
 
-require("../src/content-route.js");
-require("../src/content-state.js");
-require("../src/content-i18n.js");
-require("../src/content-storage.js");
-require("../src/content.js");
-
-const { AccountSourceAdapter, SourceKind } = global.__bibililiInternals;
+const { AccountSourceAdapter, SourceKind } = loadContentRuntime();
 
 test("extracts account list entries from successful payload shapes", () => {
   assert.deepEqual(

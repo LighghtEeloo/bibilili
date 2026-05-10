@@ -1,74 +1,22 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-global.window = globalThis;
-
-require("../src/content-storage.js");
+const {
+  TEST_SOURCE_KIND: SourceKind,
+  ThrowingStorage,
+  loadStorageState,
+  resetStorageState
+} = require("./helpers/content-runtime.js");
 
 const {
   ActivationPreference,
   CardNavigationOriginStore,
   CommentPaneWidthPreference,
-  SourceRouteStateStore,
-  configure
-} = globalThis.__bibililiStorageState;
-
-const SourceKind = Object.freeze({
-  COLLECTION: "collection",
-  RECOMMENDATIONS: "recommendations",
-  WATCH_LATER: "watch_later",
-  HISTORY: "history"
-});
-
-class FakeStorage {
-  constructor() {
-    this.records = new Map();
-  }
-
-  getItem(key) {
-    return this.records.has(key) ? this.records.get(key) : null;
-  }
-
-  setItem(key, value) {
-    this.records.set(key, String(value));
-  }
-
-  removeItem(key) {
-    this.records.delete(key);
-  }
-}
-
-class ThrowingStorage {
-  getItem() {
-    throw new Error("blocked");
-  }
-
-  setItem() {
-    throw new Error("blocked");
-  }
-
-  removeItem() {
-    throw new Error("blocked");
-  }
-}
-
-function resetStorage() {
-  global.localStorage = new FakeStorage();
-  global.sessionStorage = new FakeStorage();
-  configure({
-    sourceOrder: [
-      SourceKind.COLLECTION,
-      SourceKind.RECOMMENDATIONS,
-      SourceKind.WATCH_LATER,
-      SourceKind.HISTORY
-    ],
-    commentPaneMinWidth: 240,
-    commentPaneMaxWidth: 640
-  });
-}
+  SourceRouteStateStore
+} = loadStorageState();
 
 test("ActivationPreference defaults on and persists off state", () => {
-  resetStorage();
+  resetStorageState();
 
   assert.equal(ActivationPreference.readEnabled(), true);
 
@@ -80,7 +28,7 @@ test("ActivationPreference defaults on and persists off state", () => {
 });
 
 test("CommentPaneWidthPreference stores only supported widths", () => {
-  resetStorage();
+  resetStorageState();
 
   CommentPaneWidthPreference.write(320.6);
   assert.equal(CommentPaneWidthPreference.read(), 321);
@@ -93,7 +41,7 @@ test("CommentPaneWidthPreference stores only supported widths", () => {
 });
 
 test("SourceRouteStateStore persists state for the matching page route", () => {
-  resetStorage();
+  resetStorageState();
 
   SourceRouteStateStore.write("video:BV1:p1", {
     sourceKind: SourceKind.HISTORY,
@@ -108,7 +56,7 @@ test("SourceRouteStateStore persists state for the matching page route", () => {
 });
 
 test("SourceRouteStateStore ignores invalid source state", () => {
-  resetStorage();
+  resetStorageState();
 
   SourceRouteStateStore.write("video:BV1:p1", {
     sourceKind: "unknown",
@@ -119,7 +67,7 @@ test("SourceRouteStateStore ignores invalid source state", () => {
 });
 
 test("CardNavigationOriginStore consumes matching card origins once", () => {
-  resetStorage();
+  resetStorageState();
 
   CardNavigationOriginStore.write(
     SourceKind.RECOMMENDATIONS,
@@ -134,7 +82,7 @@ test("CardNavigationOriginStore consumes matching card origins once", () => {
 });
 
 test("CardNavigationOriginStore clears mismatched and expired origins", () => {
-  resetStorage();
+  resetStorageState();
 
   CardNavigationOriginStore.write(SourceKind.COLLECTION, "video:BV1:p1");
 
@@ -154,7 +102,7 @@ test("CardNavigationOriginStore clears mismatched and expired origins", () => {
 });
 
 test("storage helpers tolerate blocked browser storage", () => {
-  resetStorage();
+  resetStorageState();
   global.localStorage = new ThrowingStorage();
   global.sessionStorage = new ThrowingStorage();
 
