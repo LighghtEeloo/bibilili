@@ -37,6 +37,7 @@
       ],
       "css": ["src/content.css"],
       "js": [
+        "src/content-dom.js",
         "src/content-route.js",
         "src/content-state.js",
         "src/content-i18n.js",

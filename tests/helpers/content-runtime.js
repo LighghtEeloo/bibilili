@@ -61,6 +61,7 @@ function installContentGlobals() {
 function loadContentRuntime() {
   installContentGlobals();
 
+  require("../../src/content-dom.js");
   require("../../src/content-route.js");
   require("../../src/content-state.js");
   require("../../src/content-i18n.js");

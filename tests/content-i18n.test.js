@@ -3,6 +3,7 @@ const test = require("node:test");
 
 global.window = globalThis;
 
+require("../src/content-dom.js");
 require("../src/content-i18n.js");
 
 const { LanguageResolver, UiLanguage, UiStrings } = globalThis.__bibililiI18n;

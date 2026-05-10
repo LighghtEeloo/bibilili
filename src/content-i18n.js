@@ -1,8 +1,7 @@
 (() => {
   "use strict";
 
-  const I18N_OWNED_SURFACE_SELECTOR =
-    "#bibilili-layout-root, #bibilili-toggle-root";
+  const { DomProbe } = window.__bibililiDom;
 
   /**
    * Closed UI languages rendered by extension-owned controls.
@@ -60,64 +59,6 @@
     watchActionLabelMessageNames: Object.freeze({}),
     shareActionKind: ""
   });
-
-  /**
-   * DOM helper used by language fallback probes before the main runtime.
-   */
-  class LanguageDomProbe {
-    /**
-     * Queries all elements matching a selector and returns only Elements.
-     *
-     * @param {ParentNode} root
-     * @param {string} selector
-     * @returns {Element[]}
-     */
-    static queryAll(root, selector) {
-      return Array.from(root.querySelectorAll(selector));
-    }
-
-    /**
-     * Returns true when an element is inside an extension-owned surface.
-     *
-     * @param {Element} element
-     * @returns {boolean}
-     */
-    static isOwned(element) {
-      return Boolean(element.closest(I18N_OWNED_SURFACE_SELECTOR));
-    }
-
-    /**
-     * Produces normalized single-line text for language heuristics.
-     *
-     * @param {Node | null | undefined} node
-     * @returns {string}
-     */
-    static compactText(node) {
-      return (node?.textContent ?? "").replace(/\s+/g, " ").trim();
-    }
-
-    /**
-     * De-duplicates elements while preserving discovery order.
-     *
-     * @param {Element[]} elements
-     * @returns {Element[]}
-     */
-    static unique(elements) {
-      const seen = new Set();
-      const unique = [];
-
-      for (const element of elements) {
-        if (seen.has(element)) {
-          continue;
-        }
-
-        seen.add(element);
-        unique.push(element);
-      }
-
-      return unique;
-    }
-  }
 
   /**
    * Provides localized text from extension i18n message catalogs.
@@ -584,11 +525,11 @@
         "#right-container",
         "aside"
       ];
-      const text = LanguageDomProbe.unique(
-        selectors.flatMap((selector) => LanguageDomProbe.queryAll(document, selector))
+      const text = DomProbe.unique(
+        selectors.flatMap((selector) => DomProbe.queryAll(document, selector))
       )
-        .filter((element) => !LanguageDomProbe.isOwned(element))
-        .map((element) => LanguageDomProbe.compactText(element).slice(0, 600))
+        .filter((element) => !DomProbe.isOwned(element))
+        .map((element) => DomProbe.compactText(element).slice(0, 600))
         .join(" ")
         .slice(0, 5000);
 

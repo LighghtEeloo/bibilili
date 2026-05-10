@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  const { DomProbe } = window.__bibililiDom;
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
   const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
@@ -765,114 +766,6 @@
       activePattern: /$^/u
     }
   ]);
-
-  /**
-   * Utility methods for querying page-owned DOM while avoiding extension-owned
-   * surfaces.
-   */
-  class DomProbe {
-    /**
-     * Returns true when the node is an Element.
-     *
-     * @param {Node | null | undefined} node
-     * @returns {node is Element}
-     */
-    static isElement(node) {
-      return node instanceof Element;
-    }
-
-    /**
-     * Returns true when an element is inside the extension-owned layout root.
-     *
-     * @param {Element | Node | null | undefined} node
-     * @returns {boolean}
-     */
-    static isOwned(node) {
-      const element = DomProbe.isElement(node)
-        ? node
-        : node instanceof Node
-          ? node.parentElement
-          : null;
-
-      if (!element) {
-        return false;
-      }
-
-      return Boolean(element.closest(`#${OWNED_ROOT_ID}, #${FLOATING_TOGGLE_ROOT_ID}`));
-    }
-
-    /**
-     * Queries all elements matching a selector and returns only Elements.
-     *
-     * @param {ParentNode} root
-     * @param {string} selector
-     * @returns {Element[]}
-     */
-    static queryAll(root, selector) {
-      return Array.from(root.querySelectorAll(selector));
-    }
-
-    /**
-     * Produces normalized single-line text for labels and heuristics.
-     *
-     * @param {Node | null | undefined} node
-     * @returns {string}
-     */
-    static compactText(node) {
-      return (node?.textContent ?? "").replace(/\s+/g, " ").trim();
-    }
-
-    /**
-     * Tests whether an element has usable rendered geometry.
-     *
-     * @param {Element} element
-     * @returns {boolean}
-     */
-    static hasBox(element) {
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    }
-
-    /**
-     * De-duplicates elements while preserving discovery order.
-     *
-     * @param {Element[]} elements
-     * @returns {Element[]}
-     */
-    static unique(elements) {
-      const seen = new Set();
-      const unique = [];
-
-      for (const element of elements) {
-        if (seen.has(element)) {
-          continue;
-        }
-
-        seen.add(element);
-        unique.push(element);
-      }
-
-      return unique;
-    }
-
-    /**
-     * Finds the closest candidate matching any selector in the selector list.
-     *
-     * @param {Element} element
-     * @param {string[]} selectors
-     * @returns {Element}
-     */
-    static closestBySelectors(element, selectors) {
-      for (const selector of selectors) {
-        const closest = element.closest(selector);
-        if (closest) {
-          return closest;
-        }
-      }
-
-      return element;
-    }
-  }
 
   /**
    * Utility methods for extension-owned interactive controls.
