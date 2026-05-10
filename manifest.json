@@ -41,6 +41,7 @@
         "src/content-state.js",
         "src/content-i18n.js",
         "src/content-storage.js",
+        "src/content-theme.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

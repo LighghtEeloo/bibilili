@@ -65,6 +65,7 @@ function loadContentRuntime() {
   require("../../src/content-state.js");
   require("../../src/content-i18n.js");
   require("../../src/content-storage.js");
+  require("../../src/content-theme.js");
   require("../../src/content.js");
 
   return global.__bibililiInternals;
