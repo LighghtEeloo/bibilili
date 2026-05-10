@@ -843,6 +843,49 @@
   }
 
   /**
+   * Utility methods for extension-owned interactive controls.
+   */
+  class UiControl {
+    /**
+     * Creates a button with the extension's standard button setup.
+     *
+     * @param {Document} document
+     * @param {string} className
+     * @param {(event: MouseEvent) => void} onClick
+     * @returns {HTMLButtonElement}
+     */
+    static button(document, className, onClick) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.addEventListener("click", onClick);
+      return button;
+    }
+
+    /**
+     * Applies the same label to the hover title and accessible name.
+     *
+     * @param {HTMLElement} element
+     * @param {string} label
+     */
+    static setLabel(element, label) {
+      element.title = label;
+      element.setAttribute("aria-label", label);
+    }
+
+    /**
+     * Applies a visible text label and matching accessible name.
+     *
+     * @param {HTMLButtonElement} button
+     * @param {string} label
+     */
+    static setTextButtonLabel(button, label) {
+      button.textContent = label;
+      UiControl.setLabel(button, label);
+    }
+  }
+
+  /**
    * Owns the global button that enables and disables the transformed layout.
    */
   class ActivationControl {
@@ -950,14 +993,16 @@
         return this.button;
       }
 
-      this.button = this.document.createElement("button");
-      this.button.type = "button";
-      this.button.className = "bibilili-toggle-button";
+      this.button = UiControl.button(
+        this.document,
+        "bibilili-toggle-button",
+        () => {
+          const nextEnabled =
+            this.button.getAttribute("aria-pressed") !== "true";
+          this.onToggle(nextEnabled);
+        }
+      );
       this.button.append(ActivationControl.logoMark(this.document));
-      this.button.addEventListener("click", () => {
-        const nextEnabled = this.button.getAttribute("aria-pressed") !== "true";
-        this.onToggle(nextEnabled);
-      });
 
       return this.button;
     }
@@ -1001,11 +1046,12 @@
      */
     setEnabled(enabled) {
       const button = this.ensureButton();
-      button.title = UiStrings.message(
+      const label = UiStrings.message(
         enabled ? UiMessage.TURN_OFF_LABEL : UiMessage.TURN_ON_LABEL,
         this.language
       );
-      button.setAttribute("aria-label", button.title);
+
+      UiControl.setLabel(button, label);
       button.setAttribute("aria-pressed", String(enabled));
     }
   }
@@ -4533,12 +4579,13 @@
       this.commentRetryMessage.className = "bibilili-comment-retry-message";
       this.commentRetryMessage.setAttribute("aria-live", "polite");
 
-      this.commentReloadButton = this.document.createElement("button");
-      this.commentReloadButton.type = "button";
-      this.commentReloadButton.className = "bibilili-comment-reload-button";
-      this.commentReloadButton.addEventListener("click", () => {
-        this.requestCommentReload();
-      });
+      this.commentReloadButton = UiControl.button(
+        this.document,
+        "bibilili-comment-reload-button",
+        () => {
+          this.requestCommentReload();
+        }
+      );
 
       this.commentRetryView.append(
         this.commentRetryMessage,
@@ -4564,9 +4611,7 @@
       );
 
       this.commentRetryMessage.textContent = message;
-      this.commentReloadButton.textContent = label;
-      this.commentReloadButton.title = label;
-      this.commentReloadButton.setAttribute("aria-label", label);
+      UiControl.setTextButtonLabel(this.commentReloadButton, label);
     }
 
     /**
@@ -4581,8 +4626,7 @@
         UiMessage.COMMENT_RESIZE_LABEL,
         this.language
       );
-      this.commentResizeHandle.title = label;
-      this.commentResizeHandle.setAttribute("aria-label", label);
+      UiControl.setLabel(this.commentResizeHandle, label);
     }
 
     /**
@@ -5072,16 +5116,16 @@
         return existing;
       }
 
-      const button = this.document.createElement("button");
-      button.type = "button";
-      button.className = "bibilili-action-button";
+      const button = UiControl.button(
+        this.document,
+        "bibilili-action-button",
+        () => {
+          this.handleWatchActionButtonClick(kind);
+        }
+      );
       button.dataset.watchActionKind = kind;
       button.append(this.watchActionNativeVisualNode());
-
       button.append(this.watchActionCountNode());
-      button.addEventListener("click", () => {
-        this.handleWatchActionButtonClick(kind);
-      });
       this.actionButtons.set(kind, button);
       return button;
     }
@@ -5128,8 +5172,7 @@
         action
       );
 
-      button.title = label;
-      button.setAttribute("aria-label", label);
+      UiControl.setLabel(button, label);
 
       if (WATCH_ACTION_STATEFUL_KINDS.has(action.kind)) {
         button.setAttribute("aria-pressed", String(action.isActive));
@@ -5952,13 +5995,14 @@
         return existing;
       }
 
-      const button = this.document.createElement("button");
-      button.type = "button";
-      button.className = "bibilili-source-button";
+      const button = UiControl.button(
+        this.document,
+        "bibilili-source-button",
+        () => {
+          this.handleSourceButtonClick(kind);
+        }
+      );
       button.dataset.sourceKind = kind;
-      button.addEventListener("click", () => {
-        this.handleSourceButtonClick(kind);
-      });
       this.sourceButtons.set(kind, button);
       return button;
     }
@@ -6477,15 +6521,16 @@
      * @returns {HTMLButtonElement}
      */
     watchLaterDeleteButton() {
-      const button = this.document.createElement("button");
-      button.type = "button";
-      button.className = "bibilili-card-delete-button";
+      const button = UiControl.button(
+        this.document,
+        "bibilili-card-delete-button",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.handleWatchLaterDeleteClick(button);
+        }
+      );
       button.append(LayoutRoot.watchLaterDeleteIcon(this.document));
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        this.handleWatchLaterDeleteClick(button);
-      });
 
       return button;
     }
@@ -6534,8 +6579,7 @@
       button.disabled = isDeletable
         ? this.pendingWatchLaterDeleteAids.has(aid)
         : true;
-      button.title = state.watchLaterDeleteLabel;
-      button.setAttribute("aria-label", state.watchLaterDeleteLabel);
+      UiControl.setLabel(button, state.watchLaterDeleteLabel);
 
       if (aid) {
         card.dataset.bibililiWatchLaterAid = aid;
