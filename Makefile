@@ -27,6 +27,7 @@ validate-js:
 	node --check src/content-route.js
 	node --check src/content-state.js
 	node --check src/content-i18n.js
+	node --check src/content-storage.js
 	node --check src/content.js
 
 validate-tests:

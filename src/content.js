@@ -6,6 +6,13 @@
   const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
   const { DEFAULT_UI_LANGUAGE, LanguageResolver, UiMessage, UiStrings } =
     window.__bibililiI18n;
+  const {
+    ActivationPreference,
+    CardNavigationOriginStore,
+    CommentPaneWidthPreference,
+    SourceRouteStateStore,
+    configure: configureStorageState
+  } = window.__bibililiStorageState;
 
   const OWNED_ROOT_ID = "bibilili-layout-root";
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
@@ -15,18 +22,12 @@
   const NATIVE_OVERLAY_POSITION_ATTR =
     "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
-  const ENABLED_STORAGE_KEY = "bibilili:enabled";
-  const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
-    "bibilili:card-navigation-origin";
-  const SOURCE_ROUTE_STATE_STORAGE_KEY = "bibilili:source-route-state";
-  const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
   const RECONCILE_DELAY_MS = 160;
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
-  const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
   const MAX_ITEMS_PER_SOURCE = 80;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
@@ -523,6 +524,12 @@
     SourceKind.WATCH_LATER,
     SourceKind.HISTORY
   ]);
+
+  configureStorageState({
+    sourceOrder: SOURCE_ORDER,
+    commentPaneMinWidth: COMMENT_PANE_MIN_WIDTH,
+    commentPaneMaxWidth: COMMENT_PANE_MAX_WIDTH
+  });
 
   const WATCH_ACTION_ORDER = Object.freeze([
     WatchActionKind.LIKE,
@@ -1168,272 +1175,6 @@
       });
 
       return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-    }
-  }
-
-  /**
-   * Stores the global activation preference for Bilibili pages.
-   */
-  class ActivationPreference {
-    /**
-     * Returns true when the transformed layout should start enabled.
-     *
-     * @returns {boolean}
-     */
-    static readEnabled() {
-      try {
-        return window.localStorage.getItem(ENABLED_STORAGE_KEY) !== "off";
-      } catch (_error) {
-        return true;
-      }
-    }
-
-    /**
-     * Persists the transformed layout activation state.
-     *
-     * @param {boolean} enabled
-     */
-    static writeEnabled(enabled) {
-      try {
-        window.localStorage.setItem(ENABLED_STORAGE_KEY, enabled ? "on" : "off");
-      } catch (_error) {
-        return;
-      }
-    }
-  }
-
-  /**
-   * Stores the preferred comment pane width across page loads.
-   */
-  class CommentPaneWidthPreference {
-    /**
-     * Returns the saved comment pane width.
-     *
-     * @returns {number | null}
-     */
-    static read() {
-      try {
-        const width = Number(
-          window.localStorage.getItem(COMMENT_PANE_WIDTH_STORAGE_KEY)
-        );
-
-        return CommentPaneWidthPreference.isValidWidth(width) ? width : null;
-      } catch (_error) {
-        return null;
-      }
-    }
-
-    /**
-     * Persists the preferred comment pane width.
-     *
-     * @param {number} width
-     */
-    static write(width) {
-      if (!CommentPaneWidthPreference.isValidWidth(width)) {
-        return;
-      }
-
-      try {
-        window.localStorage.setItem(
-          COMMENT_PANE_WIDTH_STORAGE_KEY,
-          String(Math.round(width))
-        );
-      } catch (_error) {
-        return;
-      }
-    }
-
-    /**
-     * Returns true when a stored width is inside the supported range.
-     *
-     * @param {number} width
-     * @returns {boolean}
-     */
-    static isValidWidth(width) {
-      return (
-        Number.isFinite(width) &&
-        width >= COMMENT_PANE_MIN_WIDTH &&
-        width <= COMMENT_PANE_MAX_WIDTH
-      );
-    }
-  }
-
-  /**
-   * Stores a tab-scoped video-card navigation origin across document loads.
-   */
-  class CardNavigationOriginStore {
-    /**
-     * Persists one pending origin route for the clicked target route.
-     *
-     * @param {string} sourceKind
-     * @param {string} targetRouteKey
-     */
-    static write(sourceKind, targetRouteKey) {
-      if (
-        !SOURCE_ORDER.includes(sourceKind) ||
-        !targetRouteKey
-      ) {
-        return;
-      }
-
-      try {
-        const record = {
-          sourceKind,
-          targetRouteKey,
-          createdAt: Date.now()
-        };
-        window.sessionStorage.setItem(
-          CARD_NAVIGATION_ORIGIN_STORAGE_KEY,
-          JSON.stringify(record)
-        );
-      } catch (_error) {
-        return;
-      }
-    }
-
-    /**
-     * Returns and clears the pending origin when it matches the current route.
-     *
-     * @param {string | null} currentRouteKey
-     * @returns {string | null}
-     */
-    static take(currentRouteKey) {
-      const record = CardNavigationOriginStore.read();
-      CardNavigationOriginStore.clear();
-
-      if (
-        !record ||
-        !currentRouteKey ||
-        record.targetRouteKey !== currentRouteKey
-      ) {
-        return null;
-      }
-
-      return record.sourceKind;
-    }
-
-    /**
-     * Reads a valid unexpired origin record.
-     *
-     * @returns {CardNavigationOriginRecord | null}
-     */
-    static read() {
-      try {
-        const raw = window.sessionStorage.getItem(
-          CARD_NAVIGATION_ORIGIN_STORAGE_KEY
-        );
-
-        if (!raw) {
-          return null;
-        }
-
-        const record = JSON.parse(raw);
-        const age = Date.now() - Number(record?.createdAt);
-
-        if (
-          !SOURCE_ORDER.includes(record?.sourceKind) ||
-          typeof record?.targetRouteKey !== "string" ||
-          !record.targetRouteKey ||
-          !Number.isFinite(age) ||
-          age < 0 ||
-          age > CARD_NAVIGATION_ORIGIN_TTL_MS
-        ) {
-          return null;
-        }
-
-        return {
-          sourceKind: record.sourceKind,
-          targetRouteKey: record.targetRouteKey,
-          createdAt: Number(record.createdAt)
-        };
-      } catch (_error) {
-        return null;
-      }
-    }
-
-    /**
-     * Clears the pending tab-scoped origin route.
-     */
-    static clear() {
-      try {
-        window.sessionStorage.removeItem(CARD_NAVIGATION_ORIGIN_STORAGE_KEY);
-      } catch (_error) {
-        return;
-      }
-    }
-  }
-
-  /**
-   * Stores the tab-scoped source route for the current watch route.
-   */
-  class SourceRouteStateStore {
-    /**
-     * Persists the selected source route for one watch route.
-     *
-     * @param {string | null} pageRouteKey
-     * @param {SourceRouteState} state
-     */
-    static write(pageRouteKey, state) {
-      if (
-        !pageRouteKey ||
-        !SOURCE_ORDER.includes(state?.sourceKind) ||
-        typeof state?.isRailOpen !== "boolean"
-      ) {
-        return;
-      }
-
-      try {
-        const record = {
-          pageRouteKey,
-          sourceKind: state.sourceKind,
-          isRailOpen: state.isRailOpen
-        };
-        window.sessionStorage.setItem(
-          SOURCE_ROUTE_STATE_STORAGE_KEY,
-          JSON.stringify(record)
-        );
-      } catch (_error) {
-        return;
-      }
-    }
-
-    /**
-     * Reads the source route state for the current watch route.
-     *
-     * @param {string | null} pageRouteKey
-     * @returns {SourceRouteState | null}
-     */
-    static read(pageRouteKey) {
-      if (!pageRouteKey) {
-        return null;
-      }
-
-      try {
-        const raw = window.sessionStorage.getItem(
-          SOURCE_ROUTE_STATE_STORAGE_KEY
-        );
-
-        if (!raw) {
-          return null;
-        }
-
-        const record = JSON.parse(raw);
-
-        if (
-          record?.pageRouteKey !== pageRouteKey ||
-          !SOURCE_ORDER.includes(record?.sourceKind) ||
-          typeof record?.isRailOpen !== "boolean"
-        ) {
-          return null;
-        }
-
-        return {
-          sourceKind: record.sourceKind,
-          isRailOpen: record.isRailOpen
-        };
-      } catch (_error) {
-        return null;
-      }
     }
   }
 
@@ -7778,8 +7519,7 @@
         origin &&
         currentRouteKey &&
         origin.targetRouteKey === currentRouteKey &&
-        SOURCE_ORDER.includes(origin.sourceKind) &&
-        Date.now() - origin.createdAt <= CARD_NAVIGATION_ORIGIN_TTL_MS
+        CardNavigationOriginStore.isFresh(origin)
       ) {
         CardNavigationOriginStore.clear();
         return origin.sourceKind;
@@ -7931,19 +7671,6 @@
   }
 
   /**
-   * @typedef {object} CardNavigationOriginRecord
-   * @property {string} sourceKind Closed source kind to select on arrival.
-   * @property {string} targetRouteKey Watch route key the click opened.
-   * @property {number} createdAt Milliseconds since epoch when recorded.
-   */
-
-  /**
-   * @typedef {object} SourceRouteState
-   * @property {string} sourceKind Closed source kind selected in the rail.
-   * @property {boolean} isRailOpen Whether the selected route is expanded.
-   */
-
-  /**
    * @typedef {object} VideoItem
    * @property {string} targetUrl Required navigation target.
    * @property {string} title Required display title.
@@ -8044,12 +7771,6 @@
    * @property {string} [thumbnailUrl] Fetched archive cover URL.
    */
 
-  /**
-   * @typedef {object} I18nMessageRecord
-   * @property {string} message Localized message text.
-   * @property {Record<string, { content?: string }>} [placeholders]
-   */
-
   /*
    * Node tests set this flag before loading the content script so pure
    * adapters can be exercised while the document stays in loading state.
@@ -8057,10 +7778,8 @@
   if (window.__bibililiExposeInternals) {
     window.__bibililiInternals = Object.freeze({
       AccountSourceAdapter,
-      CardNavigationOriginStore,
       SourceKind,
-      SourceMerger,
-      SourceRouteStateStore
+      SourceMerger
     });
   }
 

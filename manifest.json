@@ -40,6 +40,7 @@
         "src/content-route.js",
         "src/content-state.js",
         "src/content-i18n.js",
+        "src/content-storage.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

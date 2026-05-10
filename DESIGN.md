@@ -16,9 +16,10 @@ route model used by source extraction, source routing, and preview hydration.
 `src/content-state.js` is the state prelude. It defines layout bookkeeping
 helpers for moved page nodes and marked source roots. `src/content-i18n.js` is
 the i18n prelude. It defines message catalog loading, formatting, and UI
-language resolution. `src/content.js` is the main runtime. It owns discovery,
-reconciliation, rendering, account requests, preview hydration, and activation
-state.
+language resolution. `src/content-storage.js` is the storage prelude. It
+defines persisted activation, comment width, navigation-origin, and source-route
+state. `src/content.js` is the main runtime. It owns discovery, reconciliation,
+rendering, account requests, preview hydration, and activation state.
 
 ## Watch Page
 
