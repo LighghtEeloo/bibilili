@@ -8645,6 +8645,17 @@
    * @property {Record<string, { content?: string }>} [placeholders]
    */
 
+  /*
+   * Node tests set this flag before loading the content script so pure
+   * adapters can be exercised while the document stays in loading state.
+   */
+  if (window.__bibililiExposeInternals) {
+    window.__bibililiInternals = Object.freeze({
+      AccountSourceAdapter,
+      SourceKind
+    });
+  }
+
   const previousController = window.__bibililiController;
   if (previousController) {
     previousController.stop();
