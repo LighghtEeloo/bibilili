@@ -4161,18 +4161,10 @@
      * from native page ownership.
      */
     destroy() {
-      LayoutRoot.clearNativeOverlayLift(this.document);
-      this.endCommentPaneResize();
-      this.unmarkSourceRoots();
-      this.restoreNode(this.playerNode);
-      this.restoreNode(this.commentNode);
+      this.releasePageOwnership();
 
       this.playerNode = null;
       this.commentNode = null;
-
-      if (this.root?.isConnected) {
-        this.root.remove();
-      }
 
       this.root = null;
       this.stage = null;
@@ -4223,6 +4215,14 @@
      * and moves current page-owned nodes again.
      */
     releaseForNativePrime() {
+      this.releasePageOwnership();
+      this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+    }
+
+    /**
+     * Restores page-owned nodes and removes extension-owned layout chrome.
+     */
+    releasePageOwnership() {
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
       this.unmarkSourceRoots();
@@ -4232,8 +4232,6 @@
       if (this.root?.isConnected) {
         this.root.remove();
       }
-
-      this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
 
     /**
