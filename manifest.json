@@ -36,7 +36,12 @@
         "https://www.bilibili.com/list/watchlater*"
       ],
       "css": ["src/content.css"],
-      "js": ["src/content-route.js", "src/content-state.js", "src/content.js"],
+      "js": [
+        "src/content-route.js",
+        "src/content-state.js",
+        "src/content-i18n.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

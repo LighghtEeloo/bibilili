@@ -33,6 +33,7 @@ global.sessionStorage = new FakeStorage();
 
 require("../src/content-route.js");
 require("../src/content-state.js");
+require("../src/content-i18n.js");
 require("../src/content.js");
 
 const {

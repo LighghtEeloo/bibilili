@@ -13,6 +13,7 @@ global.__bibililiExposeInternals = true;
 
 require("../src/content-route.js");
 require("../src/content-state.js");
+require("../src/content-i18n.js");
 require("../src/content.js");
 
 const { AccountSourceAdapter, SourceKind } = global.__bibililiInternals;
