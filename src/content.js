@@ -4062,6 +4062,15 @@
      */
     constructor(document) {
       this.document = document;
+      this.movedPageNodes = new MovedPageNodeStore(this.document);
+      this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
+      this.resetLayoutState();
+    }
+
+    /**
+     * Resets extension-owned DOM references and render-session state.
+     */
+    resetLayoutState() {
       this.root = null;
       this.stage = null;
       this.playerPane = null;
@@ -4103,8 +4112,6 @@
       this.hasUserInteractedWithSources = false;
       this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
-      this.movedPageNodes = new MovedPageNodeStore(this.document);
-      this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
     }
 
     /**
@@ -4170,47 +4177,7 @@
      */
     destroy() {
       this.releasePageOwnership();
-
-      this.playerNode = null;
-      this.commentNode = null;
-
-      this.root = null;
-      this.stage = null;
-      this.playerPane = null;
-      this.playerTitleOverlay = null;
-      this.playerTitleText = null;
-      this.commentPane = null;
-      this.commentResizeHandle = null;
-      this.commentResizeDrag = null;
-      this.commentRetryView = null;
-      this.commentRetryMessage = null;
-      this.commentReloadButton = null;
-      this.dock = null;
-      this.sourceBar = null;
-      this.actionGroup = null;
-      this.rail = null;
-      this.selectedSourceKind = null;
-      this.isRailOpen = false;
-      this.renderedSourceKind = null;
-      this.actionButtons.clear();
-      this.sourceButtons.clear();
-      this.videoCardStates = new WeakMap();
-      this.currentActions = [];
-      this.currentSources = [];
-      this.accountControl = null;
-      this.currentActivationControl = null;
-      this.onCommentReload = null;
-      this.onWatchActionForward = null;
-      this.onWatchLaterDelete = null;
-      this.onVideoCardNavigate = null;
-      this.onSourceRouteChange = null;
-      this.pendingWatchLaterDeleteAids.clear();
-      this.pendingSourceRouteHint = null;
-      this.pendingSourceRouteOpenState = null;
-      this.appliedSourceRouteOpenState = null;
-      this.hasUserInteractedWithSources = false;
-      this.locatedCurrentRouteKeys.clear();
-      this.language = DEFAULT_UI_LANGUAGE;
+      this.resetLayoutState();
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
 
