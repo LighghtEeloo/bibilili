@@ -70,6 +70,46 @@
     }
 
     /**
+     * Returns a watch URL suitable for sharing outside the current page.
+     *
+     * @param {string | URL | null | undefined} value
+     * @param {string} [baseHref]
+     * @returns {string | null}
+     */
+    static shareUrlFor(value, baseHref = BilibiliRoute.defaultBaseHref()) {
+      const raw = typeof value === "string" ? value.trim() : value;
+
+      if (!raw || (typeof raw === "string" && /^javascript:/iu.test(raw))) {
+        return null;
+      }
+
+      try {
+        const url = BilibiliRoute.urlFor(raw, baseHref);
+        const identity = BilibiliRoute.playableIdentityForUrl(url, baseHref);
+
+        if (!identity) {
+          return null;
+        }
+
+        const shareUrl = new URL(url.href);
+        shareUrl.search = "";
+        shareUrl.hash = "";
+
+        if (identity.startsWith("video:")) {
+          const page = BilibiliRoute.videoPageForUrl(url);
+
+          if (page > 1) {
+            shareUrl.searchParams.set("p", String(page));
+          }
+        }
+
+        return shareUrl.href;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
      * Normalizes Bilibili BV ids from route or data values.
      *
      * @param {string | null | undefined} value

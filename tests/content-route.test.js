@@ -48,6 +48,30 @@ test("builds canonical archive URLs", () => {
   assert.equal(BilibiliRoute.videoUrl({}), null);
 });
 
+test("builds share URLs without tracking parameters", () => {
+  assert.equal(
+    BilibiliRoute.shareUrlFor(
+      "https://www.bilibili.com/video/BV1fUDQBMEgp/?vd_source=ded62002a59d50bb1f94edb42d31aec0",
+      BASE_HREF
+    ),
+    "https://www.bilibili.com/video/BV1fUDQBMEgp/"
+  );
+  assert.equal(
+    BilibiliRoute.shareUrlFor(
+      "https://www.bilibili.com/video/BV1xx411c7mD/?p=2&spm_id_from=333.788&vd_source=abc#reply",
+      BASE_HREF
+    ),
+    "https://www.bilibili.com/video/BV1xx411c7mD/?p=2"
+  );
+  assert.equal(
+    BilibiliRoute.shareUrlFor(
+      "https://www.bilibili.com/bangumi/play/ep12345?from_spmid=666#comment",
+      BASE_HREF
+    ),
+    "https://www.bilibili.com/bangumi/play/ep12345"
+  );
+});
+
 test("resolves playable identities", () => {
   assert.equal(
     BilibiliRoute.playableIdentityForUrl(

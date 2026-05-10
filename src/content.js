@@ -5650,10 +5650,13 @@
     }
 
     /**
-     * Copies the current watch URL for the dock share action.
+     * Copies the clean current watch URL for the dock share action.
      */
     copyCurrentWatchUrl() {
-      LayoutRoot.copyTextToClipboard(this.document, window.location.href).catch(
+      const shareUrl =
+        BilibiliRoute.shareUrlFor(window.location.href) ?? window.location.href;
+
+      LayoutRoot.copyTextToClipboard(this.document, shareUrl).catch(
         () => undefined
       );
     }

@@ -294,10 +294,12 @@ content and dispatch clicks to their native triggers. Bibilili does not call
 their action APIs directly or replace native action dialogs or account logic.
 The favorite action may open Bilibili's native collection dialog.
 
-The share button presents the native share count and copies the current watch
-URL when activated. It shows the native share visual normally and replaces only
-the cloned share icon with a Bibilili-owned copy icon while hovered. It does
-not proxy Bilibili's native share popover.
+The share button presents the native share count and copies a clean current
+watch URL when activated. The copied URL drops tracking parameters and keeps the
+archive page parameter when it identifies the visible video part. It shows the
+native share visual normally and replaces only the cloned share icon with a
+Bibilili-owned copy icon while hovered. It does not proxy Bilibili's native
+share popover.
 
 Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
