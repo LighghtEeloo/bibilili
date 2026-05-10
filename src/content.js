@@ -10,12 +10,15 @@
     "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
+  const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
+    "bibilili:card-navigation-origin";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
   const RECONCILE_DELAY_MS = 160;
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
+  const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
   const MAX_ITEMS_PER_SOURCE = 80;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
@@ -1781,6 +1784,111 @@
     static writeEnabled(enabled) {
       try {
         window.localStorage.setItem(ENABLED_STORAGE_KEY, enabled ? "on" : "off");
+      } catch (_error) {
+        return;
+      }
+    }
+  }
+
+  /**
+   * Stores a tab-scoped video-card navigation origin across document loads.
+   */
+  class CardNavigationOriginStore {
+    /**
+     * Persists one pending origin route for the clicked target route.
+     *
+     * @param {string} sourceKind
+     * @param {string} targetRouteKey
+     */
+    static write(sourceKind, targetRouteKey) {
+      if (
+        !SOURCE_ORDER.includes(sourceKind) ||
+        !targetRouteKey
+      ) {
+        return;
+      }
+
+      try {
+        const record = {
+          sourceKind,
+          targetRouteKey,
+          createdAt: Date.now()
+        };
+        window.sessionStorage.setItem(
+          CARD_NAVIGATION_ORIGIN_STORAGE_KEY,
+          JSON.stringify(record)
+        );
+      } catch (_error) {
+        return;
+      }
+    }
+
+    /**
+     * Returns and clears the pending origin when it matches the current route.
+     *
+     * @param {string | null} currentRouteKey
+     * @returns {string | null}
+     */
+    static take(currentRouteKey) {
+      const record = CardNavigationOriginStore.read();
+      CardNavigationOriginStore.clear();
+
+      if (
+        !record ||
+        !currentRouteKey ||
+        record.targetRouteKey !== currentRouteKey
+      ) {
+        return null;
+      }
+
+      return record.sourceKind;
+    }
+
+    /**
+     * Reads a valid unexpired origin record.
+     *
+     * @returns {CardNavigationOriginRecord | null}
+     */
+    static read() {
+      try {
+        const raw = window.sessionStorage.getItem(
+          CARD_NAVIGATION_ORIGIN_STORAGE_KEY
+        );
+
+        if (!raw) {
+          return null;
+        }
+
+        const record = JSON.parse(raw);
+        const age = Date.now() - Number(record?.createdAt);
+
+        if (
+          !SOURCE_ORDER.includes(record?.sourceKind) ||
+          typeof record?.targetRouteKey !== "string" ||
+          !record.targetRouteKey ||
+          !Number.isFinite(age) ||
+          age < 0 ||
+          age > CARD_NAVIGATION_ORIGIN_TTL_MS
+        ) {
+          return null;
+        }
+
+        return {
+          sourceKind: record.sourceKind,
+          targetRouteKey: record.targetRouteKey,
+          createdAt: Number(record.createdAt)
+        };
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Clears the pending tab-scoped origin route.
+     */
+    static clear() {
+      try {
+        window.sessionStorage.removeItem(CARD_NAVIGATION_ORIGIN_STORAGE_KEY);
       } catch (_error) {
         return;
       }
@@ -5191,7 +5299,9 @@
       this.onCommentReload = null;
       this.onWatchActionForward = null;
       this.onWatchLaterDelete = null;
+      this.onVideoCardNavigate = null;
       this.pendingWatchLaterDeleteAids = new Set();
+      this.pendingSourceRouteHint = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -5209,6 +5319,8 @@
      * @param {() => void} onCommentReload
      * @param {() => void} onWatchActionForward
      * @param {(aid: string) => Promise<void>} onWatchLaterDelete
+     * @param {(sourceKind: string, targetUrl: string) => void} onVideoCardNavigate
+     * @param {string | null} sourceRouteHint
      */
     render(
       regions,
@@ -5217,7 +5329,9 @@
       language,
       onCommentReload,
       onWatchActionForward,
-      onWatchLaterDelete
+      onWatchLaterDelete,
+      onVideoCardNavigate,
+      sourceRouteHint
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5231,7 +5345,13 @@
       this.currentActions = regions.actions;
       this.accountControl = regions.accountControl;
       this.onWatchLaterDelete = onWatchLaterDelete;
-      this.setSources(regions.sources, resetSourceRoute, activationControl);
+      this.onVideoCardNavigate = onVideoCardNavigate;
+      this.setSources(
+        regions.sources,
+        resetSourceRoute,
+        activationControl,
+        sourceRouteHint
+      );
     }
 
     /**
@@ -5276,7 +5396,9 @@
       this.onCommentReload = null;
       this.onWatchActionForward = null;
       this.onWatchLaterDelete = null;
+      this.onVideoCardNavigate = null;
       this.pendingWatchLaterDeleteAids.clear();
+      this.pendingSourceRouteHint = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -5682,8 +5804,9 @@
      * @param {VideoListSource[]} sources
      * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
+     * @param {string | null} sourceRouteHint
      */
-    setSources(sources, resetSourceRoute, activationControl) {
+    setSources(sources, resetSourceRoute, activationControl, sourceRouteHint) {
       if (!this.root || !this.sourceBar || !this.rail) {
         return;
       }
@@ -5694,6 +5817,9 @@
 
       if (resetSourceRoute) {
         this.hasUserInteractedWithSources = false;
+        this.pendingSourceRouteHint = sourceRouteHint;
+      } else if (sourceRouteHint) {
+        this.pendingSourceRouteHint = sourceRouteHint;
       }
 
       const previousSourceKind = this.selectedSourceKind;
@@ -6752,6 +6878,7 @@
      */
     handleSourceButtonClick(kind) {
       this.hasUserInteractedWithSources = true;
+      this.pendingSourceRouteHint = null;
 
       if (!this.currentActivationControl) {
         return;
@@ -6823,9 +6950,9 @@
         let card = existingCards.get(cardKey);
 
         if (card) {
-          this.updateVideoCard(card, item, isCurrent, cardKey);
+          this.updateVideoCard(card, item, isCurrent, cardKey, source.kind);
         } else {
-          card = this.videoCard(item, isCurrent, cardKey);
+          card = this.videoCard(item, isCurrent, cardKey, source.kind);
         }
         usedKeys.add(cardKey);
 
@@ -7042,11 +7169,12 @@
      * @param {VideoItem} item
      * @param {boolean} [isCurrent]
      * @param {string} [cardKey]
+     * @param {string} [sourceKind]
      * @returns {HTMLElement}
      */
-    videoCard(item, isCurrent = false, cardKey = "") {
+    videoCard(item, isCurrent = false, cardKey = "", sourceKind = "") {
       const card = this.document.createElement("span");
-      this.updateVideoCard(card, item, isCurrent, cardKey);
+      this.updateVideoCard(card, item, isCurrent, cardKey, sourceKind);
       return card;
     }
 
@@ -7057,13 +7185,15 @@
      * @param {VideoItem} item
      * @param {boolean} isCurrent
      * @param {string} cardKey
+     * @param {string} sourceKind
      */
-    updateVideoCard(card, item, isCurrent, cardKey) {
+    updateVideoCard(card, item, isCurrent, cardKey, sourceKind) {
       const state = this.videoCardRenderState(item, isCurrent);
       const parts = this.videoCardParts(card);
 
       card.className = "bibilili-video-card";
       card.dataset.bibililiCardKey = cardKey;
+      card.dataset.bibililiCardSourceKind = sourceKind;
       card.title = state.title;
       parts.link.href = state.targetUrl;
       parts.link.title = state.title;
@@ -7136,6 +7266,13 @@
 
       const link = this.document.createElement("a");
       link.className = "bibilili-card-link";
+      link.addEventListener(
+        "click",
+        (event) => {
+          this.handleVideoCardLinkClick(event);
+        },
+        true
+      );
 
       const thumb = this.document.createElement("span");
       thumb.className = "bibilili-card-thumb";
@@ -7175,6 +7312,43 @@
         meta,
         deleteButton
       };
+    }
+
+    /**
+     * Records normal same-tab card navigation before Bilibili handles the link.
+     *
+     * @param {MouseEvent} event
+     */
+    handleVideoCardLinkClick(event) {
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const link = event.currentTarget;
+      const card =
+        link instanceof HTMLAnchorElement
+          ? link.closest(".bibilili-video-card")
+          : null;
+      const sourceKind =
+        card instanceof HTMLElement
+          ? card.dataset.bibililiCardSourceKind
+          : null;
+
+      if (
+        !sourceKind ||
+        !SOURCE_ORDER.includes(sourceKind) ||
+        !this.onVideoCardNavigate
+      ) {
+        return;
+      }
+
+      this.onVideoCardNavigate(sourceKind, link.href);
     }
 
     /**
@@ -7370,7 +7544,17 @@
      */
     resolveSourceRoute(sources, resetSourceRoute) {
       const availableKinds = new Set(sources.map((source) => source.kind));
+      const hintedSourceKind = this.pendingSourceRouteHint;
 
+      if (hintedSourceKind && availableKinds.has(hintedSourceKind)) {
+        this.pendingSourceRouteHint = null;
+        return hintedSourceKind;
+      }
+
+      /*
+       * Note: account-backed sources may arrive after the first destination
+       * render, so an unavailable hint stays pending for later reconciliation.
+       */
       if (
         !resetSourceRoute &&
         this.selectedSourceKind &&
@@ -7572,6 +7756,9 @@
       this.hashchangeHandler = null;
       this.uiLanguage = LanguageResolver.resolve(document);
       this.pageKey = "";
+      /** @type {CardNavigationOriginRecord | null} */
+      this.pendingVideoCardNavigationOrigin = null;
+      this.nextPageSourceRouteHint = null;
       this.settlingTimers = [];
     }
 
@@ -7580,6 +7767,9 @@
      */
     start() {
       this.pageKey = this.currentPageKey();
+      this.nextPageSourceRouteHint = CardNavigationOriginStore.take(
+        SourceAdapter.currentWatchRouteKey()
+      );
       this.observeMutations();
       this.observeNavigation();
       this.observeThemePreference();
@@ -7623,6 +7813,8 @@
       this.cancelSettlingReconciles();
       this.accountSources.stop();
       this.videoPreviews.stop();
+      this.pendingVideoCardNavigationOrigin = null;
+      this.nextPageSourceRouteHint = null;
       this.layout.destroy();
       this.activationControl.destroy();
     }
@@ -7709,6 +7901,8 @@
     reconcile(resetSourceRoute) {
       if (!this.isWatchPage()) {
         this.videoPreviews.stop();
+        this.pendingVideoCardNavigationOrigin = null;
+        this.nextPageSourceRouteHint = null;
         this.layout.destroy();
         this.activationControl.destroy();
         return;
@@ -7716,6 +7910,8 @@
 
       if (!this.enabled) {
         this.videoPreviews.stop();
+        this.pendingVideoCardNavigationOrigin = null;
+        this.nextPageSourceRouteHint = null;
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -7735,6 +7931,7 @@
       }
 
       regions.sources = this.videoPreviews.hydrateSources(sources);
+      const sourceRouteHint = this.nextPageSourceRouteHint;
 
       if (
         this.lazyPrimer.prime(this.pageKey, () => {
@@ -7757,8 +7954,12 @@
         language,
         () => this.reloadComments(),
         () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
-        (aid) => this.deleteWatchLaterItem(aid)
+        (aid) => this.deleteWatchLaterItem(aid),
+        (sourceKind, targetUrl) =>
+          this.recordVideoCardNavigationSource(sourceKind, targetUrl),
+        sourceRouteHint
       );
+      this.nextPageSourceRouteHint = null;
     }
 
     /**
@@ -7824,11 +8025,66 @@
       this.lazyPrimer.stop(false);
       this.cancelSettlingReconciles();
       this.videoPreviews.stop();
+      this.nextPageSourceRouteHint = this.consumeVideoCardNavigationSource();
       this.pageKey = nextPageKey;
       this.layout.destroy();
       this.refreshAccountSources();
       this.scheduleReconcile(true, ReconcilePriority.URGENT);
       this.scheduleSettlingReconciles();
+    }
+
+    /**
+     * Remembers the source route for a normal video-card navigation attempt.
+     *
+     * @param {string} sourceKind
+     * @param {string} targetUrl
+     */
+    recordVideoCardNavigationSource(sourceKind, targetUrl) {
+      const targetRouteKey = SourceAdapter.watchRouteKeyForUrl(targetUrl);
+
+      if (!SOURCE_ORDER.includes(sourceKind)) {
+        return;
+      }
+
+      if (!targetRouteKey) {
+        return;
+      }
+
+      this.pendingVideoCardNavigationOrigin = {
+        sourceKind,
+        targetRouteKey,
+        createdAt: Date.now()
+      };
+      CardNavigationOriginStore.write(sourceKind, targetRouteKey);
+    }
+
+    /**
+     * Converts the latest card click into a one-navigation source route hint.
+     *
+     * @returns {string | null}
+     */
+    consumeVideoCardNavigationSource() {
+      const currentRouteKey = SourceAdapter.currentWatchRouteKey();
+      const origin = this.pendingVideoCardNavigationOrigin;
+      this.pendingVideoCardNavigationOrigin = null;
+
+      if (
+        origin &&
+        currentRouteKey &&
+        origin.targetRouteKey === currentRouteKey &&
+        SOURCE_ORDER.includes(origin.sourceKind) &&
+        Date.now() - origin.createdAt <= CARD_NAVIGATION_ORIGIN_TTL_MS
+      ) {
+        CardNavigationOriginStore.clear();
+        return origin.sourceKind;
+      }
+
+      if (origin) {
+        CardNavigationOriginStore.clear();
+        return null;
+      }
+
+      return CardNavigationOriginStore.take(currentRouteKey);
     }
 
     /**
@@ -7846,6 +8102,8 @@
         this.cancelSettlingReconciles();
         this.accountSources.stop();
         this.videoPreviews.stop();
+        this.pendingVideoCardNavigationOrigin = null;
+        this.nextPageSourceRouteHint = null;
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -7931,9 +8189,19 @@
      * @returns {string}
      */
     currentPageKey() {
-      return `${window.location.origin}${window.location.pathname}${window.location.search}`;
+      return (
+        SourceAdapter.currentWatchRouteKey() ??
+        `${window.location.origin}${window.location.pathname}${window.location.search}`
+      );
     }
   }
+
+  /**
+   * @typedef {object} CardNavigationOriginRecord
+   * @property {string} sourceKind Closed source kind to select on arrival.
+   * @property {string} targetRouteKey Watch route key the click opened.
+   * @property {number} createdAt Milliseconds since epoch when recorded.
+   */
 
   /**
    * @typedef {object} VideoItem

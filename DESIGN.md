@@ -317,6 +317,14 @@ watch later, history. Reconciliation preserves the current route while its
 source remains available; when the route disappears, the first available source
 becomes selected.
 
+An origin route is a one-navigation source-route hint created by normal
+same-tab activation of an extension-owned video card. The next watch page
+selects that source when it is available. The hint is tab-scoped and keyed to
+the clicked target route, so it can survive document navigation without
+becoming a persistent preference. Account-backed sources may satisfy the hint
+after their fetch completes. Source button interaction clears a pending hint
+for the current page.
+
 Selecting a source route replaces the list rail with that source's video items.
 Selecting the current route closes an open rail without clearing the route, or
 reopens a closed rail. Source routes do not toggle a source off and do not
@@ -354,6 +362,10 @@ bottom presentation.
 
 The rail scrolls horizontally across the selected source's cards. Route changes
 replace the group in place and reopen the rail.
+
+When an origin route selects the destination source, the rail opens with that
+source's cards. The behavior applies to extension-owned bottom-rail card links;
+other card controls keep their own behavior.
 
 When the selected source is a collection, the rail identifies the card whose
 watch route matches the current page. It scrolls to that card once for the
@@ -393,6 +405,10 @@ detection. It observes same-tab navigation, lazy region insertion, list
 updates, account source completion, and page theme marker changes. When the
 watched video changes, it starts a new page session and rebuilds discovered
 regions.
+
+The page session key is the stable watch route when the URL identifies a
+playable video. Tracking query changes on the same video do not start a new
+page session.
 
 Reconciliation is the controller's idempotent update pass over the current watch
 page. Requests carry a priority and a source-reset flag. The reset flag clears
