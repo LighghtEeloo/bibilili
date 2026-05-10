@@ -1099,11 +1099,6 @@
         return I18N_LOADS.get(normalizedLanguage);
       }
 
-      if (typeof fetch !== "function") {
-        I18N_CATALOGS.set(normalizedLanguage, null);
-        return Promise.resolve();
-      }
-
       const load = fetch(UiStrings.catalogUrl(normalizedLanguage))
         .then((response) => {
           if (!response.ok) {
@@ -3348,17 +3343,13 @@
         return null;
       }
 
-      try {
-        const url = new URL(assetUrl);
+      const url = new URL(assetUrl);
 
-        if (url.protocol === "http:") {
-          url.protocol = "https:";
-        }
-
-        return url.href;
-      } catch (_error) {
-        return null;
+      if (url.protocol === "http:") {
+        url.protocol = "https:";
       }
+
+      return url.href;
     }
 
     /**
@@ -3387,19 +3378,15 @@
      * @returns {boolean}
      */
     static isPlaceholderThumbnailUrl(assetUrl) {
-      try {
-        const url = new URL(assetUrl);
-        const pathname = decodeURIComponent(url.pathname).toLowerCase();
-        const filename = pathname.split("/").pop() ?? "";
+      const url = new URL(assetUrl);
+      const pathname = url.pathname.toLowerCase();
+      const filename = pathname.split("/").pop() ?? "";
 
-        return (
-          !filename ||
-          pathname.includes("/bfs/static/") ||
-          THUMBNAIL_PLACEHOLDER_NAME_PATTERN.test(filename)
-        );
-      } catch (_error) {
-        return true;
-      }
+      return (
+        !filename ||
+        pathname.includes("/bfs/static/") ||
+        THUMBNAIL_PLACEHOLDER_NAME_PATTERN.test(filename)
+      );
     }
 
     /**
@@ -4004,10 +3991,6 @@
      * @param {boolean} [force]
      */
     refresh(language, force = false) {
-      if (typeof fetch !== "function") {
-        return;
-      }
-
       const normalizedLanguage = UiStrings.normalizeLanguage(language);
 
       if (this.loading) {
@@ -4027,14 +4010,13 @@
       }
 
       const sequence = this.sequence + 1;
-      const controller =
-        typeof AbortController === "function" ? new AbortController() : null;
+      const controller = new AbortController();
       this.sequence = sequence;
       this.loading = true;
       this.abortController = controller;
       this.loadingLanguage = normalizedLanguage;
 
-      AccountSourceStore.fetchSources(controller?.signal, normalizedLanguage)
+      AccountSourceStore.fetchSources(controller.signal, normalizedLanguage)
         .then((sources) => {
           if (sequence !== this.sequence) {
             return;
@@ -4080,7 +4062,7 @@
     /**
      * Fetches all account-backed video-list sources.
      *
-     * @param {AbortSignal | undefined} signal
+     * @param {AbortSignal} signal
      * @param {string} language
      * @returns {Promise<VideoListSource[]>}
      */
@@ -4104,7 +4086,7 @@
      *
      * @param {string} kind
      * @param {string} url
-     * @param {AbortSignal | undefined} signal
+     * @param {AbortSignal} signal
      * @param {string} language
      * @returns {Promise<VideoListSource | null>}
      */
@@ -4163,7 +4145,7 @@
      * return an application-level error when the visitor is signed out.
      *
      * @param {string} url
-     * @param {AbortSignal | undefined} signal
+     * @param {AbortSignal} signal
      * @returns {Promise<object>}
      */
     static async fetchApiPayload(url, signal) {
@@ -4244,23 +4226,13 @@
     }
 
     /**
-     * Parses JSON and callback-wrapped JSON responses.
+     * Parses one JSON API response.
      *
      * @param {string} text
      * @returns {object}
      */
     static parseApiPayload(text) {
-      try {
-        return JSON.parse(text);
-      } catch (_jsonError) {
-        const match = text.trim().match(/^[\w$.]+\((.*)\);?$/s);
-
-        if (!match) {
-          throw new Error("Invalid account source JSON");
-        }
-
-        return JSON.parse(match[1]);
-      }
+      return JSON.parse(text);
     }
 
     /**
@@ -4392,16 +4364,11 @@
     }
 
     /**
-     * Queues one preview request unless fetch is unavailable.
+     * Queues one preview request.
      *
      * @param {ArchiveVideoIdentity} identity
      */
     enqueue(identity) {
-      if (typeof fetch !== "function") {
-        this.records.set(identity.key, { state: "unavailable" });
-        return;
-      }
-
       this.records.set(identity.key, {
         state: "queued",
         identity
@@ -4436,8 +4403,7 @@
      */
     startFetch(identity) {
       const sequence = this.sequence;
-      const controller =
-        typeof AbortController === "function" ? new AbortController() : null;
+      const controller = new AbortController();
 
       this.activeCount += 1;
       this.controllers.set(identity.key, controller);
@@ -4446,7 +4412,7 @@
         identity
       });
 
-      VideoPreviewStore.fetchPreview(identity, controller?.signal)
+      VideoPreviewStore.fetchPreview(identity, controller.signal)
         .then((thumbnailUrl) => {
           if (sequence !== this.sequence) {
             return;
@@ -4488,7 +4454,7 @@
       this.sequence += 1;
 
       for (const controller of this.controllers.values()) {
-        controller?.abort();
+        controller.abort();
       }
 
       this.records.clear();
@@ -4504,7 +4470,7 @@
      * or unavailable videos. Those videos keep the title placeholder.
      *
      * @param {ArchiveVideoIdentity} identity
-     * @param {AbortSignal | undefined} signal
+     * @param {AbortSignal} signal
      * @returns {Promise<string | null>}
      */
     static async fetchPreview(identity, signal) {
@@ -4876,17 +4842,10 @@
         return true;
       }
 
-      return definition.selectors.some((selector) => {
-        if (!/(?:video-|\.ops)/u.test(selector)) {
-          return false;
-        }
-
-        try {
-          return trigger.matches(selector);
-        } catch (_error) {
-          return false;
-        }
-      });
+      return definition.selectors.some(
+        (selector) =>
+          /(?:video-|\.ops)/u.test(selector) && trigger.matches(selector)
+      );
     }
 
     /**
@@ -6472,24 +6431,18 @@
         button.removeAttribute("aria-pressed");
       }
 
-      if (count) {
-        count.textContent = action.countText ?? "";
-        count.hidden = !action.countText || nativeVisualHasCount;
-      }
+      count.textContent = action.countText ?? "";
+      count.hidden = !action.countText || nativeVisualHasCount;
     }
 
     /**
      * Updates a mirrored action button with sanitized native visual markup.
      *
-     * @param {Element | null} visual
+     * @param {Element} visual
      * @param {WatchAction} action
      * @returns {boolean} True when the native visual contains the count text.
      */
     updateWatchActionNativeVisual(visual, action) {
-      if (!visual) {
-        return false;
-      }
-
       visual.replaceChildren();
       visual.removeAttribute("data-bibilili-fallback");
 
@@ -7247,13 +7200,7 @@
         return false;
       }
 
-      return (action.countSelectors ?? []).some((selector) => {
-        try {
-          return source.matches(selector);
-        } catch (_error) {
-          return false;
-        }
-      });
+      return action.countSelectors.some((selector) => source.matches(selector));
     }
 
     /**
@@ -8819,7 +8766,7 @@
    */
 
   const previousController = window.__bibililiController;
-  if (previousController && typeof previousController.stop === "function") {
+  if (previousController) {
     previousController.stop();
   }
 
