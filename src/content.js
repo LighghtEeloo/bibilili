@@ -419,6 +419,36 @@
     "[class*='collection-m']",
     "[class*='Collection']"
   ].join(",");
+  const COMMENT_IMAGE_PREVIEW_SELECTOR = [
+    ".pswp",
+    ".pswp__scroll-wrap",
+    ".pswp__container",
+    ".pswp__item",
+    "img.pswp__img",
+    ".bili-comment-image-preview",
+    ".bili-comment-img-preview",
+    ".bili-comment-picture-preview",
+    ".reply-image-preview",
+    ".reply-img-preview",
+    ".reply-picture-preview",
+    "[class*='comment'][class*='image'][class*='preview']",
+    "[class*='comment'][class*='Image'][class*='Preview']",
+    "[class*='reply'][class*='image'][class*='preview']",
+    "[class*='reply'][class*='Image'][class*='Preview']",
+    "[class*='preview'][class*='image']",
+    "[class*='Preview'][class*='Image']",
+    "[class*='picture'][class*='preview']",
+    "[class*='Picture'][class*='Preview']",
+    "[class*='album'][class*='preview']",
+    "[class*='Album'][class*='Preview']",
+    "[class*='image'][class*='viewer']",
+    "[class*='Image'][class*='Viewer']",
+    ".bili-dialog-m",
+    ".bili-dialog-bomb",
+    "[class*='modal']",
+    "[class*='Modal']"
+  ].join(",");
+  const COMMENT_IMAGE_PREVIEW_URL_PATTERN = /\/bfs\/(?:new_dyn|reply)\//u;
   const NATIVE_OVERLAY_SETTLE_DELAYS_MS = Object.freeze([80, 240, 600]);
   const COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH = 92;
   const COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT = 220;
@@ -5578,6 +5608,8 @@
      * @param {MouseEvent} event
      */
     handleCommentPaneClick(event) {
+      LayoutRoot.liftNativeCommentOverlayFromEvent(event);
+
       const trigger = this.accountControl?.trigger;
 
       if (!trigger?.isConnected || !this.isCommentAccountAvatarClick(event)) {
@@ -6066,6 +6098,131 @@
           LayoutRoot.markNativeOverlay(dialog);
         }
       });
+    }
+
+    /**
+     * Lifts page-owned comment overlays opened from the comment pane.
+     *
+     * @param {Event} event
+     */
+    static liftNativeCommentOverlayFromEvent(event) {
+      const target =
+        event.target instanceof Node
+          ? event.target.nodeType === Node.ELEMENT_NODE
+            ? event.target
+            : event.target.parentElement
+          : null;
+
+      if (!LayoutRoot.isCommentImagePreviewTrigger(target)) {
+        return;
+      }
+
+      const document = target.ownerDocument;
+      LayoutRoot.scheduleNativeOverlayLift(() => {
+        for (const overlay of LayoutRoot.commentImagePreviewOverlays(document)) {
+          LayoutRoot.markNativeOverlay(overlay);
+        }
+      });
+    }
+
+    /**
+     * Returns true when a comment click can open an image preview.
+     *
+     * @param {Element | null} target
+     * @returns {boolean}
+     */
+    static isCommentImagePreviewTrigger(target) {
+      if (!target) {
+        return false;
+      }
+
+      const image = target.closest("img, picture, [style*='background']");
+
+      if (!image) {
+        return false;
+      }
+
+      const source = LayoutRoot.commentImagePreviewSource(image);
+
+      return Boolean(
+        source && COMMENT_IMAGE_PREVIEW_URL_PATTERN.test(source)
+      );
+    }
+
+    /**
+     * Returns an image source from a possible comment image target.
+     *
+     * @param {Element} target
+     * @returns {string | null}
+     */
+    static commentImagePreviewSource(target) {
+      if (target instanceof HTMLImageElement) {
+        return target.currentSrc || target.src || target.getAttribute("src");
+      }
+
+      const image = target.querySelector("img");
+
+      if (image instanceof HTMLImageElement) {
+        return image.currentSrc || image.src || image.getAttribute("src");
+      }
+
+      return window.getComputedStyle(target).backgroundImage;
+    }
+
+    /**
+     * Finds comment image preview overlays created by Bilibili.
+     *
+     * @param {Document} document
+     * @returns {Element[]}
+     */
+    static commentImagePreviewOverlays(document) {
+      const overlays = [];
+
+      for (const candidate of DomProbe.queryAll(
+        document,
+        COMMENT_IMAGE_PREVIEW_SELECTOR
+      )) {
+        if (!LayoutRoot.hasCommentImagePreviewSource(candidate)) {
+          continue;
+        }
+
+        overlays.push(LayoutRoot.commentImagePreviewOverlay(candidate));
+      }
+
+      return DomProbe.unique(overlays);
+    }
+
+    /**
+     * Returns true when an overlay candidate contains a comment preview image.
+     *
+     * @param {Element} candidate
+     * @returns {boolean}
+     */
+    static hasCommentImagePreviewSource(candidate) {
+      const sources = [
+        LayoutRoot.commentImagePreviewSource(candidate),
+        ...DomProbe.queryAll(candidate, "img").map((image) =>
+          LayoutRoot.commentImagePreviewSource(image)
+        )
+      ];
+
+      return sources.some((source) =>
+        Boolean(source && COMMENT_IMAGE_PREVIEW_URL_PATTERN.test(source))
+      );
+    }
+
+    /**
+     * Returns the root overlay node for a comment image preview candidate.
+     *
+     * @param {Element} candidate
+     * @returns {Element}
+     */
+    static commentImagePreviewOverlay(candidate) {
+      return (
+        candidate.closest(
+          ".pswp, .bili-dialog-m, .bili-dialog-bomb, [class*='modal'], [class*='Modal']"
+        ) ?? candidate
+      );
     }
 
     /**

@@ -296,7 +296,12 @@ pane. Comment-row avatars retain their native link and profile behavior.
 
 Native overlay lift is the stacking adjustment for page-owned popovers and
 dialogs opened from controls that Bibilili forwards. It applies to the account
-popover and the favorite collection dialog.
+popover, the favorite collection dialog, and comment image previews.
+
+Comment image previews are page-owned overlays opened from images inside the
+comment pane. Bibilili detects preview-triggering comment image clicks and
+marks the resulting preview overlay after Bilibili creates it. Bilibili's
+PhotoSwipe preview root is also lifted directly by selector while it is open.
 
 Lifted native overlays are marked with a Bibilili bookkeeping attribute so they
 paint above the transformed viewport. The attribute changes only stacking

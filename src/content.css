@@ -732,6 +732,10 @@
   position: relative !important;
 }
 
+.pswp.pswp--open {
+  z-index: 2147483647 !important;
+}
+
 @media (max-width: 920px) {
   #bibilili-layout-root.bibilili-has-comments .bibilili-stage,
   #bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
