@@ -12,6 +12,7 @@
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
   const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
     "bibilili:card-navigation-origin";
+  const SOURCE_ROUTE_STATE_STORAGE_KEY = "bibilili:source-route-state";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
@@ -1891,6 +1892,80 @@
         window.sessionStorage.removeItem(CARD_NAVIGATION_ORIGIN_STORAGE_KEY);
       } catch (_error) {
         return;
+      }
+    }
+  }
+
+  /**
+   * Stores the tab-scoped source route for the current watch route.
+   */
+  class SourceRouteStateStore {
+    /**
+     * Persists the selected source route for one watch route.
+     *
+     * @param {string | null} pageRouteKey
+     * @param {SourceRouteState} state
+     */
+    static write(pageRouteKey, state) {
+      if (
+        !pageRouteKey ||
+        !SOURCE_ORDER.includes(state?.sourceKind) ||
+        typeof state?.isRailOpen !== "boolean"
+      ) {
+        return;
+      }
+
+      try {
+        const record = {
+          pageRouteKey,
+          sourceKind: state.sourceKind,
+          isRailOpen: state.isRailOpen
+        };
+        window.sessionStorage.setItem(
+          SOURCE_ROUTE_STATE_STORAGE_KEY,
+          JSON.stringify(record)
+        );
+      } catch (_error) {
+        return;
+      }
+    }
+
+    /**
+     * Reads the source route state for the current watch route.
+     *
+     * @param {string | null} pageRouteKey
+     * @returns {SourceRouteState | null}
+     */
+    static read(pageRouteKey) {
+      if (!pageRouteKey) {
+        return null;
+      }
+
+      try {
+        const raw = window.sessionStorage.getItem(
+          SOURCE_ROUTE_STATE_STORAGE_KEY
+        );
+
+        if (!raw) {
+          return null;
+        }
+
+        const record = JSON.parse(raw);
+
+        if (
+          record?.pageRouteKey !== pageRouteKey ||
+          !SOURCE_ORDER.includes(record?.sourceKind) ||
+          typeof record?.isRailOpen !== "boolean"
+        ) {
+          return null;
+        }
+
+        return {
+          sourceKind: record.sourceKind,
+          isRailOpen: record.isRailOpen
+        };
+      } catch (_error) {
+        return null;
       }
     }
   }
@@ -5300,8 +5375,11 @@
       this.onWatchActionForward = null;
       this.onWatchLaterDelete = null;
       this.onVideoCardNavigate = null;
+      this.onSourceRouteChange = null;
       this.pendingWatchLaterDeleteAids = new Set();
       this.pendingSourceRouteHint = null;
+      this.pendingSourceRouteOpenState = null;
+      this.appliedSourceRouteOpenState = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
@@ -5320,7 +5398,8 @@
      * @param {() => void} onWatchActionForward
      * @param {(aid: string) => Promise<void>} onWatchLaterDelete
      * @param {(sourceKind: string, targetUrl: string) => void} onVideoCardNavigate
-     * @param {string | null} sourceRouteHint
+     * @param {(state: SourceRouteState) => void} onSourceRouteChange
+     * @param {SourceRouteState | null} sourceRouteState
      */
     render(
       regions,
@@ -5331,7 +5410,8 @@
       onWatchActionForward,
       onWatchLaterDelete,
       onVideoCardNavigate,
-      sourceRouteHint
+      onSourceRouteChange,
+      sourceRouteState
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5346,11 +5426,12 @@
       this.accountControl = regions.accountControl;
       this.onWatchLaterDelete = onWatchLaterDelete;
       this.onVideoCardNavigate = onVideoCardNavigate;
+      this.onSourceRouteChange = onSourceRouteChange;
       this.setSources(
         regions.sources,
         resetSourceRoute,
         activationControl,
-        sourceRouteHint
+        sourceRouteState
       );
     }
 
@@ -5397,8 +5478,11 @@
       this.onWatchActionForward = null;
       this.onWatchLaterDelete = null;
       this.onVideoCardNavigate = null;
+      this.onSourceRouteChange = null;
       this.pendingWatchLaterDeleteAids.clear();
       this.pendingSourceRouteHint = null;
+      this.pendingSourceRouteOpenState = null;
+      this.appliedSourceRouteOpenState = null;
       this.hasUserInteractedWithSources = false;
       this.locatedCurrentRouteKeys.clear();
       this.language = DEFAULT_UI_LANGUAGE;
@@ -5804,9 +5888,9 @@
      * @param {VideoListSource[]} sources
      * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
-     * @param {string | null} sourceRouteHint
+     * @param {SourceRouteState | null} sourceRouteState
      */
-    setSources(sources, resetSourceRoute, activationControl, sourceRouteHint) {
+    setSources(sources, resetSourceRoute, activationControl, sourceRouteState) {
       if (!this.root || !this.sourceBar || !this.rail) {
         return;
       }
@@ -5817,9 +5901,9 @@
 
       if (resetSourceRoute) {
         this.hasUserInteractedWithSources = false;
-        this.pendingSourceRouteHint = sourceRouteHint;
-      } else if (sourceRouteHint) {
-        this.pendingSourceRouteHint = sourceRouteHint;
+        this.setPendingSourceRouteState(sourceRouteState);
+      } else if (sourceRouteState) {
+        this.setPendingSourceRouteState(sourceRouteState);
       }
 
       const previousSourceKind = this.selectedSourceKind;
@@ -5827,6 +5911,28 @@
       this.resolveRailOpenState(previousSourceKind, resetSourceRoute);
 
       this.renderSourceDock(sources, activationControl);
+
+      if (this.appliedSourceRouteOpenState !== null) {
+        this.emitSourceRouteChange();
+        this.appliedSourceRouteOpenState = null;
+      }
+    }
+
+    /**
+     * Stores a pending route state until its source is available.
+     *
+     * @param {SourceRouteState | null} state
+     */
+    setPendingSourceRouteState(state) {
+      if (!state || !SOURCE_ORDER.includes(state.sourceKind)) {
+        this.pendingSourceRouteHint = null;
+        this.pendingSourceRouteOpenState = null;
+        return;
+      }
+
+      this.pendingSourceRouteHint = state.sourceKind;
+      this.pendingSourceRouteOpenState =
+        typeof state.isRailOpen === "boolean" ? state.isRailOpen : true;
     }
 
     /**
@@ -6879,6 +6985,7 @@
     handleSourceButtonClick(kind) {
       this.hasUserInteractedWithSources = true;
       this.pendingSourceRouteHint = null;
+      this.pendingSourceRouteOpenState = null;
 
       if (!this.currentActivationControl) {
         return;
@@ -6895,6 +7002,21 @@
       }
 
       this.renderSourceDock(this.currentSources, this.currentActivationControl);
+      this.emitSourceRouteChange();
+    }
+
+    /**
+     * Emits the selected source route state when one is available.
+     */
+    emitSourceRouteChange() {
+      if (!this.selectedSourceKind || !this.onSourceRouteChange) {
+        return;
+      }
+
+      this.onSourceRouteChange({
+        sourceKind: this.selectedSourceKind,
+        isRailOpen: this.isRailOpen
+      });
     }
 
     /**
@@ -7560,6 +7682,9 @@
 
       if (hintedSourceKind && availableKinds.has(hintedSourceKind)) {
         this.pendingSourceRouteHint = null;
+        this.appliedSourceRouteOpenState =
+          this.pendingSourceRouteOpenState ?? true;
+        this.pendingSourceRouteOpenState = null;
         return hintedSourceKind;
       }
 
@@ -7628,6 +7753,11 @@
     resolveRailOpenState(previousSourceKind, resetSourceRoute) {
       if (!this.selectedSourceKind) {
         this.isRailOpen = false;
+        return;
+      }
+
+      if (this.appliedSourceRouteOpenState !== null) {
+        this.isRailOpen = this.appliedSourceRouteOpenState;
         return;
       }
 
@@ -7770,7 +7900,7 @@
       this.pageKey = "";
       /** @type {CardNavigationOriginRecord | null} */
       this.pendingVideoCardNavigationOrigin = null;
-      this.nextPageSourceRouteHint = null;
+      this.nextPageSourceRouteState = null;
       this.settlingTimers = [];
     }
 
@@ -7779,9 +7909,7 @@
      */
     start() {
       this.pageKey = this.currentPageKey();
-      this.nextPageSourceRouteHint = CardNavigationOriginStore.take(
-        SourceAdapter.currentWatchRouteKey()
-      );
+      this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.observeMutations();
       this.observeNavigation();
       this.observeThemePreference();
@@ -7826,7 +7954,7 @@
       this.accountSources.stop();
       this.videoPreviews.stop();
       this.pendingVideoCardNavigationOrigin = null;
-      this.nextPageSourceRouteHint = null;
+      this.nextPageSourceRouteState = null;
       this.layout.destroy();
       this.activationControl.destroy();
     }
@@ -7914,7 +8042,7 @@
       if (!this.isWatchPage()) {
         this.videoPreviews.stop();
         this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteHint = null;
+        this.nextPageSourceRouteState = null;
         this.layout.destroy();
         this.activationControl.destroy();
         return;
@@ -7923,7 +8051,7 @@
       if (!this.enabled) {
         this.videoPreviews.stop();
         this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteHint = null;
+        this.nextPageSourceRouteState = null;
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -7943,7 +8071,7 @@
       }
 
       regions.sources = this.videoPreviews.hydrateSources(sources);
-      const sourceRouteHint = this.nextPageSourceRouteHint;
+      const sourceRouteState = this.nextPageSourceRouteState;
 
       if (
         this.lazyPrimer.prime(this.pageKey, () => {
@@ -7969,9 +8097,10 @@
         (aid) => this.deleteWatchLaterItem(aid),
         (sourceKind, targetUrl) =>
           this.recordVideoCardNavigationSource(sourceKind, targetUrl),
-        sourceRouteHint
+        (state) => this.storeSourceRouteState(state),
+        sourceRouteState
       );
-      this.nextPageSourceRouteHint = null;
+      this.nextPageSourceRouteState = null;
     }
 
     /**
@@ -8037,7 +8166,7 @@
       this.lazyPrimer.stop(false);
       this.cancelSettlingReconciles();
       this.videoPreviews.stop();
-      this.nextPageSourceRouteHint = this.consumeVideoCardNavigationSource();
+      this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       this.layout.destroy();
       this.refreshAccountSources();
@@ -8100,6 +8229,34 @@
     }
 
     /**
+     * Returns the source route state to apply on a new page session.
+     *
+     * @returns {SourceRouteState | null}
+     */
+    initialSourceRouteState() {
+      const pageRouteKey = SourceAdapter.currentWatchRouteKey();
+      const originSourceKind = this.consumeVideoCardNavigationSource();
+
+      if (originSourceKind) {
+        return {
+          sourceKind: originSourceKind,
+          isRailOpen: true
+        };
+      }
+
+      return SourceRouteStateStore.read(pageRouteKey);
+    }
+
+    /**
+     * Stores the selected source route for refreshes of the current page.
+     *
+     * @param {SourceRouteState} state
+     */
+    storeSourceRouteState(state) {
+      SourceRouteStateStore.write(SourceAdapter.currentWatchRouteKey(), state);
+    }
+
+    /**
      * Persists and applies the global activation state.
      *
      * @param {boolean} enabled
@@ -8115,7 +8272,7 @@
         this.accountSources.stop();
         this.videoPreviews.stop();
         this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteHint = null;
+        this.nextPageSourceRouteState = null;
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
@@ -8213,6 +8370,12 @@
    * @property {string} sourceKind Closed source kind to select on arrival.
    * @property {string} targetRouteKey Watch route key the click opened.
    * @property {number} createdAt Milliseconds since epoch when recorded.
+   */
+
+  /**
+   * @typedef {object} SourceRouteState
+   * @property {string} sourceKind Closed source kind selected in the rail.
+   * @property {boolean} isRailOpen Whether the selected route is expanded.
    */
 
   /**

@@ -330,6 +330,11 @@ Selecting the current route closes an open rail without clearing the route, or
 reopens a closed rail. Source routes do not toggle a source off and do not
 combine multiple sources in one rail.
 
+The selected source route and rail open state are stored as tab-scoped state
+for the current watch route. A browser refresh restores that state when the
+source is available. Account-backed sources may satisfy the restored route
+after their fetch completes.
+
 ## Source Bar
 
 The source bar is the control row inside the enabled list dock. It begins with
