@@ -1297,6 +1297,48 @@
   }
 
   /**
+   * Collects valid video items from ordered source records.
+   */
+  class VideoItemCollector {
+    /**
+     * Builds de-duplicated video items until the requested item limit is met.
+     *
+     * @template T
+     * @param {T[]} records
+     * @param {(record: T, index: number) => VideoItem | null} itemFromRecord
+     * @param {(item: VideoItem) => string} keyForItem
+     * @param {number} itemLimit
+     * @returns {VideoItem[]}
+     */
+    static collect(records, itemFromRecord, keyForItem, itemLimit) {
+      const items = [];
+      const seen = new Set();
+
+      for (let index = 0; index < records.length; index += 1) {
+        const item = itemFromRecord(records[index], index);
+
+        if (!item) {
+          continue;
+        }
+
+        const key = keyForItem(item);
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        items.push(item);
+
+        if (items.length >= itemLimit) {
+          break;
+        }
+      }
+
+      return items;
+    }
+  }
+
+  /**
    * Extracts uniform video items from a page-owned source root.
    */
   class SourceAdapter {
@@ -1317,36 +1359,17 @@
      * @returns {VideoItem[]}
      */
     extractItems() {
-      const items = [];
-      const seen = new Set();
       const itemLimit =
         this.kind === SourceKind.COLLECTION
           ? Number.POSITIVE_INFINITY
           : MAX_ITEMS_PER_SOURCE;
 
-      const targets = this.videoTargets();
-
-      for (let index = 0; index < targets.length; index += 1) {
-        const item = this.itemFromTarget(targets[index], index);
-
-        if (!item) {
-          continue;
-        }
-
-        const key = SourceAdapter.itemKey(item);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        items.push(item);
-
-        if (items.length >= itemLimit) {
-          break;
-        }
-      }
-
-      return items;
+      return VideoItemCollector.collect(
+        this.videoTargets(),
+        (target, index) => this.itemFromTarget(target, index),
+        SourceAdapter.itemKey,
+        itemLimit
+      );
     }
 
     /**
@@ -2297,30 +2320,12 @@
      * @returns {VideoItem[]}
      */
     static itemsFromEntries(kind, entries, language) {
-      const items = [];
-      const seen = new Set();
-
-      for (const entry of entries) {
-        const item = AccountSourceAdapter.itemFromEntry(kind, entry, language);
-
-        if (!item) {
-          continue;
-        }
-
-        const key = `${item.targetUrl}\n${item.title}`;
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        items.push(item);
-
-        if (items.length >= MAX_ITEMS_PER_SOURCE) {
-          break;
-        }
-      }
-
-      return items;
+      return VideoItemCollector.collect(
+        entries,
+        (entry) => AccountSourceAdapter.itemFromEntry(kind, entry, language),
+        (item) => `${item.targetUrl}\n${item.title}`,
+        MAX_ITEMS_PER_SOURCE
+      );
     }
 
     /**
