@@ -11,10 +11,12 @@ Chrome and Firefox share the manifest, ordered content-script files,
 stylesheet, and assets. Firefox-specific add-on metadata lives in the shared
 manifest under `browser_specific_settings`.
 
-`src/content-state.js` is the content-script prelude. It defines small layout
-bookkeeping helpers for moved page nodes and marked source roots. `src/content.js`
-is the main runtime. It owns discovery, reconciliation, rendering, account
-requests, preview hydration, and activation state.
+`src/content-route.js` is the route prelude. It defines the pure Bilibili watch
+route model used by source extraction, source routing, and preview hydration.
+`src/content-state.js` is the state prelude. It defines layout bookkeeping
+helpers for moved page nodes and marked source roots. `src/content.js` is the
+main runtime. It owns discovery, reconciliation, rendering, account requests,
+preview hydration, and activation state.
 
 ## Watch Page
 
@@ -192,6 +194,10 @@ when page markup or an account list exposes matching content.
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items. Source adapters convert page-owned list markup and
 Bilibili account API payloads into video items for the bottom dock renderer.
+
+The route model converts playable Bilibili URLs into route identities, archive
+preview identities, canonical archive URLs, and route keys. Archive route keys
+include the page number; bangumi route keys use the playable bangumi identity.
 
 ## Account Video List Source
 

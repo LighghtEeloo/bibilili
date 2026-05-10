@@ -3,6 +3,7 @@
 
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
+  const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
 
   const OWNED_ROOT_ID = "bibilili-layout-root";
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
@@ -41,7 +42,6 @@
     2600,
     5000
   ]);
-  const BILIBILI_WEB_ORIGIN = "https://www.bilibili.com";
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
@@ -2748,25 +2748,7 @@
      * @returns {string | null}
      */
     static normalizedVideoUrl(rawHref) {
-      if (!rawHref || rawHref.startsWith("javascript:")) {
-        return null;
-      }
-
-      try {
-        const url = new URL(rawHref, window.location.href);
-
-        if (url.protocol !== "http:" && url.protocol !== "https:") {
-          return null;
-        }
-
-        if (!SourceAdapter.isPlayableUrl(url)) {
-          return null;
-        }
-
-        return url.href;
-      } catch (_error) {
-        return null;
-      }
+      return BilibiliRoute.normalizedVideoUrl(rawHref, window.location.href);
     }
 
     /**
@@ -2776,21 +2758,7 @@
      * @returns {string | null}
      */
     static videoUrl(params) {
-      const bvid = SourceAdapter.cleanBvid(params.bvid);
-      const aid = SourceAdapter.cleanAid(params.aid);
-
-      if (!bvid && !aid) {
-        return null;
-      }
-
-      const path = bvid ? `/video/${bvid}` : `/video/av${aid}`;
-      const url = new URL(path, BILIBILI_WEB_ORIGIN);
-
-      if (params.page && params.page > 1) {
-        url.searchParams.set("p", String(params.page));
-      }
-
-      return url.href;
+      return BilibiliRoute.videoUrl(params);
     }
 
     /**
@@ -2883,8 +2851,7 @@
      * @returns {string | null}
      */
     static cleanBvid(value) {
-      const text = (value ?? "").trim();
-      return /^BV[0-9A-Za-z]+$/u.test(text) ? text : null;
+      return BilibiliRoute.cleanBvid(value);
     }
 
     /**
@@ -2894,8 +2861,7 @@
      * @returns {string | null}
      */
     static cleanAid(value) {
-      const text = (value ?? "").trim().replace(/^av/i, "");
-      return /^\d+$/u.test(text) ? text : null;
+      return BilibiliRoute.cleanAid(value);
     }
 
     /**
@@ -2909,10 +2875,7 @@
      * @returns {boolean}
      */
     static isPlayableUrl(url) {
-      return (
-        url.hostname === "www.bilibili.com" &&
-        Boolean(SourceAdapter.playableIdentityForUrl(url))
-      );
+      return BilibiliRoute.isPlayableUrl(url, window.location.href);
     }
 
     /**
@@ -2922,37 +2885,7 @@
      * @returns {string | null}
      */
     static playableIdentityForUrl(value) {
-      try {
-        const url =
-          value instanceof URL ? value : new URL(value, window.location.href);
-
-        if (url.hostname !== "www.bilibili.com") {
-          return null;
-        }
-
-        const path = url.pathname.replace(/\/+$/u, "");
-        const videoMatch = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/i);
-
-        if (videoMatch) {
-          const videoId = videoMatch[1];
-          const normalizedId =
-            /^av/i.test(videoId) ? videoId.toLowerCase() : videoId;
-
-          return `video:${normalizedId}`;
-        }
-
-        const bangumiMatch = path.match(
-          /^\/bangumi\/play\/((?:ep|ss|md)\d+)$/i
-        );
-
-        if (bangumiMatch) {
-          return `bangumi:${bangumiMatch[1].toLowerCase()}`;
-        }
-
-        return null;
-      } catch (_error) {
-        return null;
-      }
+      return BilibiliRoute.playableIdentityForUrl(value, window.location.href);
     }
 
     /**
@@ -2962,46 +2895,7 @@
      * @returns {ArchiveVideoIdentity | null}
      */
     static archiveIdentityForUrl(value) {
-      try {
-        const url =
-          value instanceof URL ? value : new URL(value, window.location.href);
-
-        if (url.hostname !== "www.bilibili.com") {
-          return null;
-        }
-
-        const path = url.pathname.replace(/\/+$/u, "");
-        const match = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/i);
-
-        if (!match) {
-          return null;
-        }
-
-        const videoId = match[1];
-        const bvid = SourceAdapter.cleanBvid(videoId);
-
-        if (bvid) {
-          return {
-            key: `bvid:${bvid}`,
-            queryName: "bvid",
-            queryValue: bvid
-          };
-        }
-
-        const aid = SourceAdapter.cleanAid(videoId);
-
-        if (aid) {
-          return {
-            key: `aid:${aid}`,
-            queryName: "aid",
-            queryValue: aid
-          };
-        }
-
-        return null;
-      } catch (_error) {
-        return null;
-      }
+      return BilibiliRoute.archiveIdentityForUrl(value, window.location.href);
     }
 
     /**
@@ -3085,23 +2979,7 @@
      * @returns {string | null}
      */
     static watchRouteKeyForUrl(value) {
-      try {
-        const url =
-          value instanceof URL ? value : new URL(value, window.location.href);
-        const identity = SourceAdapter.playableIdentityForUrl(url);
-
-        if (!identity) {
-          return null;
-        }
-
-        if (identity.startsWith("video:")) {
-          return `${identity}:p${SourceAdapter.videoPageForUrl(url)}`;
-        }
-
-        return identity;
-      } catch (_error) {
-        return null;
-      }
+      return BilibiliRoute.watchRouteKeyForUrl(value, window.location.href);
     }
 
     /**
@@ -3111,9 +2989,7 @@
      * @returns {number}
      */
     static videoPageForUrl(url) {
-      const page = Number.parseInt(url.searchParams.get("p") ?? "", 10);
-
-      return Number.isSafeInteger(page) && page > 0 ? page : 1;
+      return BilibiliRoute.videoPageForUrl(url);
     }
 
     /**

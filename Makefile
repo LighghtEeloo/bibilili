@@ -10,7 +10,7 @@ PACKAGE_FILES := manifest.json README.md src assets _locales
 
 help:
 	@printf '%s\n' 'Targets:'
-	@printf '%s\n' '  make validate          Check JavaScript syntax, manifest JSON, and required package assets.'
+	@printf '%s\n' '  make validate          Check JavaScript syntax, route tests, manifest JSON, and required package assets.'
 	@printf '%s\n' '  make manual-checklist  Print browser checks required before store submission.'
 	@printf '%s\n' '  make package           Build dist/bibilili-<manifest version>.zip.'
 	@printf '%s\n' '  make inspect-package   List the package contents.'
@@ -18,8 +18,10 @@ help:
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
 
 validate:
+	node --check src/content-route.js
 	node --check src/content-state.js
 	node --check src/content.js
+	node --test tests/*.test.js
 	node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 	node -e "const fs=require('fs'); for (const dir of ['en','zh_CN','zh_TW']) JSON.parse(fs.readFileSync('_locales/'+dir+'/messages.json', 'utf8'))"
 	test -f assets/bibilili-logo.svg
