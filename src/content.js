@@ -6866,9 +6866,7 @@
       this.observeNavigation();
       this.observeThemePreference();
       this.renderFloatingActivation();
-      this.refreshAccountSources();
-      this.scheduleReconcile(false, ReconcilePriority.URGENT);
-      this.scheduleSettlingReconciles();
+      this.startPageReconciliation(false);
     }
 
     /**
@@ -6904,11 +6902,29 @@
       this.lazyPrimer.stop();
       this.cancelSettlingReconciles();
       this.accountSources.stop();
+      this.clearRenderedPageState();
+      this.activationControl.destroy();
+    }
+
+    /**
+     * Clears rendered page state without changing observers or activation.
+     */
+    clearRenderedPageState() {
       this.videoPreviews.stop();
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
       this.layout.destroy();
-      this.activationControl.destroy();
+    }
+
+    /**
+     * Starts account refresh and urgent reconciliation for the current page.
+     *
+     * @param {boolean} resetSourceRoute
+     */
+    startPageReconciliation(resetSourceRoute) {
+      this.refreshAccountSources();
+      this.scheduleReconcile(resetSourceRoute, ReconcilePriority.URGENT);
+      this.scheduleSettlingReconciles();
     }
 
     /**
@@ -6998,19 +7014,13 @@
      */
     reconcile(resetSourceRoute) {
       if (!this.isWatchPage()) {
-        this.videoPreviews.stop();
-        this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteState = null;
-        this.layout.destroy();
+        this.clearRenderedPageState();
         this.activationControl.destroy();
         return;
       }
 
       if (!this.enabled) {
-        this.videoPreviews.stop();
-        this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteState = null;
-        this.layout.destroy();
+        this.clearRenderedPageState();
         this.renderFloatingActivation();
         return;
       }
@@ -7131,9 +7141,7 @@
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       this.layout.destroy();
-      this.refreshAccountSources();
-      this.scheduleReconcile(true, ReconcilePriority.URGENT);
-      this.scheduleSettlingReconciles();
+      this.startPageReconciliation(true);
     }
 
     /**
@@ -7231,17 +7239,12 @@
         this.lazyPrimer.stop();
         this.cancelSettlingReconciles();
         this.accountSources.stop();
-        this.videoPreviews.stop();
-        this.pendingVideoCardNavigationOrigin = null;
-        this.nextPageSourceRouteState = null;
-        this.layout.destroy();
+        this.clearRenderedPageState();
         this.renderFloatingActivation();
         return;
       }
 
-      this.refreshAccountSources();
-      this.scheduleReconcile(true, ReconcilePriority.URGENT);
-      this.scheduleSettlingReconciles();
+      this.startPageReconciliation(true);
     }
 
     /**
