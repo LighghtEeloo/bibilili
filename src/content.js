@@ -883,6 +883,23 @@
       button.textContent = label;
       UiControl.setLabel(button, label);
     }
+
+    /**
+     * Removes keyed buttons whose keys are absent from the latest render pass.
+     *
+     * @param {Map<string, HTMLButtonElement>} buttons
+     * @param {Set<string>} availableKeys
+     */
+    static removeStaleButtons(buttons, availableKeys) {
+      for (const [key, button] of buttons) {
+        if (availableKeys.has(key)) {
+          continue;
+        }
+
+        button.remove();
+        buttons.delete(key);
+      }
+    }
   }
 
   /**
@@ -5052,7 +5069,7 @@
         previous = button;
       }
 
-      this.removeStaleSourceButtons(availableKinds);
+      UiControl.removeStaleButtons(this.sourceButtons, availableKinds);
       this.renderWatchActionGroup(this.currentActions, previous);
     }
 
@@ -5075,7 +5092,7 @@
 
       if (orderedActions.length === 0) {
         this.actionGroup.remove();
-        this.removeStaleWatchActionButtons(availableKinds);
+        UiControl.removeStaleButtons(this.actionButtons, availableKinds);
         return null;
       }
 
@@ -5105,7 +5122,7 @@
         previous = button;
       }
 
-      this.removeStaleWatchActionButtons(availableKinds);
+      UiControl.removeStaleButtons(this.actionButtons, availableKinds);
       return this.actionGroup;
     }
 
@@ -5222,22 +5239,6 @@
         visual,
         action.countText
       );
-    }
-
-    /**
-     * Removes keyed watch action buttons that are absent on the current page.
-     *
-     * @param {Set<string>} availableKinds
-     */
-    removeStaleWatchActionButtons(availableKinds) {
-      for (const [kind, button] of this.actionButtons) {
-        if (availableKinds.has(kind)) {
-          continue;
-        }
-
-        button.remove();
-        this.actionButtons.delete(kind);
-      }
     }
 
     /**
@@ -6052,22 +6053,6 @@
         sourceKind: this.selectedSourceKind,
         isRailOpen: this.isRailOpen
       });
-    }
-
-    /**
-     * Removes keyed source buttons for sources absent from the current page.
-     *
-     * @param {Set<string>} availableKinds
-     */
-    removeStaleSourceButtons(availableKinds) {
-      for (const [kind, button] of this.sourceButtons) {
-        if (availableKinds.has(kind)) {
-          continue;
-        }
-
-        button.remove();
-        this.sourceButtons.delete(kind);
-      }
     }
 
     /**
