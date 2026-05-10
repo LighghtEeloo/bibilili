@@ -430,6 +430,38 @@
     "[class*='avatar-panel']",
     "[class*='AvatarPanel']"
   ].join(",");
+  const COMMENT_COMPOSER_SELECTOR = [
+    ".reply-box-wrap",
+    ".reply-box",
+    ".comment-send",
+    ".comment-send-container",
+    ".bili-comment-send",
+    ".bili-comment-box",
+    "[class*='reply-box']",
+    "[class*='ReplyBox']",
+    "[class*='comment-send']",
+    "[class*='CommentSend']",
+    "[class*='comment-box']",
+    "[class*='CommentBox']"
+  ].join(",");
+  const COMMENT_COMPOSER_NON_AVATAR_SELECTOR = [
+    "textarea",
+    "[contenteditable='true']",
+    "button",
+    "[role='button']"
+  ].join(",");
+  const COMMENT_PROFILE_LINK_SELECTOR = "a[href*='space.bilibili.com']";
+  const COMMENT_ROW_SELECTOR = [
+    ".reply-item",
+    ".comment-item",
+    ".bili-comment-card",
+    "[class*='reply-item']",
+    "[class*='ReplyItem']",
+    "[class*='comment-item']",
+    "[class*='CommentItem']",
+    "[class*='comment-card']",
+    "[class*='CommentCard']"
+  ].join(",");
   const FAVORITE_DIALOG_CONTENT_SELECTOR = [
     ".collection-m-exp",
     ".collection-m",
@@ -468,7 +500,7 @@
   const COMMENT_IMAGE_PREVIEW_URL_PATTERN = /\/bfs\/(?:new_dyn|reply)\//u;
   const NATIVE_OVERLAY_SETTLE_DELAYS_MS = Object.freeze([80, 240, 600]);
   const COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH = 92;
-  const COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT = 220;
+  const COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT = 128;
 
   /**
    * Closed source kinds used by discovery, state, rendering, and DOM markers.
@@ -4894,7 +4926,7 @@
      * comment host, hiding inner avatar markup from content scripts. The bridge
      * is scoped to the top-left composer avatar area.
      *
-     * @param {Event} event
+     * @param {MouseEvent} event
      * @returns {boolean}
      */
     isCommentAccountAvatarClick(event) {
@@ -4910,35 +4942,68 @@
           : null;
 
       if (
-        target &&
-        target !== this.commentNode &&
-        !this.commentNode.contains(target)
+        !target ||
+        (target !== this.commentNode && !this.commentNode.contains(target))
       ) {
         return false;
       }
 
-      const rect = this.commentNode.getBoundingClientRect();
-      const localX = event.clientX - rect.left;
-      const localY = event.clientY - rect.top;
-      const zone = {
-        x: 0,
-        y: 0,
-        width: Math.min(COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH, rect.width),
-        height: Math.min(COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT, rect.height)
-      };
-      const isNearComposer =
-        localX >= 0 &&
-        localY >= 0 &&
-        localX <= rect.width &&
-        localY <= zone.height;
-      const isInAvatarZone =
-        isNearComposer &&
-        localX >= zone.x &&
-        localX <= zone.x + zone.width &&
-        localY >= zone.y &&
-        localY <= zone.y + zone.height;
+      const composer = target.closest(COMMENT_COMPOSER_SELECTOR);
+      const profileLink = target.closest(COMMENT_PROFILE_LINK_SELECTOR);
 
-      return isInAvatarZone;
+      if (profileLink && (!composer || !this.commentNode.contains(composer))) {
+        return false;
+      }
+
+      if (target.closest(COMMENT_ROW_SELECTOR)) {
+        return false;
+      }
+
+      if (composer && this.commentNode.contains(composer)) {
+        const nonAvatarControl = target.closest(
+          COMMENT_COMPOSER_NON_AVATAR_SELECTOR
+        );
+
+        if (nonAvatarControl && composer.contains(nonAvatarControl)) {
+          return false;
+        }
+
+        return LayoutRoot.isPointInsideCommentAvatarFallback(event, composer);
+      }
+
+      return LayoutRoot.isPointInsideCommentAvatarFallback(
+        event,
+        this.commentNode,
+        this.firstCommentRowTopOffset()
+      );
+    }
+
+    /**
+     * Returns the first visible comment-row top relative to the comment root.
+     *
+     * @returns {number | null}
+     */
+    firstCommentRowTopOffset() {
+      const rootRect = this.commentNode.getBoundingClientRect();
+      let topOffset = null;
+
+      for (const row of DomProbe.queryAll(this.commentNode, COMMENT_ROW_SELECTOR)) {
+        const rect = row.getBoundingClientRect();
+
+        if (rect.width <= 0 || rect.height <= 0) {
+          continue;
+        }
+
+        const offset = rect.top - rootRect.top;
+
+        if (offset < 0) {
+          continue;
+        }
+
+        topOffset = topOffset === null ? offset : Math.min(topOffset, offset);
+      }
+
+      return topOffset;
     }
 
     /**
@@ -5350,6 +5415,36 @@
      */
     static nativeAccountWrap(trigger) {
       return trigger.closest(".header-avatar-wrap, .v-popover-wrap") ?? trigger;
+    }
+
+    /**
+     * Tests the conservative top-left current-user avatar fallback rectangle.
+     *
+     * @param {MouseEvent} event
+     * @param {Element} element
+     * @param {number | null} [bottomOffset]
+     * @returns {boolean}
+     */
+    static isPointInsideCommentAvatarFallback(event, element, bottomOffset = null) {
+      const rect = element.getBoundingClientRect();
+      const width = Math.min(COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH, rect.width);
+      const unclampedHeight = Math.min(
+        COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT,
+        rect.height
+      );
+      const height =
+        bottomOffset === null
+          ? unclampedHeight
+          : Math.min(unclampedHeight, Math.max(0, bottomOffset));
+
+      return (
+        width > 0 &&
+        height > 0 &&
+        event.clientX >= rect.left &&
+        event.clientX < rect.left + width &&
+        event.clientY >= rect.top &&
+        event.clientY < rect.top + height
+      );
     }
 
     /**
@@ -7476,6 +7571,7 @@
   if (window.__bibililiExposeInternals) {
     window.__bibililiInternals = Object.freeze({
       AccountSourceAdapter,
+      LayoutRoot,
       SourceKind,
       SourceMerger
     });
