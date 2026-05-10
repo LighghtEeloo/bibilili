@@ -5303,7 +5303,7 @@
       this.pendingWatchLaterDeleteAids = new Set();
       this.pendingSourceRouteHint = null;
       this.hasUserInteractedWithSources = false;
-      this.locatedCollectionRouteKey = null;
+      this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
       this.movedNodes = new Map();
       this.markedSourceRoots = new Set();
@@ -5400,7 +5400,7 @@
       this.pendingWatchLaterDeleteAids.clear();
       this.pendingSourceRouteHint = null;
       this.hasUserInteractedWithSources = false;
-      this.locatedCollectionRouteKey = null;
+      this.locatedCurrentRouteKeys.clear();
       this.language = DEFAULT_UI_LANGUAGE;
       this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
     }
@@ -6924,10 +6924,9 @@
       const { title, row } = this.ensureRailSourceGroup(source, resetScroll);
       title.textContent = UiStrings.sourceLabel(source.kind, this.language);
 
-      const currentRouteKey =
-        source.kind === SourceKind.COLLECTION
-          ? SourceAdapter.currentWatchRouteKey()
-          : null;
+      const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+        ? SourceAdapter.currentWatchRouteKey()
+        : null;
       const existingCards = this.videoCardsByKey(row);
       const usedKeys = new Set();
       const keyCounts = new Map();
@@ -6940,7 +6939,7 @@
         const itemRouteKey = currentRouteKey
           ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
           : null;
-        const matchReason = this.currentCollectionItemMatchReason(
+        const matchReason = this.currentRailItemMatchReason(
           source.kind,
           item,
           currentRouteKey,
@@ -6956,7 +6955,7 @@
         }
         usedKeys.add(cardKey);
 
-        if (isCurrent && !currentCard) {
+        if (matchReason && !currentCard) {
           currentCard = card;
         }
 
@@ -6969,7 +6968,7 @@
       }
 
       this.removeStaleVideoCards(row, usedKeys);
-      const didLocateCurrentCard = this.locateCurrentCollectionCard(
+      const didLocateCurrentCard = this.locateCurrentRailCard(
         source.kind,
         currentCard,
         currentRouteKey,
@@ -6979,6 +6978,19 @@
       if (!didLocateCurrentCard && !resetScroll) {
         this.rail.scrollLeft = preservedScrollLeft;
       }
+    }
+
+    /**
+     * Returns true when the source can scroll to the current watch route.
+     *
+     * @param {string} sourceKind
+     * @returns {boolean}
+     */
+    static sourceLocatesCurrentCard(sourceKind) {
+      return (
+        sourceKind === SourceKind.COLLECTION ||
+        sourceKind === SourceKind.WATCH_LATER
+      );
     }
 
     /**
@@ -7096,7 +7108,7 @@
     }
 
     /**
-     * Returns the reason an item is the current collection card.
+     * Returns the reason an item is the current card for focusable sources.
      *
      * @param {string} sourceKind
      * @param {VideoItem} item
@@ -7104,21 +7116,21 @@
      * @param {string | null} itemRouteKey
      * @returns {string | null}
      */
-    currentCollectionItemMatchReason(
+    currentRailItemMatchReason(
       sourceKind,
       item,
       currentRouteKey,
       itemRouteKey
     ) {
-      if (sourceKind !== SourceKind.COLLECTION) {
-        return null;
-      }
-
-      if (item.isCurrent) {
+      if (sourceKind === SourceKind.COLLECTION && item.isCurrent) {
         return "native-current-marker";
       }
 
-      if (currentRouteKey && itemRouteKey === currentRouteKey) {
+      if (
+        LayoutRoot.sourceLocatesCurrentCard(sourceKind) &&
+        currentRouteKey &&
+        itemRouteKey === currentRouteKey
+      ) {
         return "route-key";
       }
 
@@ -7126,7 +7138,7 @@
     }
 
     /**
-     * Positions the collection rail on the current video card when available.
+     * Positions the rail on the current card for sources that support it.
      *
      * @param {string} sourceKind
      * @param {HTMLElement | null} currentCard
@@ -7134,14 +7146,14 @@
      * @param {boolean} resetScroll
      * @returns {boolean}
      */
-    locateCurrentCollectionCard(
+    locateCurrentRailCard(
       sourceKind,
       currentCard,
       currentRouteKey,
       resetScroll
     ) {
       if (
-        sourceKind !== SourceKind.COLLECTION ||
+        !LayoutRoot.sourceLocatesCurrentCard(sourceKind) ||
         !currentCard ||
         !currentRouteKey
       ) {
@@ -7153,10 +7165,10 @@
 
       if (
         resetScroll ||
-        this.locatedCollectionRouteKey !== currentRouteKey
+        this.locatedCurrentRouteKeys.get(sourceKind) !== currentRouteKey
       ) {
         currentCard.scrollIntoView({ block: "nearest", inline: "center" });
-        this.locatedCollectionRouteKey = currentRouteKey;
+        this.locatedCurrentRouteKeys.set(sourceKind, currentRouteKey);
         return true;
       }
 
@@ -7594,7 +7606,7 @@
 
       const hasCurrentItem = collection.items.some((item) => {
         const itemRouteKey = SourceAdapter.watchRouteKeyForUrl(item.targetUrl);
-        const matchReason = this.currentCollectionItemMatchReason(
+        const matchReason = this.currentRailItemMatchReason(
           collection.kind,
           item,
           currentRouteKey,

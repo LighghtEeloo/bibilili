@@ -372,6 +372,10 @@ watch route matches the current page. It scrolls to that card once for the
 current page session, and it does so again when the collection route is opened
 explicitly.
 
+When the selected source is watch later, the rail uses the same current-card
+matching, positioning, and highlight path as collection. If the current watch
+video is present, opening the watch-later route scrolls directly to that card.
+
 ## Video Card
 
 A video card is the extension-owned rendering of one video item. It uses a
