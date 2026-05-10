@@ -2,7 +2,10 @@
 
 > `CLAUDE.md` is a symlink to this file. Do not edit `CLAUDE.md` directly -- edit `AGENTS.md` instead.
 
-Bibilili is a Manifest V3 browser extension for Bilibili watch pages. The extension is currently a no-build project made of `manifest.json`, `src/content.js`, `src/content.css`, and `DESIGN.md`.
+Bibilili is a Manifest V3 browser extension for Bilibili watch pages. The
+extension is currently a no-build project made of `manifest.json`, ordered
+`src/content-*.js` preludes, `src/content.js`, `src/content.css`, locale
+catalogs, assets, and canonical project documents.
 
 Above all: keep the implementation aligned with `DESIGN.md` and keep design knowledge close to the code that implements it. Use concise JSDoc comments for classes, methods, object shapes, and unusual DOM compromises. Write `Note: ` in a comment when a selector, fallback, or lifecycle rule exists because of Bilibili page behavior rather than local design preference.
 
@@ -23,7 +26,7 @@ Prefer direct definitions over defensive framing.
 ### Canonical Documentation
 
 - `DESIGN.md` defines product and architecture intent.
-- `src/content.js` JSDoc documents implementation concepts, invariants, and lifecycle details.
+- `src/content-*.js` and `src/content.js` JSDoc document implementation concepts, invariants, and lifecycle details.
 - `src/content.css` should stay readable through clear selectors and stable class names rather than large comment blocks.
 - Do not add a standalone `docs/` tree as the canonical source unless the project scope changes.
 
@@ -92,9 +95,12 @@ The stylesheet owns the transformed viewport layout.
 Run lightweight local checks after content-script or manifest changes:
 
 ```sh
-node --check src/content.js
-node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
+make validate
 ```
+
+`make validate` reads the manifest content-script order for JavaScript syntax
+checks, runs Node tests, parses manifest and locale JSON, and verifies required
+package assets.
 
 Manual browser testing is required for behavior changes because the extension depends on live Bilibili DOM:
 - Load `/Users/arctic/Arc/bibilili` as an unpacked extension in `chrome://extensions`.
