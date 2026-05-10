@@ -2831,19 +2831,7 @@
      * @returns {Promise<object>}
      */
     static async fetchApiPayload(url, signal) {
-      const response = await fetch(url, {
-        credentials: "include",
-        headers: {
-          Accept: "application/json, text/plain, */*"
-        },
-        signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      return AccountSourceStore.parseApiPayload(await response.text());
+      return AccountSourceStore.requestApiPayload(url, { signal });
     }
 
     /**
@@ -2854,14 +2842,30 @@
      * @returns {Promise<object>}
      */
     static async postApiPayload(url, body) {
-      const response = await fetch(url, {
+      return AccountSourceStore.requestApiPayload(url, {
         method: "POST",
-        credentials: "include",
         headers: {
-          Accept: "application/json, text/plain, */*",
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
         },
         body
+      });
+    }
+
+    /**
+     * Requests and parses one Bilibili JSON payload.
+     *
+     * @param {string} url
+     * @param {RequestInit} [options]
+     * @returns {Promise<object>}
+     */
+    static async requestApiPayload(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        credentials: "include",
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          ...(options.headers ?? {})
+        }
       });
 
       if (!response.ok) {
