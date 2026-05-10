@@ -18,12 +18,12 @@ helpers for moved page nodes and marked source roots. `src/content-i18n.js` is
 the i18n prelude. It defines message catalog loading, formatting, and UI
 language resolution. `src/content-storage.js` is the storage prelude. It
 defines persisted activation, comment width, navigation-origin, and source-route
-state. `src/content-theme.js` is the theme prelude. It defines theme-token,
-computed-color, and browser color-scheme resolution. `src/content-scheduler.js`
-is the scheduling prelude. It defines urgent and lazy reconciliation request
-coalescing. `src/content.js` is the main runtime. It owns discovery,
-reconciliation, rendering, account requests, preview hydration, and activation
-state.
+state. `src/content-theme.js` is the theme prelude. It defines browser
+color-scheme resolution and Bilibili native theme synchronization.
+`src/content-scheduler.js` is the scheduling prelude. It defines urgent and
+lazy reconciliation request coalescing. `src/content.js` is the main runtime.
+It owns discovery, reconciliation, rendering, account requests, preview
+hydration, and activation state.
 
 ## Watch Page
 
@@ -85,14 +85,16 @@ roots only while their extracted items are represented in the dock.
 
 ## Theme
 
-The theme is the extension-owned color state applied to extension surfaces. It
-does not restyle page-owned player, comment, or source roots.
+The theme is Bilibili-owned page appearance. Bibilili synchronizes Bilibili's
+native theme controls with the browser color-scheme preference.
 
-Bibilili resolves the theme from explicit Bilibili appearance markers, then
-computed page colors, then the browser color-scheme preference. Extension-owned
-surfaces use theme tokens for backgrounds, borders, text, and controls. Tokens
-define clear foreground and background pairs for primary text, muted text,
-selected controls, and badges in light and dark modes.
+Bibilili writes Bilibili's `theme_style` cookie, applies the native common-page
+dark marker when needed, and swaps Bilibili's CSS-map stylesheet between its
+light and dark variants when the page exposes that link. Appearance state stays
+in Bilibili's native theme system.
+
+Extension-owned surfaces consume Bilibili CSS variables for backgrounds,
+borders, text, and controls. Static fallbacks cover missing native variables.
 
 ## UI Language
 

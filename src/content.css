@@ -10,29 +10,29 @@
 
 #bibilili-layout-root,
 #bibilili-toggle-root {
-  --bibilili-border: rgba(24, 25, 28, 0.12);
-  --bibilili-button-border: rgba(24, 25, 28, 0.18);
-  --bibilili-button-hover-border: rgba(24, 25, 28, 0.34);
-  --bibilili-control-bg: rgba(255, 255, 255, 0.92);
-  --bibilili-control-text: #26313d;
-  --bibilili-card-border: rgba(24, 25, 28, 0.12);
-  --bibilili-card-hover-border: rgba(251, 114, 153, 0.6);
-  --bibilili-panel: #f6f7f8;
-  --bibilili-panel-raised: #ffffff;
-  --bibilili-stage: #f1f2f3;
-  --bibilili-page: #ffffff;
-  --bibilili-text: #18191c;
-  --bibilili-muted: #424b57;
-  --bibilili-comment-bg: #ffffff;
-  --bibilili-comment-text: #18191c;
-  --bibilili-thumb-bg: #e6e8eb;
-  --bibilili-placeholder-bg: #ebeef2;
-  --bibilili-placeholder-text: rgba(24, 25, 28, 0.62);
+  --bibilili-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.12);
+  --bibilili-button-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.18);
+  --bibilili-button-hover-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.34);
+  --bibilili-control-bg: var(--Wh0, #ffffff);
+  --bibilili-control-text: var(--Ga10, #26313d);
+  --bibilili-card-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.12);
+  --bibilili-card-hover-border: rgba(var(--Pi5_rgb, 251, 114, 153), 0.6);
+  --bibilili-panel: var(--Ga0, #f6f7f8);
+  --bibilili-panel-raised: var(--Wh0, #ffffff);
+  --bibilili-stage: var(--Ga1, #f1f2f3);
+  --bibilili-page: var(--Wh0, #ffffff);
+  --bibilili-text: var(--Ga10, #18191c);
+  --bibilili-muted: var(--Ga7, #424b57);
+  --bibilili-comment-bg: var(--Wh0, #ffffff);
+  --bibilili-comment-text: var(--Ga10, #18191c);
+  --bibilili-thumb-bg: var(--Ga2, #e6e8eb);
+  --bibilili-placeholder-bg: var(--Ga1, #ebeef2);
+  --bibilili-placeholder-text: rgba(var(--Ga10_rgb, 24, 25, 28), 0.62);
   --bibilili-badge-bg: rgba(0, 0, 0, 0.72);
-  --bibilili-selected-text: #004d67;
-  --bibilili-selected-bg: #d9f4ff;
-  --bibilili-selected-border: #008fc2;
-  --bibilili-shadow: rgba(0, 0, 0, 0.18);
+  --bibilili-selected-text: var(--Lb5, #008fc2);
+  --bibilili-selected-bg: rgba(var(--Lb5_rgb, 0, 143, 194), 0.16);
+  --bibilili-selected-border: var(--Lb5, #008fc2);
+  --bibilili-shadow: rgba(var(--Ba0_rgb, 0, 0, 0), 0.22);
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
   --bibilili-card-width: 188px;
@@ -40,7 +40,7 @@
   --bibilili-comment-resize-width: 8px;
 
   color: var(--bibilili-text);
-  color-scheme: light;
+  color-scheme: inherit;
   font-family:
     -apple-system,
     BlinkMacSystemFont,
@@ -58,35 +58,6 @@
   height: 100vh;
   overflow: hidden;
   background: var(--bibilili-page);
-}
-
-#bibilili-layout-root[data-bibilili-theme="dark"],
-#bibilili-toggle-root[data-bibilili-theme="dark"] {
-  --bibilili-border: rgba(255, 255, 255, 0.12);
-  --bibilili-button-border: rgba(255, 255, 255, 0.18);
-  --bibilili-button-hover-border: rgba(255, 255, 255, 0.3);
-  --bibilili-control-bg: rgba(32, 32, 32, 0.95);
-  --bibilili-control-text: #f3f4f5;
-  --bibilili-card-border: rgba(255, 255, 255, 0.12);
-  --bibilili-card-hover-border: rgba(251, 114, 153, 0.55);
-  --bibilili-panel: #161616;
-  --bibilili-panel-raised: #202020;
-  --bibilili-stage: #070707;
-  --bibilili-page: #0b0b0c;
-  --bibilili-text: #f3f4f5;
-  --bibilili-muted: #c8ccd2;
-  --bibilili-comment-bg: #18191c;
-  --bibilili-comment-text: #f3f4f5;
-  --bibilili-thumb-bg: #2a2a2a;
-  --bibilili-placeholder-bg: #262626;
-  --bibilili-placeholder-text: rgba(255, 255, 255, 0.64);
-  --bibilili-badge-bg: rgba(0, 0, 0, 0.72);
-  --bibilili-selected-text: #ffffff;
-  --bibilili-selected-bg: #006f96;
-  --bibilili-selected-border: #19b7e8;
-  --bibilili-shadow: rgba(0, 0, 0, 0.46);
-
-  color-scheme: dark;
 }
 
 #bibilili-layout-root.bibilili-has-dock {

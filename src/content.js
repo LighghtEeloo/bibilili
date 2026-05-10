@@ -7,8 +7,12 @@
   const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
   const { DEFAULT_UI_LANGUAGE, LanguageResolver, UiMessage, UiStrings } =
     window.__bibililiI18n;
-  const { BROWSER_DARK_SCHEME_QUERY, ThemeResolver } =
-    window.__bibililiTheme;
+  const {
+    BILIBILI_DARK_PAGE_ATTR,
+    BILIBILI_LEGACY_DARK_COMMON_ATTR,
+    BROWSER_DARK_SCHEME_QUERY,
+    BilibiliThemeSync
+  } = window.__bibililiTheme;
   const { ReconcilePriority, ReconcileScheduler } =
     window.__bibililiScheduler;
   const {
@@ -229,6 +233,8 @@
   const LAZY_MUTATION_ATTRIBUTE_FILTER = Object.freeze([
     "class",
     "lang",
+    BILIBILI_DARK_PAGE_ATTR,
+    BILIBILI_LEGACY_DARK_COMMON_ATTR,
     "data-theme",
     "data-color-mode",
     "data-prefers-color-scheme",
@@ -858,12 +864,11 @@
     /**
      * Places the activation button as a floating page control.
      *
-     * @param {string} theme
      * @param {string} language
      */
-    mountFloating(theme, language) {
+    mountFloating(language) {
       this.setLanguage(language);
-      this.ensureFloatingRoot(theme);
+      this.ensureFloatingRoot();
       this.setEnabled(false);
       const button = this.ensureButton();
 
@@ -916,11 +921,9 @@
     }
 
     /**
-     * Ensures the floating host exists and has current theme state.
-     *
-     * @param {string} theme
+     * Ensures the floating host exists.
      */
-    ensureFloatingRoot(theme) {
+    ensureFloatingRoot() {
       if (!this.floatingRoot?.isConnected) {
         const existing = this.document.getElementById(FLOATING_TOGGLE_ROOT_ID);
         if (existing) {
@@ -931,8 +934,6 @@
         this.floatingRoot.id = FLOATING_TOGGLE_ROOT_ID;
         this.document.body.append(this.floatingRoot);
       }
-
-      this.floatingRoot.dataset.bibililiTheme = theme;
     }
 
     /**
@@ -4233,7 +4234,6 @@
       this.onCommentReload = onCommentReload;
       this.onWatchActionForward = onWatchActionForward;
       this.setLanguage(language);
-      this.setTheme(ThemeResolver.resolve(this.document));
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
       this.setComments(regions.comments, regions.commentState);
@@ -4308,7 +4308,6 @@
 
       this.root = this.document.createElement("section");
       this.root.id = OWNED_ROOT_ID;
-      this.root.dataset.bibililiTheme = ThemeResolver.resolve(this.document);
 
       this.stage = this.document.createElement("main");
       this.stage.className = "bibilili-stage";
@@ -4418,19 +4417,6 @@
         UiStrings.message(UiMessage.WATCH_ACTIONS_LABEL, this.language)
       );
       this.updateCommentRetryLabels();
-    }
-
-    /**
-     * Applies the resolved theme mode to extension-owned surfaces.
-     *
-     * @param {string} mode
-     */
-    setTheme(mode) {
-      if (!this.root) {
-        return;
-      }
-
-      this.root.dataset.bibililiTheme = mode;
     }
 
     /**
@@ -7155,6 +7141,7 @@
     start() {
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
+      BilibiliThemeSync.sync(this.document);
       this.observeMutations();
       this.observeNavigation();
       this.observeThemePreference();
@@ -7306,6 +7293,8 @@
      * @param {boolean} resetSourceRoute
      */
     reconcile(resetSourceRoute) {
+      BilibiliThemeSync.sync(this.document);
+
       if (!this.isWatchPage()) {
         this.clearRenderedPageState();
         this.activationControl.destroy();
@@ -7410,6 +7399,7 @@
     observeThemePreference() {
       this.themePreference = window.matchMedia(BROWSER_DARK_SCHEME_QUERY);
       this.themeChangeHandler = () => {
+        BilibiliThemeSync.sync(this.document);
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       };
       this.themePreference.addEventListener("change", this.themeChangeHandler);
@@ -7605,10 +7595,8 @@
         return;
       }
 
-      this.activationControl.mountFloating(
-        ThemeResolver.resolve(this.document),
-        this.resolveUiLanguage()
-      );
+      BilibiliThemeSync.sync(this.document);
+      this.activationControl.mountFloating(this.resolveUiLanguage());
     }
 
     /**

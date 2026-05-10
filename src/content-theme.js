@@ -2,9 +2,16 @@
   "use strict";
 
   const BROWSER_DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
+  const BILIBILI_THEME_COOKIE_NAME = "theme_style";
+  const BILIBILI_THEME_COOKIE_DOMAIN = ".bilibili.com";
+  const BILIBILI_THEME_COOKIE_MAX_AGE_SECONDS = 31536000;
+  const BILIBILI_THEME_STYLE_LINK_SELECTOR = "head link#__css-map__";
+  const BILIBILI_DARK_PAGE_ATTR = "common-theme-dark-page";
+  const BILIBILI_DARK_PAGE_VALUE = "common";
+  const BILIBILI_LEGACY_DARK_COMMON_ATTR = "common-theme-dark-common";
 
   /**
-   * Closed theme modes applied to extension-owned surfaces.
+   * Closed Bilibili theme modes.
    */
   const ThemeMode = Object.freeze({
     LIGHT: "light",
@@ -12,104 +19,84 @@
   });
 
   /**
-   * Resolves the extension theme from Bilibili state, page colors, or browser preference.
+   * Synchronizes Bilibili's native theme controls with the browser preference.
    */
-  class ThemeResolver {
+  class BilibiliThemeSync {
     /**
-     * Returns the current extension theme mode.
+     * Applies the current system theme to Bilibili-owned theme state.
      *
      * @param {Document} document
      * @returns {string}
      */
-    static resolve(document) {
+    static sync(document) {
+      const mode = BilibiliThemeSync.systemTheme();
+
+      BilibiliThemeSync.writeThemeCookie(document, mode);
+      BilibiliThemeSync.applyThemeMarkers(document, mode);
+      BilibiliThemeSync.swapThemeStylesheet(document, mode);
+
+      return mode;
+    }
+
+    /**
+     * Returns the theme currently requested by the browser.
+     *
+     * @returns {string}
+     */
+    static systemTheme() {
+      return typeof window.matchMedia === "function" &&
+        window.matchMedia(BROWSER_DARK_SCHEME_QUERY).matches
+        ? ThemeMode.DARK
+        : ThemeMode.LIGHT;
+    }
+
+    /**
+     * Returns the native Bilibili theme mode when the page exposes one.
+     *
+     * @param {Document} document
+     * @returns {string | null}
+     */
+    static nativeTheme(document) {
       return (
-        ThemeResolver.siteTheme(document) ??
-        ThemeResolver.computedTheme(document) ??
-        (window.matchMedia(BROWSER_DARK_SCHEME_QUERY).matches
-          ? ThemeMode.DARK
-          : ThemeMode.LIGHT)
+        BilibiliThemeSync.cookieTheme(document) ??
+        BilibiliThemeSync.stylesheetTheme(document) ??
+        BilibiliThemeSync.markerTheme(document)
       );
     }
 
     /**
-     * Returns an explicit Bilibili theme mode when the page exposes one.
+     * Reads Bilibili's persisted theme cookie.
      *
      * @param {Document} document
      * @returns {string | null}
      */
-    static siteTheme(document) {
-      const roots = [document.documentElement, document.body].filter(Boolean);
+    static cookieTheme(document) {
+      const cookie = String(document.cookie ?? "");
+      const escapedName = BILIBILI_THEME_COOKIE_NAME.replace(
+        /[.*+?^${}()|[\]\\]/gu,
+        "\\$&"
+      );
+      const match = cookie.match(
+        new RegExp(`(?:^|;\\s*)${escapedName}=([^;]*)`, "u")
+      );
 
-      for (const root of roots) {
-        const token = ThemeResolver.themeToken(root);
-
-        if (token) {
-          return token;
-        }
-      }
-
-      return null;
+      return BilibiliThemeSync.normalizeTheme(match?.[1]);
     }
 
     /**
-     * Infers theme mode from computed page colors.
+     * Reads Bilibili's active theme stylesheet URL.
      *
      * @param {Document} document
      * @returns {string | null}
      */
-    static computedTheme(document) {
-      const candidates = [
-        document.body,
-        document.documentElement,
-        document.querySelector(
-          ".bili-feed4-layout, .bili-layout, .left-container, .right-container"
-        )
-      ].filter(Boolean);
+    static stylesheetTheme(document) {
+      const href = BilibiliThemeSync.themeStylesheet(document)?.href ?? "";
 
-      for (const element of candidates) {
-        const color = ThemeResolver.computedBackground(element);
-
-        if (!color) {
-          continue;
-        }
-
-        return ThemeResolver.relativeLuminance(color) < 0.42
-          ? ThemeMode.DARK
-          : ThemeMode.LIGHT;
-      }
-
-      return null;
-    }
-
-    /**
-     * Reads root-level class and data attributes for theme tokens.
-     *
-     * @param {Element} root
-     * @returns {string | null}
-     */
-    static themeToken(root) {
-      const values = [
-        root.getAttribute("data-theme"),
-        root.getAttribute("data-color-mode"),
-        root.getAttribute("data-prefers-color-scheme"),
-        root.getAttribute("data-dark"),
-        root.getAttribute("class")
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      if (
-        /\b(?:bili-)?dark(?:-mode)?\b/.test(values) ||
-        /\btheme-dark\b/.test(values)
-      ) {
+      if (/\/dark\.css(?:$|[?#])/u.test(href)) {
         return ThemeMode.DARK;
       }
 
-      if (
-        /\blight(?:-mode)?\b/.test(values) ||
-        /\btheme-light\b/.test(values)
-      ) {
+      if (/\/light\.css(?:$|[?#])/u.test(href)) {
         return ThemeMode.LIGHT;
       }
 
@@ -117,75 +104,159 @@
     }
 
     /**
-     * Returns an opaque computed background color for an element.
+     * Reads native dark-mode markers used by Bilibili common pages.
      *
-     * @param {Element} element
-     * @returns {{ red: number, green: number, blue: number } | null}
+     * @param {Document} document
+     * @returns {string | null}
      */
-    static computedBackground(element) {
-      const value = window.getComputedStyle(element).backgroundColor;
-      const color = ThemeResolver.parseRgb(value);
+    static markerTheme(document) {
+      const root = document.documentElement;
 
-      if (!color || color.alpha < 0.5) {
-        return null;
+      if (
+        root?.getAttribute(BILIBILI_DARK_PAGE_ATTR) ===
+          BILIBILI_DARK_PAGE_VALUE ||
+        root?.hasAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR)
+      ) {
+        return ThemeMode.DARK;
       }
 
-      return color;
+      return null;
     }
 
     /**
-     * Parses CSS rgb() and rgba() color strings.
+     * Writes Bilibili's native persisted theme cookie when needed.
      *
-     * @param {string} value
-     * @returns {{ red: number, green: number, blue: number, alpha: number } | null}
+     * @param {Document} document
+     * @param {string} mode
+     * @returns {boolean}
      */
-    static parseRgb(value) {
-      const match = value
-        .trim()
-        .match(
-          /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/i
-        );
-
-      if (!match) {
-        return null;
+    static writeThemeCookie(document, mode) {
+      if (
+        !BilibiliThemeSync.isThemeMode(mode) ||
+        BilibiliThemeSync.cookieTheme(document) === mode
+      ) {
+        return false;
       }
 
-      return {
-        red: Number(match[1]),
-        green: Number(match[2]),
-        blue: Number(match[3]),
-        alpha: match[4] === undefined ? 1 : Number(match[4])
-      };
+      try {
+        document.cookie = [
+          `${BILIBILI_THEME_COOKIE_NAME}=${mode}`,
+          "path=/",
+          `domain=${BILIBILI_THEME_COOKIE_DOMAIN}`,
+          `max-age=${BILIBILI_THEME_COOKIE_MAX_AGE_SECONDS}`,
+          "SameSite=Lax"
+        ].join("; ");
+        return true;
+      } catch (_error) {
+        return false;
+      }
     }
 
     /**
-     * Computes WCAG relative luminance for an RGB color.
+     * Applies root markers consumed by Bilibili's native common-page theme CSS.
      *
-     * @param {{ red: number, green: number, blue: number }} color
-     * @returns {number}
+     * @param {Document} document
+     * @param {string} mode
      */
-    static relativeLuminance(color) {
-      const [red, green, blue] = [
-        color.red,
-        color.green,
-        color.blue
-      ].map((channel) => {
-        const normalized = channel / 255;
-        return normalized <= 0.03928
-          ? normalized / 12.92
-          : ((normalized + 0.055) / 1.055) ** 2.4;
-      });
+    static applyThemeMarkers(document, mode) {
+      const root = document.documentElement;
 
-      return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      if (!root) {
+        return;
+      }
+
+      if (mode === ThemeMode.DARK) {
+        root.setAttribute(BILIBILI_DARK_PAGE_ATTR, BILIBILI_DARK_PAGE_VALUE);
+        /*
+         * Note: Bilibili has used both common-theme-dark-page="common" and a
+         * boolean common-theme-dark-common marker for its common-page dark CSS.
+         */
+        root.setAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR, "");
+        return;
+      }
+
+      root.removeAttribute(BILIBILI_DARK_PAGE_ATTR);
+      root.removeAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR);
+    }
+
+    /**
+     * Swaps Bilibili's own theme stylesheet when the CSS map is present.
+     *
+     * @param {Document} document
+     * @param {string} mode
+     * @returns {boolean}
+     */
+    static swapThemeStylesheet(document, mode) {
+      if (!BilibiliThemeSync.isThemeMode(mode)) {
+        return false;
+      }
+
+      const link = BilibiliThemeSync.themeStylesheet(document);
+
+      if (!link?.href) {
+        return false;
+      }
+
+      const nextHref = link.href.replace(
+        /\/(?:dark|light)\.css(?=($|[?#]))/u,
+        `/${mode}.css`
+      );
+
+      if (nextHref === link.href) {
+        return false;
+      }
+
+      link.href = nextHref;
+      return true;
+    }
+
+    /**
+     * Finds Bilibili's CSS-map stylesheet link.
+     *
+     * @param {Document} document
+     * @returns {{ href?: string } | null}
+     */
+    static themeStylesheet(document) {
+      return typeof document.querySelector === "function"
+        ? document.querySelector(BILIBILI_THEME_STYLE_LINK_SELECTOR)
+        : null;
+    }
+
+    /**
+     * Returns a supported theme mode from arbitrary text.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static normalizeTheme(value) {
+      return BilibiliThemeSync.isThemeMode(value) ? value : null;
+    }
+
+    /**
+     * Returns true for a supported theme mode.
+     *
+     * @param {string | null | undefined} value
+     * @returns {boolean}
+     */
+    static isThemeMode(value) {
+      return value === ThemeMode.LIGHT || value === ThemeMode.DARK;
     }
   }
 
   /**
-   * Stable theme helpers loaded before the main content-script runtime.
+   * Stable native theme helpers loaded before the main content-script runtime.
    */
   window.__bibililiTheme = Object.freeze({
     BROWSER_DARK_SCHEME_QUERY,
-    ThemeMode,
-    ThemeResolver
+    BILIBILI_DARK_PAGE_ATTR,
+    BILIBILI_LEGACY_DARK_COMMON_ATTR,
+    BILIBILI_THEME_COOKIE_NAME,
+    BILIBILI_THEME_STYLE_LINK_SELECTOR,
+    BilibiliThemeSync,
+    ThemeMode
   });
+
+  if (typeof document !== "undefined" && document?.documentElement) {
+    BilibiliThemeSync.sync(document);
+  }
 })();
