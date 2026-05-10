@@ -6,24 +6,36 @@ DIST_DIR := dist
 PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-$(VERSION).zip
 PACKAGE_FILES := manifest.json README.md src assets _locales
 
-.PHONY: help validate manual-checklist package inspect-package test-package clean
+.PHONY: help validate validate-js validate-tests validate-json validate-assets manual-checklist package inspect-package test-package clean
 
 help:
 	@printf '%s\n' 'Targets:'
-	@printf '%s\n' '  make validate          Check JavaScript syntax, route tests, manifest JSON, and required package assets.'
+	@printf '%s\n' '  make validate          Run all local validation checks.'
+	@printf '%s\n' '  make validate-js       Check content-script JavaScript syntax.'
+	@printf '%s\n' '  make validate-tests    Run Node tests.'
+	@printf '%s\n' '  make validate-json     Parse manifest and locale JSON.'
+	@printf '%s\n' '  make validate-assets   Verify required package assets.'
 	@printf '%s\n' '  make manual-checklist  Print browser checks required before store submission.'
 	@printf '%s\n' '  make package           Build dist/bibilili-<manifest version>.zip.'
 	@printf '%s\n' '  make inspect-package   List the package contents.'
 	@printf '%s\n' '  make test-package      Verify the package zip can be read.'
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
 
-validate:
+validate: validate-js validate-tests validate-json validate-assets
+
+validate-js:
 	node --check src/content-route.js
 	node --check src/content-state.js
 	node --check src/content.js
+
+validate-tests:
 	node --test tests/*.test.js
+
+validate-json:
 	node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 	node -e "const fs=require('fs'); for (const dir of ['en','zh_CN','zh_TW']) JSON.parse(fs.readFileSync('_locales/'+dir+'/messages.json', 'utf8'))"
+
+validate-assets:
 	test -f assets/bibilili-logo.svg
 	test -f assets/bibilili-logo-white.svg
 	test -f assets/bibilili-logo-16.png

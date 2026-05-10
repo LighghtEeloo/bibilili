@@ -32,7 +32,9 @@ make validate
 ```
 
 This checks JavaScript syntax, parses `manifest.json`, and verifies that the
-required logo assets are present.
+locale catalogs, runs the Node tests, and verifies that the required logo
+assets are present. The Makefile also exposes `validate-js`, `validate-tests`,
+`validate-json`, and `validate-assets` when a narrower check is useful.
 
 Print the manual browser checklist before release testing:
 
