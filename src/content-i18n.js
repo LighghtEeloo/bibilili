@@ -31,6 +31,7 @@
     WATCH_ACTION_FAVORITE_LABEL: "watchActionFavoriteLabel",
     WATCH_ACTION_SHARE_LABEL: "watchActionShareLabel",
     WATCH_ACTION_COPY_LINK_LABEL: "watchActionCopyLinkLabel",
+    WATCH_LATER_ADD_LABEL: "watchLaterAddLabel",
     WATCH_LATER_REMOVE_LABEL: "watchLaterRemoveLabel",
     COMMENT_RESIZE_LABEL: "commentResizeLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
@@ -200,6 +201,16 @@
      */
     static watchLaterRemoveLabel(language) {
       return UiStrings.message(UiMessage.WATCH_LATER_REMOVE_LABEL, language);
+    }
+
+    /**
+     * Returns the accessible label for adding one card to watch later.
+     *
+     * @param {string} language
+     * @returns {string}
+     */
+    static watchLaterAddLabel(language) {
+      return UiStrings.message(UiMessage.WATCH_LATER_ADD_LABEL, language);
     }
 
     /**

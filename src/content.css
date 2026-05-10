@@ -633,7 +633,7 @@
   color: var(--bibilili-selected-text);
 }
 
-.bibilili-card-delete-button {
+.bibilili-card-watch-later-button {
   position: absolute;
   z-index: 2;
   top: 2px;
@@ -652,29 +652,38 @@
   visibility: hidden;
 }
 
-.bibilili-video-card[data-bibilili-watch-later-delete="true"]:hover
-  .bibilili-card-delete-button,
-.bibilili-video-card[data-bibilili-watch-later-delete="true"]:focus-within
-  .bibilili-card-delete-button {
+.bibilili-video-card[data-bibilili-watch-later-action="add"]:hover
+  .bibilili-card-watch-later-button,
+.bibilili-video-card[data-bibilili-watch-later-action="add"]:focus-within
+  .bibilili-card-watch-later-button,
+.bibilili-video-card[data-bibilili-watch-later-action="delete"]:hover
+  .bibilili-card-watch-later-button,
+.bibilili-video-card[data-bibilili-watch-later-action="delete"]:focus-within
+  .bibilili-card-watch-later-button {
   opacity: 1;
   visibility: visible;
 }
 
-.bibilili-card-delete-button:hover,
-.bibilili-card-delete-button:focus-visible {
+.bibilili-card-watch-later-button[data-bibilili-watch-later-action="add"]:hover,
+.bibilili-card-watch-later-button[data-bibilili-watch-later-action="add"]:focus-visible {
+  background: rgba(0, 174, 236, 0.94);
+}
+
+.bibilili-card-watch-later-button[data-bibilili-watch-later-action="delete"]:hover,
+.bibilili-card-watch-later-button[data-bibilili-watch-later-action="delete"]:focus-visible {
   background: rgba(251, 114, 153, 0.94);
 }
 
-.bibilili-card-delete-button:disabled {
+.bibilili-card-watch-later-button:disabled {
   cursor: progress;
   opacity: 0.58;
 }
 
-.bibilili-card-delete-button[hidden] {
+.bibilili-card-watch-later-button[hidden] {
   display: none;
 }
 
-.bibilili-card-delete-icon {
+.bibilili-card-watch-later-icon {
   width: 14px;
   height: 14px;
 }

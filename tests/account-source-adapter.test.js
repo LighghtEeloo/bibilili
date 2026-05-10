@@ -3,7 +3,8 @@ const test = require("node:test");
 
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 
-const { AccountSourceAdapter, SourceKind } = loadContentRuntime();
+const { AccountSourceAdapter, AccountSourceStore, SourceKind } =
+  loadContentRuntime();
 
 test("extracts account list entries from successful payload shapes", () => {
   assert.deepEqual(
@@ -116,6 +117,60 @@ test("omits empty account sources", () => {
       SourceKind.HISTORY,
       { data: { list: [{ title: "Missing target" }] } },
       "en"
+    ),
+    null
+  );
+});
+
+test("posts watch-later additions with archive identity and csrf", async () => {
+  const previousFetch = global.fetch;
+  let request = null;
+  document.cookie = "bili_jct=csrf-token";
+
+  global.fetch = async (url, options) => {
+    request = { url, options };
+
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ code: 0 })
+    };
+  };
+
+  try {
+    await AccountSourceStore.addWatchLaterApiItem({
+      key: "bvid:BV1xx411c7mD",
+      queryName: "bvid",
+      queryValue: "BV1xx411c7mD"
+    });
+
+    assert.equal(
+      request.url,
+      "https://api.bilibili.com/x/v2/history/toview/add"
+    );
+    assert.equal(request.options.method, "POST");
+    assert.equal(request.options.credentials, "include");
+    assert.equal(request.options.body.get("csrf"), "csrf-token");
+    assert.equal(request.options.body.get("bvid"), "BV1xx411c7mD");
+  } finally {
+    global.fetch = previousFetch;
+    document.cookie = "";
+  }
+});
+
+test("resolves addable watch-later identities from archive URLs", () => {
+  assert.deepEqual(
+    AccountSourceStore.watchLaterAddIdentityForUrl(
+      "https://www.bilibili.com/video/av123456"
+    ),
+    {
+      key: "aid:123456",
+      queryName: "aid",
+      queryValue: "123456"
+    }
+  );
+  assert.equal(
+    AccountSourceStore.watchLaterAddIdentityForUrl(
+      "https://www.bilibili.com/bangumi/play/ep12345"
     ),
     null
   );

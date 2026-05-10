@@ -46,7 +46,7 @@ into the bottom dock.
 ## DOM Ownership
 
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, watch action group, list rail, video cards, watch-later removal
+source bar, watch action group, list rail, video cards, watch-later mutation
 controls, extension classes, and bookkeeping attributes. Bilibili owns the
 player, comments, source roots, links, watch action triggers, account controls,
 account lists, and network-backed content.
@@ -56,9 +56,9 @@ containers. It keeps page-owned video-list roots available for observation and
 extraction, and it renders account list API records into extension-owned cards
 without modifying native account list DOM.
 
-Bibilili may remove watch-later account records through Bilibili's account API.
-The removal is an account-list mutation. It does not activate native
-watch-later controls or replace Bilibili navigation behavior.
+Bibilili may add and remove watch-later account records through Bilibili's
+account API. These operations are account-list mutations. They do not activate
+native watch-later controls or replace Bilibili navigation behavior.
 
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
 coin, and favorite forward clicks to Bilibili's page-owned triggers. Share
@@ -214,8 +214,9 @@ script with the current Bilibili login cookies.
 The account source kinds are watch later and history. Watch later reads
 Bilibili's to-view list; history reads the recent video history list. Each API
 response is normalized into the same video item shape used by page-owned
-sources. History is read-only in the dock. Watch later supports per-item
-removal.
+sources. History is read-only in the dock. Watch later supports additions from
+page-owned collection and recommendation cards and removals from
+account-backed watch-later cards.
 
 Account source fetches are advisory and never block the first transformed
 layout. When an account request fails, requires login, or returns no valid
@@ -228,6 +229,10 @@ Watch-later items carry the archive id required by Bilibili's to-view deletion
 endpoint when the account payload exposes it. A successful deletion removes the
 item from the loaded watch-later source and reconciles the dock. Deleting the
 currently open video from watch later leaves the watch page open.
+
+Collection and recommendation cards derive a to-view add identity from their
+archive target URL. A successful addition refreshes account-backed sources and
+hides the add control for that card during the current layout session.
 
 ## Video Item
 
@@ -429,10 +434,11 @@ A collection card matching the current watch route exposes `aria-current` and
 uses selected border and title colors. For collection cards, a native
 current-row marker from Bilibili is equivalent to a matching watch route.
 
-A watch-later card with a deletion identity includes an overlay removal button.
-The button appears on card hover or card focus, sits at the top-right of the
-card, and handles its own activation. Activating the rest of the card follows
-the card link.
+Collection and recommendation cards with archive targets include an overlay
+add-to-watch-later button. Watch-later cards with a deletion identity include
+an overlay removal button. The mutation button appears on card hover or card
+focus, sits at the top-right of the card, and handles its own activation.
+Activating the rest of the card follows the card link.
 
 ## Runtime Controller
 

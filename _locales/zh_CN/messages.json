@@ -69,6 +69,10 @@
     "message": "复制链接",
     "description": "Accessible label for the dock share action that copies the current watch URL."
   },
+  "watchLaterAddLabel": {
+    "message": "添加到稍后再看",
+    "description": "Accessible label for adding one video card to the watch-later list."
+  },
   "watchLaterRemoveLabel": {
     "message": "从稍后再看移除",
     "description": "Accessible label for removing one watch-later card from the list."
