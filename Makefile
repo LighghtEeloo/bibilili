@@ -5,13 +5,14 @@ VERSION := $(shell node -p "require('./manifest.json').version")
 DIST_DIR := dist
 PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-$(VERSION).zip
 PACKAGE_FILES := manifest.json README.md src assets _locales
+CONTENT_SCRIPT_FILES := $(shell node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); process.stdout.write(manifest.content_scripts.flatMap((script)=>script.js ?? []).join(' '));")
 
 .PHONY: help validate validate-js validate-tests validate-json validate-assets manual-checklist package inspect-package test-package clean
 
 help:
 	@printf '%s\n' 'Targets:'
 	@printf '%s\n' '  make validate          Run all local validation checks.'
-	@printf '%s\n' '  make validate-js       Check content-script JavaScript syntax.'
+	@printf '%s\n' '  make validate-js       Check manifest content-script JavaScript syntax.'
 	@printf '%s\n' '  make validate-tests    Run Node tests.'
 	@printf '%s\n' '  make validate-json     Parse manifest and locale JSON.'
 	@printf '%s\n' '  make validate-assets   Verify required package assets.'
@@ -24,11 +25,10 @@ help:
 validate: validate-js validate-tests validate-json validate-assets
 
 validate-js:
-	node --check src/content-route.js
-	node --check src/content-state.js
-	node --check src/content-i18n.js
-	node --check src/content-storage.js
-	node --check src/content.js
+	@for file in $(CONTENT_SCRIPT_FILES); do \
+		printf '%s\n' "node --check $$file"; \
+		node --check "$$file"; \
+	done
 
 validate-tests:
 	node --test tests/*.test.js
