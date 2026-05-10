@@ -2335,9 +2335,7 @@
         return SourceAdapter.videoUrl({ bvid, page });
       }
 
-      const aid = AccountSourceAdapter.numberValue(
-        entry.aid ?? entry.kid ?? entry.history?.oid
-      );
+      const aid = AccountSourceAdapter.archiveAidFor(entry);
 
       if (aid) {
         return SourceAdapter.videoUrl({ aid: String(aid), page });
@@ -2496,15 +2494,25 @@
      * @returns {string | null}
      */
     static watchLaterAidFor(entry) {
-      const aid = AccountSourceAdapter.numberValue(
-        entry.aid ?? entry.kid ?? entry.history?.oid
-      );
+      const aid = AccountSourceAdapter.archiveAidFor(entry);
 
       if (!aid || aid <= 0) {
         return null;
       }
 
       return String(Math.trunc(aid));
+    }
+
+    /**
+     * Reads the archive id from account record id fields.
+     *
+     * @param {object} entry
+     * @returns {number | null}
+     */
+    static archiveAidFor(entry) {
+      return AccountSourceAdapter.numberValue(
+        entry.aid ?? entry.kid ?? entry.history?.oid
+      );
     }
 
     /**
