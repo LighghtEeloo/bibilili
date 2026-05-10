@@ -153,36 +153,32 @@
      * @returns {string | null}
      */
     static playableIdentityForUrl(value, baseHref = BilibiliRoute.defaultBaseHref()) {
-      try {
-        const url = BilibiliRoute.urlFor(value, baseHref);
+      const url = BilibiliRoute.bilibiliUrlFor(value, baseHref);
 
-        if (url.hostname !== "www.bilibili.com") {
-          return null;
-        }
-
-        const path = url.pathname.replace(/\/+$/u, "");
-        const videoMatch = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
-
-        if (videoMatch) {
-          const videoId = videoMatch[1];
-          const normalizedId =
-            /^av/iu.test(videoId) ? videoId.toLowerCase() : videoId;
-
-          return `video:${normalizedId}`;
-        }
-
-        const bangumiMatch = path.match(
-          /^\/bangumi\/play\/((?:ep|ss|md)\d+)$/iu
-        );
-
-        if (bangumiMatch) {
-          return `bangumi:${bangumiMatch[1].toLowerCase()}`;
-        }
-
-        return null;
-      } catch (_error) {
+      if (!url) {
         return null;
       }
+
+      const path = url.pathname.replace(/\/+$/u, "");
+      const videoMatch = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
+
+      if (videoMatch) {
+        const videoId = videoMatch[1];
+        const normalizedId =
+          /^av/iu.test(videoId) ? videoId.toLowerCase() : videoId;
+
+        return `video:${normalizedId}`;
+      }
+
+      const bangumiMatch = path.match(
+        /^\/bangumi\/play\/((?:ep|ss|md)\d+)$/iu
+      );
+
+      if (bangumiMatch) {
+        return `bangumi:${bangumiMatch[1].toLowerCase()}`;
+      }
+
+      return null;
     }
 
     /**
@@ -193,45 +189,41 @@
      * @returns {ArchiveVideoIdentity | null}
      */
     static archiveIdentityForUrl(value, baseHref = BilibiliRoute.defaultBaseHref()) {
-      try {
-        const url = BilibiliRoute.urlFor(value, baseHref);
+      const url = BilibiliRoute.bilibiliUrlFor(value, baseHref);
 
-        if (url.hostname !== "www.bilibili.com") {
-          return null;
-        }
-
-        const path = url.pathname.replace(/\/+$/u, "");
-        const match = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
-
-        if (!match) {
-          return null;
-        }
-
-        const videoId = match[1];
-        const bvid = BilibiliRoute.cleanBvid(videoId);
-
-        if (bvid) {
-          return {
-            key: `bvid:${bvid}`,
-            queryName: "bvid",
-            queryValue: bvid
-          };
-        }
-
-        const aid = BilibiliRoute.cleanAid(videoId);
-
-        if (aid) {
-          return {
-            key: `aid:${aid}`,
-            queryName: "aid",
-            queryValue: aid
-          };
-        }
-
-        return null;
-      } catch (_error) {
+      if (!url) {
         return null;
       }
+
+      const path = url.pathname.replace(/\/+$/u, "");
+      const match = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
+
+      if (!match) {
+        return null;
+      }
+
+      const videoId = match[1];
+      const bvid = BilibiliRoute.cleanBvid(videoId);
+
+      if (bvid) {
+        return {
+          key: `bvid:${bvid}`,
+          queryName: "bvid",
+          queryValue: bvid
+        };
+      }
+
+      const aid = BilibiliRoute.cleanAid(videoId);
+
+      if (aid) {
+        return {
+          key: `aid:${aid}`,
+          queryName: "aid",
+          queryValue: aid
+        };
+      }
+
+      return null;
     }
 
     /**
@@ -270,6 +262,23 @@
       const page = Number.parseInt(url.searchParams.get("p") ?? "", 10);
 
       return Number.isSafeInteger(page) && page > 0 ? page : 1;
+    }
+
+    /**
+     * Parses a URL-like value and keeps only Bilibili web URLs.
+     *
+     * @param {string | URL} value
+     * @param {string} [baseHref]
+     * @returns {URL | null}
+     */
+    static bilibiliUrlFor(value, baseHref = BilibiliRoute.defaultBaseHref()) {
+      try {
+        const url = BilibiliRoute.urlFor(value, baseHref);
+
+        return url.hostname === "www.bilibili.com" ? url : null;
+      } catch (_error) {
+        return null;
+      }
     }
 
     /**
