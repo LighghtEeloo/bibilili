@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  const { MovedPageNodeStore, SourceRootMarker } =
+    window.__bibililiLayoutState;
+
   const OWNED_ROOT_ID = "bibilili-layout-root";
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
   const LIST_RAIL_ID = "bibilili-list-rail";
@@ -5409,12 +5412,17 @@
       this.hasUserInteractedWithSources = false;
       this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
-      this.movedNodes = new Map();
-      this.markedSourceRoots = new Set();
+      this.movedPageNodes = new MovedPageNodeStore(this.document);
+      this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
     }
 
     /**
-     * Mounts or updates the transformed layout from discovered regions.
+     * Mounts or updates the transformed layout from one discovery pass.
+     *
+     * This method is the layout boundary for reconciliation. Inputs are already
+     * typed into page-owned regions and source records; the layout may move
+     * player and comment nodes, mirror action state, and render extension-owned
+     * list chrome, but it does not rediscover page DOM on its own.
      *
      * @param {DiscoveredRegions} regions
      * @param {boolean} resetSourceRoute
@@ -5462,7 +5470,12 @@
     }
 
     /**
-     * Restores moved nodes and removes extension-owned markup.
+     * Restores all moved page-owned nodes and removes extension-owned markup.
+     *
+     * Destroy is the normal exit path for disabling Bibilili, leaving a watch
+     * page, or rebuilding after same-tab navigation. It clears extension-owned
+     * state after page nodes have been restored so later reconciliation starts
+     * from native page ownership.
      */
     destroy() {
       LayoutRoot.clearNativeOverlayLift(this.document);
@@ -5522,7 +5535,9 @@
      * Temporarily restores page-owned nodes so native lazy observers can run.
      *
      * Note: Bilibili comment hydration may depend on the original page layout
-     * being present while the native document scrolls.
+     * being present while the native document scrolls. This release keeps the
+     * layout object reusable; the next render pass recreates the extension DOM
+     * and moves current page-owned nodes again.
      */
     releaseForNativePrime() {
       LayoutRoot.clearNativeOverlayLift(this.document);
@@ -6176,6 +6191,11 @@
 
     /**
      * Renders visible source controls and the bottom rail.
+     *
+     * Source route state is applied only through this method. It preserves a
+     * pending route hint until that source appears, so account-backed sources
+     * can arrive after the first render without losing the user's navigation
+     * context.
      *
      * @param {VideoListSource[]} sources
      * @param {boolean} resetSourceRoute
@@ -8073,43 +8093,30 @@
     /**
      * Moves a page-owned node into an extension pane and leaves a placeholder.
      *
+     * The moved-node store owns the native restore target. Callers pass only
+     * page-owned player or comment nodes; extension-owned children should be
+     * recreated or removed instead of being restored through this path.
+     *
      * @param {Element} node
      * @param {Element} pane
      * @param {string} placeholderName
      */
     movePageNode(node, pane, placeholderName) {
-      if (node.parentElement === pane) {
-        return;
-      }
-
-      if (!this.movedNodes.has(node) && node.parentNode) {
-        const placeholder = this.document.createComment(`bibilili ${placeholderName}`);
-        node.parentNode.insertBefore(placeholder, node);
-        this.movedNodes.set(node, placeholder);
-      }
-
-      pane.replaceChildren(node);
+      this.movedPageNodes.move(node, pane, placeholderName);
     }
 
     /**
      * Restores a moved page-owned node to its original placeholder.
      *
+     * Restoration is idempotent for null or already-restored nodes.
+     * Note: Bilibili can remove the placeholder during navigation, so the
+     * store uses the current layout root to detect whether the live node still
+     * needs to be released.
+     *
      * @param {Element | null} node
      */
     restoreNode(node) {
-      if (!node) {
-        return;
-      }
-
-      const placeholder = this.movedNodes.get(node);
-      this.movedNodes.delete(node);
-
-      if (placeholder?.isConnected && placeholder.parentNode) {
-        placeholder.parentNode.insertBefore(node, placeholder);
-        placeholder.remove();
-      } else if (this.root?.contains(node)) {
-        this.document.body.append(node);
-      }
+      this.movedPageNodes.restore(node, this.root);
     }
 
     /**
@@ -8118,27 +8125,14 @@
      * @param {VideoListSource[]} sources
      */
     markSourceRoots(sources) {
-      this.unmarkSourceRoots();
-
-      for (const source of sources) {
-        if (!source.root) {
-          continue;
-        }
-
-        source.root.setAttribute(SOURCE_ROOT_ATTR, source.kind);
-        this.markedSourceRoots.add(source.root);
-      }
+      this.sourceRootMarker.mark(sources);
     }
 
     /**
      * Removes extension source markers from previously marked roots.
      */
     unmarkSourceRoots() {
-      for (const root of this.markedSourceRoots) {
-        root.removeAttribute(SOURCE_ROOT_ATTR);
-      }
-
-      this.markedSourceRoots.clear();
+      this.sourceRootMarker.unmark();
     }
   }
 
@@ -8185,7 +8179,7 @@
     }
 
     /**
-     * Starts the controller.
+     * Starts observers, account loading, and the first reconciliation pass.
      */
     start() {
       this.pageKey = this.currentPageKey();
@@ -8200,7 +8194,7 @@
     }
 
     /**
-     * Stops observation and removes the transformed layout.
+     * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
       this.observer?.disconnect();
@@ -8315,6 +8309,12 @@
 
     /**
      * Rebuilds the transformed layout from current DOM regions.
+     *
+     * Reconciliation is the controller's only mount decision point. It handles
+     * watch-page exit, disabled state, missing-player retry, lazy priming,
+     * account-source merging, preview hydration, and the handoff into
+     * LayoutRoot. User source-route state is captured before render because
+     * account-backed sources may change the source list during later passes.
      *
      * @param {boolean} resetSourceRoute
      */
@@ -8435,6 +8435,10 @@
 
     /**
      * Resets per-page state when the visible watch page changes.
+     *
+     * Same-tab navigation reuses the content-script instance, so page-scoped
+     * lazy-prime, preview, and source-route state are cleared before the new
+     * page's urgent reconciliation.
      */
     handlePotentialNavigation() {
       const nextPageKey = this.currentPageKey();

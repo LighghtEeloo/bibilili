@@ -18,6 +18,7 @@ help:
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
 
 validate:
+	node --check src/content-state.js
 	node --check src/content.js
 	node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 	node -e "const fs=require('fs'); for (const dir of ['en','zh_CN','zh_TW']) JSON.parse(fs.readFileSync('_locales/'+dir+'/messages.json', 'utf8'))"

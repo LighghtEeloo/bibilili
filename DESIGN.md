@@ -7,9 +7,14 @@ video lists move to the bottom.
 The player remains the visual anchor. Comments and video lists become bounded
 scroll surfaces around it.
 
-Chrome and Firefox share the manifest, content script, stylesheet, and assets.
-Firefox-specific add-on metadata lives in the shared manifest under
-`browser_specific_settings`.
+Chrome and Firefox share the manifest, ordered content-script files,
+stylesheet, and assets. Firefox-specific add-on metadata lives in the shared
+manifest under `browser_specific_settings`.
+
+`src/content-state.js` is the content-script prelude. It defines small layout
+bookkeeping helpers for moved page nodes and marked source roots. `src/content.js`
+is the main runtime. It owns discovery, reconciliation, rendering, account
+requests, preview hydration, and activation state.
 
 ## Watch Page
 
@@ -64,6 +69,10 @@ comment pane; the list dock sits below the stage.
 
 The layout root owns viewport-level sizing. It assigns bounded height to the
 list dock and gives the remaining height to the stage.
+
+Moved-node bookkeeping records the native restore point for each page-owned
+node moved into an extension pane. Source-root bookkeeping marks native source
+roots only while their extracted items are represented in the dock.
 
 ## Theme
 
