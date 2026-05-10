@@ -8652,7 +8652,10 @@
   if (window.__bibililiExposeInternals) {
     window.__bibililiInternals = Object.freeze({
       AccountSourceAdapter,
-      SourceKind
+      CardNavigationOriginStore,
+      SourceKind,
+      SourceMerger,
+      SourceRouteStateStore
     });
   }
 
