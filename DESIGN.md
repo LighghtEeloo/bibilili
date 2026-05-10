@@ -32,15 +32,19 @@ into the bottom dock.
 ## DOM Ownership
 
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, watch action group, list rail, video cards, extension classes, and
-bookkeeping attributes. Bilibili owns the player, comments, source roots,
-links, watch action triggers, account controls, account lists, and
-network-backed content.
+source bar, watch action group, list rail, video cards, watch-later removal
+controls, extension classes, and bookkeeping attributes. Bilibili owns the
+player, comments, source roots, links, watch action triggers, account controls,
+account lists, and network-backed content.
 
 Bibilili may move page-owned player and comment nodes into extension
 containers. It keeps page-owned video-list roots available for observation and
 extraction, and it renders account list API records into extension-owned cards
-without modifying account lists.
+without modifying native account list DOM.
+
+Bibilili may remove watch-later account records through Bilibili's account API.
+The removal is an account-list mutation. It does not activate native
+watch-later controls or replace Bilibili navigation behavior.
 
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
 coin, and favorite forward clicks to Bilibili's page-owned triggers. Share
@@ -178,13 +182,14 @@ Bilibili account API payloads into video items for the bottom dock renderer.
 
 ## Account Video List Source
 
-An account video list source is a read-only Bilibili account list fetched by the
-content script with the current Bilibili login cookies.
+An account video list source is a Bilibili account list fetched by the content
+script with the current Bilibili login cookies.
 
 The account source kinds are watch later and history. Watch later reads
 Bilibili's to-view list; history reads the recent video history list. Each API
 response is normalized into the same video item shape used by page-owned
-sources.
+sources. History is read-only in the dock. Watch later supports per-item
+removal.
 
 Account source fetches are advisory and never block the first transformed
 layout. When an account request fails, requires login, or returns no valid
@@ -192,6 +197,11 @@ video items, that source is absent for the current render pass.
 
 Account sources do not have page-owned roots. They are rendered in the bottom
 dock but do not participate in source-root hiding.
+
+Watch-later items carry the archive id required by Bilibili's to-view deletion
+endpoint when the account payload exposes it. A successful deletion removes the
+item from the loaded watch-later source and reconciles the dock. Deleting the
+currently open video from watch later leaves the watch page open.
 
 ## Video Item
 
@@ -349,13 +359,19 @@ navigation unless the browser or Bilibili intercepts the link. When a thumbnail
 is unavailable, the thumbnail area presents the video title and clamps it within
 the fixed preview height.
 
-During same-route reconciliation, existing card anchors and stable child nodes
-are reused. Advisory list or thumbnail updates change card content and explicit
-thumbnail state in place so normal link activation is not interrupted.
+During same-route reconciliation, existing card roots, link anchors, and stable
+child nodes are reused. Advisory list or thumbnail updates change card content
+and explicit thumbnail state in place so normal link activation is not
+interrupted.
 
 A collection card matching the current watch route exposes `aria-current` and
 uses selected border and title colors. For collection cards, a native
 current-row marker from Bilibili is equivalent to a matching watch route.
+
+A watch-later card with a deletion identity includes an overlay removal button.
+The button appears on card hover or card focus, sits at the top-right of the
+card, and handles its own activation. Activating the rest of the card follows
+the card link.
 
 ## Runtime Controller
 

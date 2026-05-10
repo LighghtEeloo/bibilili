@@ -30,8 +30,11 @@
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
+  const WATCH_LATER_DELETE_URL =
+    "https://api.bilibili.com/x/v2/history/toview/del";
   const VIDEO_INFO_SOURCE_URL =
     "https://api.bilibili.com/x/web-interface/view";
+  const BILIBILI_CSRF_COOKIE_NAME = "bili_jct";
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const PLAYER_SELECTORS = [
@@ -489,6 +492,7 @@
     WATCH_ACTION_FAVORITE_LABEL: "watchActionFavoriteLabel",
     WATCH_ACTION_SHARE_LABEL: "watchActionShareLabel",
     WATCH_ACTION_COPY_LINK_LABEL: "watchActionCopyLinkLabel",
+    WATCH_LATER_REMOVE_LABEL: "watchLaterRemoveLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
     COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
@@ -1122,6 +1126,16 @@
         language,
         [label, countText]
       );
+    }
+
+    /**
+     * Returns the accessible label for removing one watch-later card.
+     *
+     * @param {string} language
+     * @returns {string}
+     */
+    static watchLaterRemoveLabel(language) {
+      return UiStrings.message(UiMessage.WATCH_LATER_REMOVE_LABEL, language);
     }
 
     /**
@@ -3319,7 +3333,7 @@
         return null;
       }
 
-      return {
+      const item = {
         targetUrl,
         title,
         thumbnailUrl: AccountSourceAdapter.thumbnailFor(entry),
@@ -3329,6 +3343,16 @@
         viewCount: AccountSourceAdapter.viewCountFor(entry, language),
         progress: AccountSourceAdapter.progressFor(entry, language)
       };
+
+      if (kind === SourceKind.WATCH_LATER) {
+        const watchLaterAid = AccountSourceAdapter.watchLaterAidFor(entry);
+
+        if (watchLaterAid) {
+          item.watchLaterAid = watchLaterAid;
+        }
+      }
+
+      return item;
     }
 
     /**
@@ -3513,6 +3537,24 @@
     }
 
     /**
+     * Reads the archive id used by Bilibili's watch-later deletion endpoint.
+     *
+     * @param {object} entry
+     * @returns {string | null}
+     */
+    static watchLaterAidFor(entry) {
+      const aid = AccountSourceAdapter.numberValue(
+        entry.aid ?? entry.kid ?? entry.history?.oid
+      );
+
+      if (!aid || aid <= 0) {
+        return null;
+      }
+
+      return String(Math.trunc(aid));
+    }
+
+    /**
      * Formats seconds as a compact duration token.
      *
      * @param {number | null} seconds
@@ -3617,6 +3659,58 @@
      */
     currentSources() {
       return this.sources;
+    }
+
+    /**
+     * Deletes one archive from Bilibili's watch-later list and local source.
+     *
+     * @param {string} aid
+     * @returns {Promise<void>}
+     */
+    async deleteWatchLaterItem(aid) {
+      const normalizedAid = AccountSourceStore.normalizeAid(aid);
+
+      if (!normalizedAid) {
+        throw new Error("Missing watch-later aid");
+      }
+
+      await AccountSourceStore.deleteWatchLaterApiItem(normalizedAid);
+
+      if (this.removeWatchLaterItem(normalizedAid)) {
+        this.onChange();
+      }
+    }
+
+    /**
+     * Removes one archive from the loaded watch-later source.
+     *
+     * @param {string} aid
+     * @returns {boolean}
+     */
+    removeWatchLaterItem(aid) {
+      let didRemove = false;
+
+      this.sources = this.sources
+        .map((source) => {
+          if (source.kind !== SourceKind.WATCH_LATER) {
+            return source;
+          }
+
+          const items = source.items.filter(
+            (item) => item.watchLaterAid !== aid
+          );
+
+          if (items.length === source.items.length) {
+            return source;
+          }
+
+          didRemove = true;
+
+          return items.length > 0 ? { ...source, items } : null;
+        })
+        .filter(Boolean);
+
+      return didRemove;
     }
 
     /**
@@ -3749,6 +3843,36 @@
     }
 
     /**
+     * Deletes one archive from the current account's watch-later list.
+     *
+     * Note: Bilibili's to-view deletion endpoint takes an archive id and the
+     * current account CSRF token instead of a card URL.
+     *
+     * @param {string} aid
+     * @returns {Promise<void>}
+     */
+    static async deleteWatchLaterApiItem(aid) {
+      const csrfToken = AccountSourceStore.csrfToken();
+
+      if (!csrfToken) {
+        throw new Error("Missing Bilibili CSRF token");
+      }
+
+      const body = new URLSearchParams();
+      body.set("aid", aid);
+      body.set("csrf", csrfToken);
+
+      const payload = await AccountSourceStore.postApiPayload(
+        WATCH_LATER_DELETE_URL,
+        body
+      );
+
+      if (!AccountSourceStore.isSuccessfulPayload(payload)) {
+        throw new Error("Watch-later deletion failed");
+      }
+    }
+
+    /**
      * Fetches a Bilibili JSON payload with the current account cookies.
      *
      * Note: Bilibili account endpoints require the page's login cookies and may
@@ -3772,6 +3896,67 @@
       }
 
       return AccountSourceStore.parseApiPayload(await response.text());
+    }
+
+    /**
+     * Posts a Bilibili form request with the current account cookies.
+     *
+     * @param {string} url
+     * @param {URLSearchParams} body
+     * @returns {Promise<object>}
+     */
+    static async postApiPayload(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+        },
+        body
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return AccountSourceStore.parseApiPayload(await response.text());
+    }
+
+    /**
+     * Reads Bilibili's CSRF token from document cookies.
+     *
+     * @returns {string | null}
+     */
+    static csrfToken() {
+      const cookies = document.cookie.split(";");
+
+      for (const cookie of cookies) {
+        const [rawName, ...rawValueParts] = cookie.split("=");
+        const name = rawName.trim();
+
+        if (name !== BILIBILI_CSRF_COOKIE_NAME) {
+          continue;
+        }
+
+        const value = rawValueParts.join("=").trim();
+
+        return value ? decodeURIComponent(value) : null;
+      }
+
+      return null;
+    }
+
+    /**
+     * Normalizes an archive id used by the watch-later API.
+     *
+     * @param {unknown} aid
+     * @returns {string | null}
+     */
+    static normalizeAid(aid) {
+      const text = typeof aid === "string" ? aid.trim() : "";
+
+      return /^\d+$/u.test(text) ? text : null;
     }
 
     /**
@@ -4960,7 +5145,7 @@
       this.renderedSourceKind = null;
       this.actionButtons = new Map();
       this.sourceButtons = new Map();
-      /** @type {WeakMap<HTMLAnchorElement, VideoCardRenderState>} */
+      /** @type {WeakMap<HTMLElement, VideoCardRenderState>} */
       this.videoCardStates = new WeakMap();
       this.currentActions = [];
       this.currentSources = [];
@@ -4968,6 +5153,8 @@
       this.currentActivationControl = null;
       this.onCommentReload = null;
       this.onWatchActionForward = null;
+      this.onWatchLaterDelete = null;
+      this.pendingWatchLaterDeleteAids = new Set();
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -4984,6 +5171,7 @@
      * @param {string} language
      * @param {() => void} onCommentReload
      * @param {() => void} onWatchActionForward
+     * @param {(aid: string) => Promise<void>} onWatchLaterDelete
      */
     render(
       regions,
@@ -4991,7 +5179,8 @@
       activationControl,
       language,
       onCommentReload,
-      onWatchActionForward
+      onWatchActionForward,
+      onWatchLaterDelete
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5004,6 +5193,7 @@
       this.setComments(regions.comments, regions.commentState);
       this.currentActions = regions.actions;
       this.accountControl = regions.accountControl;
+      this.onWatchLaterDelete = onWatchLaterDelete;
       this.setSources(regions.sources, resetSourceRoute, activationControl);
     }
 
@@ -5048,6 +5238,8 @@
       this.currentActivationControl = null;
       this.onCommentReload = null;
       this.onWatchActionForward = null;
+      this.onWatchLaterDelete = null;
+      this.pendingWatchLaterDeleteAids.clear();
       this.hasUserInteractedWithSources = false;
       this.locatedCollectionRouteKey = null;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -6492,14 +6684,14 @@
      * Returns reusable video cards currently rendered in one card row.
      *
      * @param {HTMLElement} row
-     * @returns {Map<string, HTMLAnchorElement>}
+     * @returns {Map<string, HTMLElement>}
      */
     videoCardsByKey(row) {
       const cards = new Map();
 
       for (const child of row.children) {
         if (
-          child instanceof HTMLAnchorElement &&
+          child instanceof HTMLElement &&
           child.classList.contains("bibilili-video-card")
         ) {
           const key = child.dataset.bibililiCardKey;
@@ -6551,7 +6743,7 @@
     removeStaleVideoCards(row, usedKeys) {
       for (const child of Array.from(row.children)) {
         const key =
-          child instanceof HTMLAnchorElement
+          child instanceof HTMLElement
             ? child.dataset.bibililiCardKey
             : null;
 
@@ -6595,7 +6787,7 @@
      * Positions the collection rail on the current video card when available.
      *
      * @param {string} sourceKind
-     * @param {HTMLAnchorElement | null} currentCard
+     * @param {HTMLElement | null} currentCard
      * @param {string | null} currentRouteKey
      * @param {boolean} resetScroll
      * @returns {boolean}
@@ -6635,18 +6827,18 @@
      * @param {VideoItem} item
      * @param {boolean} [isCurrent]
      * @param {string} [cardKey]
-     * @returns {HTMLAnchorElement}
+     * @returns {HTMLElement}
      */
     videoCard(item, isCurrent = false, cardKey = "") {
-      const card = this.document.createElement("a");
+      const card = this.document.createElement("span");
       this.updateVideoCard(card, item, isCurrent, cardKey);
       return card;
     }
 
     /**
-     * Updates one extension-owned video card without replacing its anchor node.
+     * Updates one extension-owned video card without replacing its root node.
      *
-     * @param {HTMLAnchorElement} card
+     * @param {HTMLElement} card
      * @param {VideoItem} item
      * @param {boolean} isCurrent
      * @param {string} cardKey
@@ -6657,14 +6849,19 @@
 
       card.className = "bibilili-video-card";
       card.dataset.bibililiCardKey = cardKey;
-      card.href = state.targetUrl;
       card.title = state.title;
+      parts.link.href = state.targetUrl;
+      parts.link.title = state.title;
 
       if (isCurrent) {
         card.setAttribute("aria-current", "page");
+        parts.link.setAttribute("aria-current", "page");
       } else {
         card.removeAttribute("aria-current");
+        parts.link.removeAttribute("aria-current");
       }
+
+      this.updateWatchLaterDeleteControl(card, parts.deleteButton, state);
 
       const previousState = this.videoCardStates.get(card);
       if (
@@ -6681,11 +6878,12 @@
     /**
      * Ensures one video card has stable child nodes for in-place updates.
      *
-     * @param {HTMLAnchorElement} card
+     * @param {HTMLElement} card
      * @returns {VideoCardParts}
      */
     videoCardParts(card) {
-      const existingThumb = card.querySelector(".bibilili-card-thumb");
+      const existingLink = card.querySelector(".bibilili-card-link");
+      const existingThumb = existingLink?.querySelector(".bibilili-card-thumb");
       const existingImage = existingThumb?.querySelector("img");
       const existingPlaceholder = existingThumb?.querySelector(
         ".bibilili-card-placeholder"
@@ -6693,26 +6891,36 @@
       const existingDuration = existingThumb?.querySelector(
         ".bibilili-card-duration"
       );
-      const existingTitle = card.querySelector(".bibilili-card-title");
-      const existingMeta = card.querySelector(".bibilili-card-meta");
+      const existingTitle = existingLink?.querySelector(".bibilili-card-title");
+      const existingMeta = existingLink?.querySelector(".bibilili-card-meta");
+      const existingDeleteButton = card.querySelector(
+        ".bibilili-card-delete-button"
+      );
 
       if (
+        existingLink instanceof HTMLAnchorElement &&
         existingThumb instanceof HTMLElement &&
         existingImage instanceof HTMLImageElement &&
         existingPlaceholder instanceof HTMLElement &&
         existingDuration instanceof HTMLElement &&
         existingTitle instanceof HTMLElement &&
-        existingMeta instanceof HTMLElement
+        existingMeta instanceof HTMLElement &&
+        existingDeleteButton instanceof HTMLButtonElement
       ) {
         return {
+          link: existingLink,
           thumb: existingThumb,
           image: existingImage,
           placeholder: existingPlaceholder,
           duration: existingDuration,
           title: existingTitle,
-          meta: existingMeta
+          meta: existingMeta,
+          deleteButton: existingDeleteButton
         };
       }
+
+      const link = this.document.createElement("a");
+      link.className = "bibilili-card-link";
 
       const thumb = this.document.createElement("span");
       thumb.className = "bibilili-card-thumb";
@@ -6736,10 +6944,128 @@
       const meta = this.document.createElement("span");
       meta.className = "bibilili-card-meta";
 
-      card.replaceChildren(thumb, title, meta);
+      const deleteButton = this.watchLaterDeleteButton();
+
+      link.append(thumb, title, meta);
+      card.replaceChildren(link, deleteButton);
       this.videoCardStates.delete(card);
 
-      return { thumb, image, placeholder, duration, title, meta };
+      return {
+        link,
+        thumb,
+        image,
+        placeholder,
+        duration,
+        title,
+        meta,
+        deleteButton
+      };
+    }
+
+    /**
+     * Creates the watch-later removal button for one video card.
+     *
+     * @returns {HTMLButtonElement}
+     */
+    watchLaterDeleteButton() {
+      const button = this.document.createElement("button");
+      button.type = "button";
+      button.className = "bibilili-card-delete-button";
+      button.append(LayoutRoot.watchLaterDeleteIcon(this.document));
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.handleWatchLaterDeleteClick(button);
+      });
+
+      return button;
+    }
+
+    /**
+     * Creates the card overlay icon for removing watch-later entries.
+     *
+     * @param {Document} document
+     * @returns {SVGSVGElement}
+     */
+    static watchLaterDeleteIcon(document) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.classList.add("bibilili-card-delete-icon");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute(
+        "d",
+        "M6 7h12M9 7V5h6v2m-7 3 1 9h6l1-9"
+      );
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+
+      svg.append(path);
+      return svg;
+    }
+
+    /**
+     * Updates one card's watch-later removal control.
+     *
+     * @param {HTMLElement} card
+     * @param {HTMLButtonElement} button
+     * @param {VideoCardRenderState} state
+     */
+    updateWatchLaterDeleteControl(card, button, state) {
+      const aid = state.watchLaterAid;
+      const isDeletable = Boolean(aid);
+
+      card.dataset.bibililiWatchLaterDelete = isDeletable ? "true" : "false";
+      button.hidden = !isDeletable;
+      button.disabled = isDeletable
+        ? this.pendingWatchLaterDeleteAids.has(aid)
+        : true;
+      button.title = state.watchLaterDeleteLabel;
+      button.setAttribute("aria-label", state.watchLaterDeleteLabel);
+
+      if (aid) {
+        card.dataset.bibililiWatchLaterAid = aid;
+        return;
+      }
+
+      delete card.dataset.bibililiWatchLaterAid;
+    }
+
+    /**
+     * Deletes a watch-later card through the controller callback.
+     *
+     * @param {HTMLButtonElement} button
+     */
+    handleWatchLaterDeleteClick(button) {
+      const card = button.closest(".bibilili-video-card");
+      const aid =
+        card instanceof HTMLElement
+          ? card.dataset.bibililiWatchLaterAid
+          : null;
+
+      if (!aid || !this.onWatchLaterDelete) {
+        return;
+      }
+
+      this.pendingWatchLaterDeleteAids.add(aid);
+      button.disabled = true;
+
+      this.onWatchLaterDelete(aid)
+        .then(() => {
+          this.pendingWatchLaterDeleteAids.delete(aid);
+        })
+        .catch(() => {
+          this.pendingWatchLaterDeleteAids.delete(aid);
+
+          if (button.isConnected) {
+            button.disabled = false;
+          }
+        });
     }
 
     /**
@@ -6790,6 +7116,11 @@
         metaText: [item.author, item.viewCount, item.progress]
           .filter(Boolean)
           .join(" · "),
+        watchLaterAid:
+          item.sourceKind === SourceKind.WATCH_LATER
+            ? item.watchLaterAid ?? ""
+            : "",
+        watchLaterDeleteLabel: UiStrings.watchLaterRemoveLabel(this.language),
         isCurrent
       };
     }
@@ -6808,6 +7139,9 @@
         previousState.thumbnailUrl === nextState.thumbnailUrl &&
         previousState.duration === nextState.duration &&
         previousState.metaText === nextState.metaText &&
+        previousState.watchLaterAid === nextState.watchLaterAid &&
+        previousState.watchLaterDeleteLabel ===
+          nextState.watchLaterDeleteLabel &&
         previousState.isCurrent === nextState.isCurrent
       );
     }
@@ -7207,7 +7541,8 @@
         this.activationControl,
         language,
         () => this.reloadComments(),
-        () => this.scheduleReconcile(false, ReconcilePriority.LAZY)
+        () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
+        (aid) => this.deleteWatchLaterItem(aid)
       );
     }
 
@@ -7318,6 +7653,17 @@
     }
 
     /**
+     * Deletes one watch-later item without changing the current watch page.
+     *
+     * @param {string} aid
+     * @returns {Promise<void>}
+     */
+    async deleteWatchLaterItem(aid) {
+      await this.accountSources.deleteWatchLaterItem(aid);
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
+    }
+
+    /**
      * Resolves and tracks the language used by extension-owned UI.
      *
      * @returns {string}
@@ -7385,16 +7731,19 @@
    * @property {string | null} author Optional author label.
    * @property {string | null} viewCount Optional view count label.
    * @property {string | null} progress Optional watch progress label.
+   * @property {string} [watchLaterAid] Archive id for watch-later removal.
    */
 
   /**
    * @typedef {object} VideoCardParts
+   * @property {HTMLAnchorElement} link Main card navigation link.
    * @property {HTMLElement} thumb Thumbnail frame.
    * @property {HTMLImageElement} image Thumbnail image node.
    * @property {HTMLElement} placeholder Title fallback shown without an image.
    * @property {HTMLElement} duration Duration badge.
    * @property {HTMLElement} title Card title node.
    * @property {HTMLElement} meta Card metadata node.
+   * @property {HTMLButtonElement} deleteButton Watch-later removal button.
    */
 
   /**
@@ -7404,6 +7753,8 @@
    * @property {string} thumbnailUrl Secure thumbnail URL or empty string.
    * @property {string} duration Compact duration text or empty string.
    * @property {string} metaText Rendered metadata line.
+   * @property {string} watchLaterAid Watch-later archive id or empty string.
+   * @property {string} watchLaterDeleteLabel Accessible removal label.
    * @property {boolean} isCurrent Current watch-route state.
    */
 

@@ -69,6 +69,10 @@
     "message": "複製連結",
     "description": "Accessible label for the dock share action that copies the current watch URL."
   },
+  "watchLaterRemoveLabel": {
+    "message": "從稍後再看移除",
+    "description": "Accessible label for removing one watch-later card from the list."
+  },
   "commentRetryMessage": {
     "message": "評論未載入。",
     "description": "Message shown in the comment pane when comments are missing or empty."
