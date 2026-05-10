@@ -266,6 +266,7 @@ native actions are absent from the dock.
 The like, coin, and favorite buttons present sanitized clones of native visual
 content and dispatch clicks to their native triggers. Bibilili does not call
 their action APIs directly or replace native action dialogs or account logic.
+The favorite action may open Bilibili's native collection dialog.
 
 The share button presents the native share count and copies the current watch
 URL when activated. It shows the native share visual normally and replaces only
@@ -288,14 +289,20 @@ The bridge target is the native header account control. Native comment-section
 avatars are never account-control targets, even before the comment tree is moved
 into the transformed pane.
 
-Native account overlays may be marked with a Bibilili bookkeeping attribute so
-they paint above the transformed viewport. The attribute changes only stacking
-order and is removed when the transformed layout is released or destroyed.
-Static overlay nodes receive a companion positioning marker so their stacking
-order can take effect without changing Bilibili account behavior.
-
 The bridge is scoped to the current-user avatar zone at the top of the comment
 pane. Comment-row avatars retain their native link and profile behavior.
+
+## Native Overlay Lift
+
+Native overlay lift is the stacking adjustment for page-owned popovers and
+dialogs opened from controls that Bibilili forwards. It applies to the account
+popover and the favorite collection dialog.
+
+Lifted native overlays are marked with a Bibilili bookkeeping attribute so they
+paint above the transformed viewport. The attribute changes only stacking
+order and is removed when the transformed layout is released or destroyed.
+Static overlay nodes receive a companion positioning marker so their stacking
+order can take effect without changing Bilibili behavior.
 
 ## Source Route
 

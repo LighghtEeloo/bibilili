@@ -5,8 +5,9 @@
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
   const LIST_RAIL_ID = "bibilili-list-rail";
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
-  const ACCOUNT_OVERLAY_ATTR = "data-bibilili-account-overlay";
-  const ACCOUNT_OVERLAY_POSITION_ATTR = "data-bibilili-account-overlay-positioned";
+  const NATIVE_OVERLAY_ATTR = "data-bibilili-native-overlay";
+  const NATIVE_OVERLAY_POSITION_ATTR =
+    "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
@@ -412,7 +413,13 @@
     "[class*='avatar-panel']",
     "[class*='AvatarPanel']"
   ].join(",");
-  const ACCOUNT_POPOVER_SETTLE_DELAY_MS = 80;
+  const FAVORITE_DIALOG_CONTENT_SELECTOR = [
+    ".collection-m-exp",
+    ".collection-m",
+    "[class*='collection-m']",
+    "[class*='Collection']"
+  ].join(",");
+  const NATIVE_OVERLAY_SETTLE_DELAYS_MS = Object.freeze([80, 240, 600]);
   const COMMENT_ACCOUNT_AVATAR_FALLBACK_WIDTH = 92;
   const COMMENT_ACCOUNT_AVATAR_FALLBACK_HEIGHT = 220;
 
@@ -5201,7 +5208,7 @@
      * Restores moved nodes and removes extension-owned markup.
      */
     destroy() {
-      LayoutRoot.clearNativeAccountOverlayLift(this.document);
+      LayoutRoot.clearNativeOverlayLift(this.document);
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -5253,7 +5260,7 @@
      * being present while the native document scrolls.
      */
     releaseForNativePrime() {
-      LayoutRoot.clearNativeAccountOverlayLift(this.document);
+      LayoutRoot.clearNativeOverlayLift(this.document);
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
       this.restoreNode(this.commentNode);
@@ -5949,6 +5956,7 @@
       }
 
       LayoutRoot.clickNativeTrigger(action.trigger);
+      LayoutRoot.liftNativeWatchActionOverlay(kind, action.trigger);
       this.onWatchActionForward?.();
     }
 
@@ -5961,9 +5969,9 @@
       LayoutRoot.clickNativeTrigger(
         LayoutRoot.nativeAccountActivationTarget(trigger)
       );
-      window.setTimeout(() => {
+      LayoutRoot.scheduleNativeOverlayLift(() => {
         LayoutRoot.liftNativeAccountPopover(trigger);
-      }, ACCOUNT_POPOVER_SETTLE_DELAY_MS);
+      });
     }
 
     /**
@@ -5990,7 +5998,7 @@
       const popover = LayoutRoot.accountPopoverForTrigger(trigger);
 
       if (popover) {
-        LayoutRoot.markNativeAccountOverlay(popover);
+        LayoutRoot.markNativeOverlay(popover);
       }
     }
 
@@ -6040,29 +6048,79 @@
     }
 
     /**
-     * Marks a native overlay so it can paint over the transformed viewport.
+     * Lifts native watch-action overlays above the transformed viewport.
      *
-     * @param {Element} element
+     * @param {string} kind
+     * @param {Element} trigger
      */
-    static markNativeAccountOverlay(element) {
-      element.setAttribute(ACCOUNT_OVERLAY_ATTR, "true");
+    static liftNativeWatchActionOverlay(kind, trigger) {
+      if (kind !== WatchActionKind.FAVORITE) {
+        return;
+      }
 
-      if (window.getComputedStyle(element).position === "static") {
-        element.setAttribute(ACCOUNT_OVERLAY_POSITION_ATTR, "true");
-      } else {
-        element.removeAttribute(ACCOUNT_OVERLAY_POSITION_ATTR);
+      const document = trigger.ownerDocument;
+      LayoutRoot.scheduleNativeOverlayLift(() => {
+        const dialog = LayoutRoot.favoriteDialog(document);
+
+        if (dialog) {
+          LayoutRoot.markNativeOverlay(dialog);
+        }
+      });
+    }
+
+    /**
+     * Runs a native-overlay lift after common Bilibili popover settle points.
+     *
+     * @param {() => void} lift
+     */
+    static scheduleNativeOverlayLift(lift) {
+      for (const delay of NATIVE_OVERLAY_SETTLE_DELAYS_MS) {
+        window.setTimeout(lift, delay);
       }
     }
 
     /**
-     * Removes account-overlay lift markers from page-owned overlay nodes.
+     * Finds Bilibili's favorite-folder dialog after the favorite action opens it.
+     *
+     * Note: Bilibili renders the favorite dialog as a global `bili-dialog-m`
+     * overlay whose body uses collection-specific classes.
+     *
+     * @param {Document} document
+     * @returns {Element | null}
+     */
+    static favoriteDialog(document) {
+      const content = document.querySelector(FAVORITE_DIALOG_CONTENT_SELECTOR);
+
+      return content?.closest(".bili-dialog-m") ?? null;
+    }
+
+    /**
+     * Marks a native overlay so it can paint over the transformed viewport.
+     *
+     * @param {Element} element
+     */
+    static markNativeOverlay(element) {
+      element.setAttribute(NATIVE_OVERLAY_ATTR, "true");
+
+      if (window.getComputedStyle(element).position === "static") {
+        element.setAttribute(NATIVE_OVERLAY_POSITION_ATTR, "true");
+      } else {
+        element.removeAttribute(NATIVE_OVERLAY_POSITION_ATTR);
+      }
+    }
+
+    /**
+     * Removes overlay lift markers from page-owned overlay nodes.
      *
      * @param {Document} document
      */
-    static clearNativeAccountOverlayLift(document) {
-      for (const element of DomProbe.queryAll(document, `[${ACCOUNT_OVERLAY_ATTR}]`)) {
-        element.removeAttribute(ACCOUNT_OVERLAY_ATTR);
-        element.removeAttribute(ACCOUNT_OVERLAY_POSITION_ATTR);
+    static clearNativeOverlayLift(document) {
+      for (const element of DomProbe.queryAll(
+        document,
+        `[${NATIVE_OVERLAY_ATTR}]`
+      )) {
+        element.removeAttribute(NATIVE_OVERLAY_ATTR);
+        element.removeAttribute(NATIVE_OVERLAY_POSITION_ATTR);
       }
     }
 

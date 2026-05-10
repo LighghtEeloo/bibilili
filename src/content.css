@@ -722,13 +722,13 @@
   pointer-events: none !important;
 }
 
-[data-bibilili-account-overlay="true"] {
+[data-bibilili-native-overlay="true"] {
   pointer-events: auto !important;
   overflow: visible !important;
   z-index: 2147483647 !important;
 }
 
-[data-bibilili-account-overlay-positioned="true"] {
+[data-bibilili-native-overlay-positioned="true"] {
   position: relative !important;
 }
 
