@@ -126,6 +126,16 @@
 
       return node?.parentElement ?? null;
     }
+
+    /**
+     * Returns the Element associated with an event target.
+     *
+     * @param {Event} event
+     * @returns {Element | null}
+     */
+    static eventElement(event) {
+      return DomProbe.elementFor(event.target);
+    }
   }
 
   /**

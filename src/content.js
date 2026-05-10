@@ -4827,12 +4827,7 @@
         return false;
       }
 
-      const target =
-        event.target instanceof Node
-          ? event.target.nodeType === Node.ELEMENT_NODE
-            ? event.target
-            : event.target.parentElement
-          : null;
+      const target = DomProbe.eventElement(event);
 
       if (
         !target ||
@@ -5367,12 +5362,7 @@
      * @param {Event} event
      */
     static liftNativeCommentOverlayFromEvent(event) {
-      const target =
-        event.target instanceof Node
-          ? event.target.nodeType === Node.ELEMENT_NODE
-            ? event.target
-            : event.target.parentElement
-          : null;
+      const target = DomProbe.eventElement(event);
 
       if (!LayoutRoot.isCommentImagePreviewTrigger(target)) {
         return;
