@@ -19,9 +19,11 @@ the i18n prelude. It defines message catalog loading, formatting, and UI
 language resolution. `src/content-storage.js` is the storage prelude. It
 defines persisted activation, comment width, navigation-origin, and source-route
 state. `src/content-theme.js` is the theme prelude. It defines theme-token,
-computed-color, and browser color-scheme resolution. `src/content.js` is the
-main runtime. It owns discovery, reconciliation, rendering, account requests,
-preview hydration, and activation state.
+computed-color, and browser color-scheme resolution. `src/content-scheduler.js`
+is the scheduling prelude. It defines urgent and lazy reconciliation request
+coalescing. `src/content.js` is the main runtime. It owns discovery,
+reconciliation, rendering, account requests, preview hydration, and activation
+state.
 
 ## Watch Page
 
