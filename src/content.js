@@ -1369,7 +1369,9 @@
     /**
      * Finds row or card targets that expose a Bilibili URL or video id in data.
      *
-     * Note: Bilibili video-pod rows commonly store the BV id in `data-key`.
+     * Note: Bilibili video-pod rows can store either a BV id or a numeric
+     * internal key in `data-key`. Invalid id values fall through to the
+     * click-only video-pod page route.
      *
      * @param {Element} root
      * @returns {Element[]}
@@ -1519,12 +1521,26 @@
 
       const bvid = SourceAdapter.firstDataValue(target, BVID_DATA_ATTRS);
       if (bvid) {
-        return SourceAdapter.videoUrl({ bvid, page: SourceAdapter.pageFor(target) });
+        const url = SourceAdapter.videoUrl({
+          bvid,
+          page: SourceAdapter.pageFor(target)
+        });
+
+        if (url) {
+          return url;
+        }
       }
 
       const aid = SourceAdapter.firstDataValue(target, AID_DATA_ATTRS);
       if (aid) {
-        return SourceAdapter.videoUrl({ aid, page: SourceAdapter.pageFor(target) });
+        const url = SourceAdapter.videoUrl({
+          aid,
+          page: SourceAdapter.pageFor(target)
+        });
+
+        if (url) {
+          return url;
+        }
       }
 
       return SourceAdapter.videoPodPageUrl(target, index);
@@ -7737,6 +7753,7 @@
       AccountSourceAdapter,
       AccountSourceStore,
       LayoutRoot,
+      SourceAdapter,
       SourceKind,
       SourceMerger
     });
