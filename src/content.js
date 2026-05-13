@@ -5058,7 +5058,7 @@
     }
 
     /**
-     * Updates the hover title overlay for the current player.
+     * Updates the hover title text without changing mouse-idle visibility.
      *
      * @param {string | null} title
      */
@@ -5080,10 +5080,6 @@
       this.playerTitleOverlay.hidden = false;
       this.playerTitleText.textContent = title;
       this.playerTitleOverlay.setAttribute("title", title);
-
-      if (this.playerPane.matches(":hover")) {
-        this.showPlayerTitleOverlay();
-      }
     }
 
     /**

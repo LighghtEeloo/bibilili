@@ -150,8 +150,7 @@
 }
 
 .bibilili-player-pane.bibilili-player-title-visible
-  .bibilili-player-title-overlay,
-.bibilili-player-pane:focus-within .bibilili-player-title-overlay {
+  .bibilili-player-title-overlay {
   opacity: 1;
   transform: translateY(0);
 }
