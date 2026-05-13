@@ -21,7 +21,7 @@
   },
   "videoDescriptionLabel": {
     "message": "视频简介",
-    "description": "Accessible name for the video description shown above comments."
+    "description": "Accessible name for the video description and tags region."
   },
   "videoListsLabel": {
     "message": "视频列表",

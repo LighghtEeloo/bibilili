@@ -29,15 +29,17 @@ hydration, and activation state.
 
 The watch page is the Bilibili document for one visible video. Bibilili
 discovers its player, comments, account control, watch title, video
-description, uploader, and page video-list sources.
+description, tags, uploader, and page video-list sources.
 
 The player region contains the video player and immediate playback controls.
 Bibilili moves its surrounding layout context while preserving playback logic.
-The video title, video description, and uploader metadata remain page-owned
-metadata that Bibilili may read for extension-owned presentation surfaces.
+The video title, video description, tags, and uploader metadata remain
+page-owned metadata. Bibilili may move the page-owned video description into an
+extension-owned presentation slot and reads tags into extension-owned links.
 
 The comment region contains the page-owned comment tree. Bibilili moves this
-tree into a right-side scroll container.
+region into a right-side scroll container and may prepend the extension-owned
+video description presentation in the same scrolling surface.
 
 Video-list sources contain page-owned list data or Bilibili account list data.
 Bibilili reads them into uniform list items and routes one source at a time
@@ -48,14 +50,16 @@ into the bottom dock.
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
 source bar, video description presentation, uploader summary, watch action
 group, list rail, video cards, watch-later mutation controls, extension
-classes, and bookkeeping attributes. Bilibili owns the player, comments, source
-roots, links, native video description, native uploader card, watch action
-triggers, account controls, account lists, and network-backed content.
+classes, and bookkeeping attributes.
+Bilibili owns the player, comments, source roots, links, native watch metadata,
+native uploader card, watch action triggers, account controls, account lists,
+and network-backed content.
 
-Bibilili may move page-owned player and comment nodes into extension
-containers. It keeps page-owned video-list roots available for observation and
-extraction, and it renders account list API records into extension-owned cards
-without modifying native account list DOM.
+Bibilili may move page-owned player, video description, and comment nodes into
+extension containers. It keeps remaining page-owned watch metadata and
+video-list roots available for observation and extraction, and it renders
+account list API records into extension-owned cards without modifying native
+account list DOM.
 
 Bibilili may add and remove watch-later account records through Bilibili's
 account API. These operations are account-list mutations. They do not activate
@@ -176,8 +180,9 @@ not move the player or list dock. It contains page-owned comment nodes and may
 wrap the comment region; comment controls remain page-owned markup.
 
 The comment pane may begin with an extension-owned video description
-presentation. The description is read from page-owned watch metadata and
-scrolls in the same surface as the comment tree.
+presentation. The presentation contains the page-owned video description node
+and tag links, has no extension divider from comments, and scrolls in the same
+surface as the comment tree.
 
 The divider between the player pane and comment pane resizes the comment pane.
 The saved width is a Bilibili-page preference. The player pane takes the

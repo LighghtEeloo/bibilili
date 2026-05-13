@@ -241,19 +241,51 @@
 }
 
 .bibilili-comment-pane > .bibilili-video-description {
-  padding: 14px 14px 12px !important;
-  border-bottom: 1px solid var(--bibilili-border);
-  background: var(--bibilili-comment-bg);
-}
-
-.bibilili-video-description-text {
-  margin: 0;
   overflow-wrap: anywhere;
   color: var(--bibilili-comment-text);
   font-size: 13px;
-  font-weight: 500;
   line-height: 1.5;
-  white-space: pre-wrap;
+}
+
+.bibilili-video-description-slot {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bibilili-video-description-slot > * {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+.bibilili-video-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.bibilili-video-description-slot[hidden] + .bibilili-video-tags {
+  margin-top: 0;
+}
+
+.bibilili-video-tag-link {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  color: var(--bibilili-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.bibilili-video-tag-link:hover,
+.bibilili-video-tag-link:focus-visible {
+  color: var(--bibilili-accent);
 }
 
 .bibilili-comment-retry {

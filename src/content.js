@@ -148,21 +148,36 @@
   ];
 
   const VIDEO_DESCRIPTION_SELECTORS = [
-    "#v_desc .desc-info-text",
-    "#v_desc .desc-info",
     "#v_desc",
-    ".video-desc-container .basic-desc-info",
-    ".video-desc-container .desc-info",
     ".video-desc-container",
-    ".video-desc .desc-info",
     ".video-desc",
     ".video-info-detail-list .item-desc",
     "[class*='video-desc']",
-    "[class*='VideoDesc']"
+    "[class*='VideoDesc']",
+    "#v_desc .desc-info",
+    "#v_desc .desc-info-text",
+    ".video-desc-container .basic-desc-info",
+    ".video-desc-container .desc-info",
+    ".video-desc .desc-info"
   ];
   const VIDEO_DESCRIPTION_CONTROL_TEXT_PATTERN =
     /^(?:展开更多|收起|展开|更多|show\s*more|show\s*less|more|less)$/iu;
   const VIDEO_DESCRIPTION_MAX_LENGTH = 4000;
+  const VIDEO_TAGS_SELECTORS = [
+    "#v_tag",
+    ".video-tag-container",
+    ".tag-panel",
+    ".video-tags",
+    ".tag-container",
+    "[class*='video-tag']",
+    "[class*='VideoTag']"
+  ];
+  const VIDEO_TAG_LINK_SELECTOR = [
+    "a.tag-link[href]",
+    "a[href*='from_source=video_tag']",
+    "a[href*='search.bilibili.com/all?keyword=']"
+  ].join(",");
+  const VIDEO_TAG_MAX_COUNT = 32;
 
   const VIDEO_LINK_SELECTOR = "a[href]";
 
@@ -3490,6 +3505,7 @@
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
         description: this.findVideoDescription(),
+        tags: this.findVideoTags(),
         uploader: this.findUploaderInfo(),
         actions: this.findActions(),
         accountControl: this.findAccountControl(),
@@ -3582,9 +3598,9 @@
     }
 
     /**
-     * Finds the current video's page-owned description text.
+     * Finds the current video's page-owned description region.
      *
-     * @returns {string | null}
+     * @returns {Element | null}
      */
     findVideoDescription() {
       for (const element of this.videoDescriptionCandidates()) {
@@ -3595,7 +3611,7 @@
         );
 
         if (description) {
-          return description;
+          return element;
         }
       }
 
@@ -3653,6 +3669,142 @@
       return description
         ? description.slice(0, VIDEO_DESCRIPTION_MAX_LENGTH)
         : null;
+    }
+
+    /**
+     * Finds the current video's page-owned tag links.
+     *
+     * @returns {VideoTag[]}
+     */
+    findVideoTags() {
+      for (const element of this.videoTagsCandidates()) {
+        const tags = this.videoTagsFor(element);
+
+        if (tags.length) {
+          return tags;
+        }
+      }
+
+      return [];
+    }
+
+    /**
+     * Extracts stable tag records from one page-owned tag container.
+     *
+     * @param {Element} element
+     * @returns {VideoTag[]}
+     */
+    videoTagsFor(element) {
+      const links = DomProbe.unique(
+        DomProbe.queryAll(element, VIDEO_TAG_LINK_SELECTOR)
+      );
+
+      return this.dedupeVideoTags(
+        links.map((link) => this.videoTagFor(link)).filter(Boolean)
+      );
+    }
+
+    /**
+     * Extracts one stable video tag record from a page-owned link.
+     *
+     * @param {Element} link
+     * @returns {VideoTag | null}
+     */
+    videoTagFor(link) {
+      const text = RegionDiscovery.cleanVideoTagText(
+        link.getAttribute("title") ||
+          link.getAttribute("aria-label") ||
+          DomProbe.compactText(link)
+      );
+      const href = this.safeVideoTagUrl(link.getAttribute("href"));
+
+      return text && href ? { text, href } : null;
+    }
+
+    /**
+     * Returns likely current-video tag elements.
+     *
+     * @returns {Element[]}
+     */
+    videoTagsCandidates() {
+      const candidates = [];
+
+      for (const selector of VIDEO_TAGS_SELECTORS) {
+        candidates.push(...DomProbe.queryAll(this.document, selector));
+      }
+
+      return DomProbe.unique(candidates).filter(
+        (element) =>
+          !DomProbe.isOwned(element) &&
+          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
+          !element.closest(UPLOADER_CONTEXT_SELECTOR) &&
+          Boolean(element.querySelector(VIDEO_TAG_LINK_SELECTOR))
+      );
+    }
+
+    /**
+     * Converts native video-tag hrefs to safe absolute URLs.
+     *
+     * @param {string | null} value
+     * @returns {string | null}
+     */
+    safeVideoTagUrl(value) {
+      if (!value) {
+        return null;
+      }
+
+      try {
+        const url = new URL(
+          value,
+          this.document.location?.href ?? window.location.href
+        );
+
+        return /^https?:$/u.test(url.protocol) ? url.href : null;
+      } catch {
+        return null;
+      }
+    }
+
+    /**
+     * Normalizes a page-owned video tag label.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static cleanVideoTagText(value) {
+      const text = (value ?? "").replace(/\s+/g, " ").trim();
+
+      return text && !VIDEO_DESCRIPTION_CONTROL_TEXT_PATTERN.test(text)
+        ? text
+        : null;
+    }
+
+    /**
+     * Deduplicates video tags while preserving native order.
+     *
+     * @param {VideoTag[]} tags
+     * @returns {VideoTag[]}
+     */
+    dedupeVideoTags(tags) {
+      const seen = new Set();
+      const deduped = [];
+
+      for (const tag of tags) {
+        const key = `${tag.text}\n${tag.href}`;
+
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        deduped.push(tag);
+
+        if (deduped.length >= VIDEO_TAG_MAX_COUNT) {
+          break;
+        }
+      }
+
+      return deduped;
     }
 
     /**
@@ -4600,7 +4752,9 @@
       this.commentRetryMessage = null;
       this.commentReloadButton = null;
       this.videoDescriptionView = null;
-      this.videoDescriptionText = null;
+      this.videoDescriptionSlot = null;
+      this.videoDescriptionNode = null;
+      this.videoTagsList = null;
       this.dock = null;
       this.sourceBar = null;
       this.uploaderSummary = null;
@@ -4620,6 +4774,8 @@
       /** @type {WeakMap<HTMLElement, VideoCardRenderState>} */
       this.videoCardStates = new WeakMap();
       this.currentVideoDescription = null;
+      this.currentVideoTags = [];
+      this.renderedVideoTagsKey = "";
       this.currentUploader = null;
       this.currentActions = [];
       this.currentSources = [];
@@ -4683,7 +4839,9 @@
       this.setLanguage(language);
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
-      this.currentVideoDescription = regions.description;
+      this.currentVideoDescription =
+        regions.description ?? this.currentMovedVideoDescription();
+      this.currentVideoTags = regions.tags;
       this.setComments(regions.comments, regions.commentState);
       this.currentUploader = regions.uploader;
       this.currentActions = regions.actions;
@@ -4736,6 +4894,7 @@
       this.endCommentPaneResize();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
+      this.restoreVideoDescriptionNode();
       this.restoreNode(this.commentNode);
 
       if (this.root?.isConnected) {
@@ -5033,7 +5192,9 @@
      * Restores moved comments and hides the comment pane.
      */
     hideComments() {
+      this.restoreVideoDescriptionNode();
       this.videoDescriptionView?.remove();
+      this.renderedVideoTagsKey = "";
 
       if (this.commentNode) {
         this.restoreNode(this.commentNode);
@@ -5063,21 +5224,39 @@
     }
 
     /**
-     * Renders the current video description before the moved comment tree.
+     * Renders the current video description and tags before comments.
      */
     renderVideoDescription() {
       if (!this.commentPane || !this.commentNode) {
         return;
       }
 
-      if (!this.currentVideoDescription) {
+      if (!LayoutRoot.hasVideoDescriptionRegion(
+        this.currentVideoDescription,
+        this.currentVideoTags
+      )) {
+        this.restoreVideoDescriptionNode();
         this.videoDescriptionView?.remove();
+        this.renderedVideoTagsKey = "";
         return;
       }
 
       this.ensureVideoDescriptionView();
       this.updateVideoDescriptionLabel();
-      this.videoDescriptionText.textContent = this.currentVideoDescription;
+
+      if (this.currentVideoDescription) {
+        this.moveVideoDescriptionNode(this.currentVideoDescription);
+      } else {
+        this.restoreVideoDescriptionNode();
+        this.videoDescriptionSlot.hidden = true;
+      }
+
+      const key = LayoutRoot.videoTagsKey(this.currentVideoTags);
+
+      if (key !== this.renderedVideoTagsKey) {
+        this.renderVideoTags(this.currentVideoTags);
+        this.renderedVideoTagsKey = key;
+      }
 
       if (this.commentNode.previousSibling !== this.videoDescriptionView) {
         this.commentPane.insertBefore(
@@ -5088,7 +5267,7 @@
     }
 
     /**
-     * Ensures the stable video description view exists.
+     * Ensures the stable video description region exists.
      */
     ensureVideoDescriptionView() {
       if (this.videoDescriptionView) {
@@ -5098,10 +5277,17 @@
       this.videoDescriptionView = this.document.createElement("section");
       this.videoDescriptionView.className = "bibilili-video-description";
 
-      this.videoDescriptionText = this.document.createElement("p");
-      this.videoDescriptionText.className = "bibilili-video-description-text";
+      this.videoDescriptionSlot = this.document.createElement("div");
+      this.videoDescriptionSlot.className =
+        "bibilili-video-description-slot";
 
-      this.videoDescriptionView.append(this.videoDescriptionText);
+      this.videoTagsList = this.document.createElement("div");
+      this.videoTagsList.className = "bibilili-video-tags";
+
+      this.videoDescriptionView.append(
+        this.videoDescriptionSlot,
+        this.videoTagsList
+      );
     }
 
     /**
@@ -5116,6 +5302,105 @@
         "aria-label",
         UiStrings.message(UiMessage.VIDEO_DESCRIPTION_LABEL, this.language)
       );
+    }
+
+    /**
+     * Moves the page-owned video description node into the description slot.
+     *
+     * @param {Element} description
+     */
+    moveVideoDescriptionNode(description) {
+      if (!this.videoDescriptionSlot) {
+        return;
+      }
+
+      if (
+        this.videoDescriptionNode &&
+        this.videoDescriptionNode !== description
+      ) {
+        this.restoreVideoDescriptionNode();
+      }
+
+      this.videoDescriptionNode = description;
+      this.videoDescriptionSlot.hidden = false;
+      this.movedPageNodes.move(
+        description,
+        this.videoDescriptionSlot,
+        "description"
+      );
+    }
+
+    /**
+     * Returns the moved native description node while discovery cannot see it.
+     *
+     * @returns {Element | null}
+     */
+    currentMovedVideoDescription() {
+      if (
+        this.videoDescriptionNode?.isConnected &&
+        this.videoDescriptionSlot?.contains(this.videoDescriptionNode)
+      ) {
+        return this.videoDescriptionNode;
+      }
+
+      return null;
+    }
+
+    /**
+     * Restores the moved native video description node.
+     */
+    restoreVideoDescriptionNode() {
+      if (!this.videoDescriptionNode) {
+        return;
+      }
+
+      this.restoreNode(this.videoDescriptionNode);
+      this.videoDescriptionNode = null;
+    }
+
+    /**
+     * Renders video tag links in native order.
+     *
+     * @param {VideoTag[]} tags
+     */
+    renderVideoTags(tags) {
+      if (!this.videoTagsList) {
+        return;
+      }
+
+      this.videoTagsList.hidden = tags.length === 0;
+      this.videoTagsList.replaceChildren(
+        ...tags.map((tag) => {
+          const link = this.document.createElement("a");
+          link.className = "bibilili-video-tag-link";
+          link.href = tag.href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = tag.text;
+          return link;
+        })
+      );
+    }
+
+    /**
+     * Tests whether the video description region has renderable content.
+     *
+     * @param {Element | null} description
+     * @param {VideoTag[]} tags
+     * @returns {boolean}
+     */
+    static hasVideoDescriptionRegion(description, tags) {
+      return Boolean(description || tags.length);
+    }
+
+    /**
+     * Produces a stable comparison key for video tag snapshots.
+     *
+     * @param {VideoTag[]} tags
+     * @returns {string}
+     */
+    static videoTagsKey(tags) {
+      return JSON.stringify(tags.map((tag) => [tag.text, tag.href]));
     }
 
     /**
@@ -8386,6 +8671,12 @@
    */
 
   /**
+   * @typedef {object} VideoTag
+   * @property {string} text Page-owned video tag label.
+   * @property {string} href Safe absolute search URL.
+   */
+
+  /**
    * @typedef {object} AccountControl
    * @property {Element} trigger Page-owned native account trigger.
    */
@@ -8394,7 +8685,8 @@
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
-   * @property {string | null} description Current watch description text.
+   * @property {Element | null} description Page-owned video description region.
+   * @property {VideoTag[]} tags Current watch video tag links.
    * @property {UploaderInfo | null} uploader Current watch uploader metadata.
    * @property {WatchAction[]} actions Page-owned watch action controls.
    * @property {AccountControl | null} accountControl Page-owned account control.

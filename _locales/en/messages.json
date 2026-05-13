@@ -21,7 +21,7 @@
   },
   "videoDescriptionLabel": {
     "message": "Video description",
-    "description": "Accessible name for the video description shown above comments."
+    "description": "Accessible name for the video description and tags region."
   },
   "videoListsLabel": {
     "message": "Video lists",
