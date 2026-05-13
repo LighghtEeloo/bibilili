@@ -44,6 +44,8 @@
   const COMMENT_PANE_MAX_STAGE_RATIO = 0.5;
   const COMMENT_PANE_KEYBOARD_STEP = 24;
   const COMMENT_PANE_RESIZING_CLASS = "bibilili-is-resizing-comment-pane";
+  const PLAYER_TITLE_VISIBLE_CLASS = "bibilili-player-title-visible";
+  const PLAYER_TITLE_IDLE_DELAY_MS = 3000;
   const LAZY_SETTLING_RECONCILE_DELAYS_MS = Object.freeze([
     400,
     1200,
@@ -4589,6 +4591,7 @@
       this.playerPane = null;
       this.playerTitleOverlay = null;
       this.playerTitleText = null;
+      this.playerTitleIdleTimer = null;
       this.commentPane = null;
       this.commentResizeHandle = null;
       /** @type {{ pointerId: number } | null} */
@@ -4729,6 +4732,7 @@
      */
     releasePageOwnership() {
       LayoutRoot.clearNativeOverlayLift(this.document);
+      this.hidePlayerTitleOverlay();
       this.endCommentPaneResize();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
@@ -4760,6 +4764,15 @@
 
       this.playerPane = this.document.createElement("section");
       this.playerPane.className = "bibilili-player-pane";
+      this.playerPane.addEventListener("pointerenter", (event) => {
+        this.handlePlayerPanePointerActivity(event);
+      });
+      this.playerPane.addEventListener("pointermove", (event) => {
+        this.handlePlayerPanePointerActivity(event);
+      });
+      this.playerPane.addEventListener("pointerleave", () => {
+        this.hidePlayerTitleOverlay();
+      });
 
       this.commentPane = this.document.createElement("aside");
       this.commentPane.className = "bibilili-comment-pane";
@@ -4898,6 +4911,7 @@
       this.ensurePlayerTitleOverlay();
 
       if (!title) {
+        this.hidePlayerTitleOverlay();
         this.playerTitleOverlay.hidden = true;
         this.playerTitleOverlay.removeAttribute("title");
         this.playerTitleText.textContent = "";
@@ -4907,6 +4921,10 @@
       this.playerTitleOverlay.hidden = false;
       this.playerTitleText.textContent = title;
       this.playerTitleOverlay.setAttribute("title", title);
+
+      if (this.playerPane.matches(":hover")) {
+        this.showPlayerTitleOverlay();
+      }
     }
 
     /**
@@ -4930,6 +4948,61 @@
       if (this.playerTitleOverlay.parentElement !== this.playerPane) {
         this.playerPane.append(this.playerTitleOverlay);
       }
+    }
+
+    /**
+     * Shows the player title after mouse activity over the player pane.
+     *
+     * @param {PointerEvent} event
+     */
+    handlePlayerPanePointerActivity(event) {
+      if (event.pointerType === "touch") {
+        return;
+      }
+
+      this.showPlayerTitleOverlay();
+    }
+
+    /**
+     * Shows the player title overlay and schedules mouse-idle hiding.
+     */
+    showPlayerTitleOverlay() {
+      if (!this.playerPane || this.playerTitleOverlay?.hidden) {
+        return;
+      }
+
+      this.playerPane.classList.add(PLAYER_TITLE_VISIBLE_CLASS);
+      this.schedulePlayerTitleIdleHide();
+    }
+
+    /**
+     * Hides the mouse-driven player title overlay state.
+     */
+    hidePlayerTitleOverlay() {
+      this.clearPlayerTitleIdleTimer();
+      this.playerPane?.classList.remove(PLAYER_TITLE_VISIBLE_CLASS);
+    }
+
+    /**
+     * Schedules title hiding after the pointer stops moving over the player.
+     */
+    schedulePlayerTitleIdleHide() {
+      this.clearPlayerTitleIdleTimer();
+      this.playerTitleIdleTimer = window.setTimeout(() => {
+        this.hidePlayerTitleOverlay();
+      }, PLAYER_TITLE_IDLE_DELAY_MS);
+    }
+
+    /**
+     * Clears the pending player-title idle timer.
+     */
+    clearPlayerTitleIdleTimer() {
+      if (this.playerTitleIdleTimer === null) {
+        return;
+      }
+
+      window.clearTimeout(this.playerTitleIdleTimer);
+      this.playerTitleIdleTimer = null;
     }
 
     /**

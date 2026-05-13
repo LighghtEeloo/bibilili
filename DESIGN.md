@@ -163,9 +163,10 @@ dock determines its height reduction. Bibilili leaves player controls, player
 events, and playback state under Bilibili ownership.
 
 The player pane may contain an extension-owned title overlay. The overlay reads
-the watch title, appears at the top of the player pane when the pane is hovered
-or focused, uses a vertical opacity gradient for legibility, and remains
-pointer-transparent.
+the watch title, appears at the top of the player pane when pointer movement or
+focus indicates interest, uses a vertical opacity gradient for legibility, and
+remains pointer-transparent. During pointer hover, the overlay hides after a
+short idle period and reappears on the next pointer movement.
 
 ## Comment Pane
 
