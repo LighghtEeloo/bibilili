@@ -344,6 +344,85 @@
   background: var(--bibilili-selected-bg);
 }
 
+.bibilili-uploader-summary {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 1 230px;
+  align-items: center;
+  gap: 7px;
+  min-width: 128px;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 8px 0 6px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--bibilili-control-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.bibilili-uploader-summary[href]:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
+  background: var(--bibilili-control-bg);
+}
+
+.bibilili-uploader-avatar {
+  display: block;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--bibilili-thumb-bg);
+}
+
+.bibilili-uploader-avatar[hidden] {
+  display: none !important;
+}
+
+.bibilili-uploader-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bibilili-uploader-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+}
+
+.bibilili-uploader-name,
+.bibilili-uploader-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bibilili-uploader-name {
+  color: var(--bibilili-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bibilili-uploader-meta {
+  margin-top: 1px;
+  color: var(--bibilili-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.bibilili-uploader-meta[hidden] {
+  display: none !important;
+}
+
 .bibilili-action-group {
   display: flex;
   flex: 0 0 auto;

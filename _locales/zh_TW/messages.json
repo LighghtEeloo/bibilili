@@ -69,6 +69,16 @@
     "message": "複製連結",
     "description": "Accessible label for the dock share action that copies the current watch URL."
   },
+  "uploaderLabel": {
+    "message": "UP 主：$NAME$",
+    "description": "Accessible label for the dock uploader summary.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Bilibili 創作者"
+      }
+    }
+  },
   "watchLaterAddLabel": {
     "message": "加入稍後再看",
     "description": "Accessible label for adding one video card to the watch-later list."

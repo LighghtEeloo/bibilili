@@ -31,6 +31,7 @@
     WATCH_ACTION_FAVORITE_LABEL: "watchActionFavoriteLabel",
     WATCH_ACTION_SHARE_LABEL: "watchActionShareLabel",
     WATCH_ACTION_COPY_LINK_LABEL: "watchActionCopyLinkLabel",
+    UPLOADER_LABEL: "uploaderLabel",
     WATCH_LATER_ADD_LABEL: "watchLaterAddLabel",
     WATCH_LATER_REMOVE_LABEL: "watchLaterRemoveLabel",
     COMMENT_RESIZE_LABEL: "commentResizeLabel",
@@ -191,6 +192,17 @@
         language,
         [label, countText]
       );
+    }
+
+    /**
+     * Returns the accessible label for the dock uploader summary.
+     *
+     * @param {string} name
+     * @param {string} language
+     * @returns {string}
+     */
+    static uploaderLabel(name, language) {
+      return UiStrings.message(UiMessage.UPLOADER_LABEL, language, [name]);
     }
 
     /**

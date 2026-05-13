@@ -28,13 +28,13 @@ hydration, and activation state.
 ## Watch Page
 
 The watch page is the Bilibili document for one visible video. Bibilili
-discovers its player, comments, account control, watch title, and page
-video-list sources.
+discovers its player, comments, account control, watch title, uploader, and
+page video-list sources.
 
 The player region contains the video player and immediate playback controls.
 Bibilili moves its surrounding layout context while preserving playback logic.
-The video title remains page-owned metadata that Bibilili may read for
-extension-owned presentation surfaces.
+The video title and uploader metadata remain page-owned metadata that Bibilili
+may read for extension-owned presentation surfaces.
 
 The comment region contains the page-owned comment tree. Bibilili moves this
 tree into a right-side scroll container.
@@ -46,10 +46,11 @@ into the bottom dock.
 ## DOM Ownership
 
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, watch action group, list rail, video cards, watch-later mutation
-controls, extension classes, and bookkeeping attributes. Bilibili owns the
-player, comments, source roots, links, watch action triggers, account controls,
-account lists, and network-backed content.
+source bar, uploader summary, watch action group, list rail, video cards,
+watch-later mutation controls, extension classes, and bookkeeping attributes.
+Bilibili owns the player, comments, source roots, links, native uploader card,
+watch action triggers, account controls, account lists, and network-backed
+content.
 
 Bibilili may move page-owned player and comment nodes into extension
 containers. It keeps page-owned video-list roots available for observation and
@@ -312,6 +313,21 @@ Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
 for absent native triggers.
 
+## Uploader Summary
+
+The uploader summary is extension-owned dock chrome derived from the
+page-owned current-video uploader card. It shows the uploader avatar, display
+name, and one secondary metadata line when Bilibili exposes them.
+
+The summary sits between source buttons and watch action buttons, immediately
+to the left of the like action when like is available. When Bilibili exposes a
+profile link, the summary opens that profile in a new browser page. Follow
+controls, message controls, and native uploader-card popovers remain under
+Bilibili ownership.
+
+Uploader summary reconciliation updates the stable summary node in place and
+removes it when no current-video uploader metadata is available.
+
 ## Account Control Bridge
 
 The account control bridge maps the current-user avatar in the comment composer
@@ -374,10 +390,10 @@ after their fetch completes.
 
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
-kind, then contains the watch action group when native watch actions are
-available. The initial source buttons represent collection, recommendations,
-watch later, and history when those sources are available. Their labels use the
-current UI language.
+kind, then contains the uploader summary when available, then contains the
+watch action group when native watch actions are available. The initial source
+buttons represent collection, recommendations, watch later, and history when
+those sources are available. Their labels use the current UI language.
 
 The selected source button keeps `aria-current` for the remembered route and
 exposes the rail open state with `aria-expanded`. The selected visual treatment
@@ -385,8 +401,8 @@ applies only while `aria-expanded` is `true`. A source with no valid video items
 is omitted from the source bar.
 
 The source bar is rendered whenever the enabled list dock is present. With no
-available source, it contains the activation control and any available watch
-action buttons.
+available source, it contains the activation control, available uploader
+summary, and any available watch action buttons.
 
 Source buttons are keyed by source kind. Reconciliation updates them in place,
 orders them after the activation control and before the watch action group, and

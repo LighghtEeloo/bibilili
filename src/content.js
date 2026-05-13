@@ -389,6 +389,68 @@
   ].join(",");
 
   const WATCH_ACTION_COUNT_TEXT_LIMIT = 18;
+  const UPLOADER_PROFILE_LINK_SELECTOR = "a[href*='space.bilibili.com']";
+  const UPLOADER_META_TEXT_LIMIT = 64;
+  /**
+   * Static uploader discovery configuration.
+   *
+   * Note: Bilibili has moved the current-video uploader panel between several
+   * watch-page generations. Broad class-name fallbacks stay bounded by source
+   * root exclusion so recommendation-card authors do not become page metadata.
+   */
+  const UPLOADER_CONTEXT_SELECTOR = [
+    "#v_upinfo",
+    ".up-panel-container",
+    ".up-info-container",
+    ".up-info",
+    ".up-info--left",
+    ".video-owner",
+    ".owner-card",
+    ".uploader",
+    "[class*='up-panel']",
+    "[class*='up_info']",
+    "[class*='up-info']",
+    "[class*='UpInfo']",
+    "[class*='upInfo']"
+  ].join(",");
+  const UPLOADER_NAME_SELECTORS = [
+    ".up-name",
+    ".up-name__text",
+    ".up-info__name",
+    ".username",
+    ".user-name",
+    ".name",
+    "[class*='up-name']",
+    "[class*='upName']",
+    "[class*='UpName']",
+    "[class*='user-name']",
+    "[class*='UserName']",
+    UPLOADER_PROFILE_LINK_SELECTOR
+  ];
+  const UPLOADER_META_SELECTORS = [
+    ".up-description",
+    ".up-info__desc",
+    ".up-info__subtitle",
+    ".up-info__fans",
+    ".desc",
+    ".subtitle",
+    ".fans",
+    "[class*='desc']",
+    "[class*='Desc']",
+    "[class*='subtitle']",
+    "[class*='Subtitle']",
+    "[class*='fans']",
+    "[class*='Fans']"
+  ];
+  const UPLOADER_AVATAR_SELECTORS = [
+    ".up-avatar img",
+    ".up-face img",
+    ".avatar img",
+    ".bili-avatar-img",
+    "img[class*='avatar']",
+    "picture img",
+    "img"
+  ];
   const WATCH_ACTION_CLONE_REMOVED_ATTRIBUTES = new Set([
     "id",
     "tabindex",
@@ -3408,6 +3470,7 @@
       return {
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
+        uploader: this.findUploaderInfo(),
         actions: this.findActions(),
         accountControl: this.findAccountControl(),
         comments: hasUsableComments ? comments : null,
@@ -3496,6 +3559,270 @@
         .trim();
 
       return title || null;
+    }
+
+    /**
+     * Finds the current video's uploader metadata for extension-owned chrome.
+     *
+     * @returns {UploaderInfo | null}
+     */
+    findUploaderInfo() {
+      for (const root of this.uploaderCandidates()) {
+        const info = this.uploaderInfoFor(root);
+
+        if (info) {
+          return info;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns likely current-video uploader roots.
+     *
+     * @returns {Element[]}
+     */
+    uploaderCandidates() {
+      const candidates = [
+        ...DomProbe.queryAll(this.document, UPLOADER_CONTEXT_SELECTOR)
+      ];
+
+      for (const link of DomProbe.queryAll(
+        this.document,
+        UPLOADER_PROFILE_LINK_SELECTOR
+      )) {
+        if (DomProbe.isOwned(link)) {
+          continue;
+        }
+
+        candidates.push(
+          link.closest(UPLOADER_CONTEXT_SELECTOR) ?? link.parentElement ?? link
+        );
+      }
+
+      return DomProbe.unique(candidates).filter(
+        (element) =>
+          !DomProbe.isOwned(element) && !element.closest(SOURCE_BOUNDARY_SELECTOR)
+      );
+    }
+
+    /**
+     * Reads one uploader candidate into a stable summary record.
+     *
+     * @param {Element} root
+     * @returns {UploaderInfo | null}
+     */
+    uploaderInfoFor(root) {
+      const name = this.uploaderNameFor(root);
+
+      if (!name) {
+        return null;
+      }
+
+      return {
+        name,
+        profileUrl: this.uploaderProfileUrlFor(root),
+        avatarUrl: this.uploaderAvatarUrlFor(root),
+        metaText: this.uploaderMetaTextFor(root, name)
+      };
+    }
+
+    /**
+     * Reads the uploader display name from a candidate root.
+     *
+     * @param {Element} root
+     * @returns {string | null}
+     */
+    uploaderNameFor(root) {
+      for (const element of RegionDiscovery.elementsMatchingOrInside(
+        root,
+        UPLOADER_NAME_SELECTORS
+      )) {
+        const name = RegionDiscovery.cleanUploaderName(
+          element.getAttribute("title") ||
+            element.getAttribute("aria-label") ||
+            DomProbe.compactText(element)
+        );
+
+        if (name) {
+          return name;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Reads the uploader profile URL from a candidate root.
+     *
+     * @param {Element} root
+     * @returns {string | null}
+     */
+    uploaderProfileUrlFor(root) {
+      for (const element of RegionDiscovery.elementsMatchingOrInside(root, [
+        UPLOADER_PROFILE_LINK_SELECTOR
+      ])) {
+        const profileUrl = RegionDiscovery.safeUploaderProfileUrl(
+          element.getAttribute("href")
+        );
+
+        if (profileUrl) {
+          return profileUrl;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Reads the uploader avatar URL from a candidate root.
+     *
+     * @param {Element} root
+     * @returns {string | null}
+     */
+    uploaderAvatarUrlFor(root) {
+      for (const element of RegionDiscovery.elementsMatchingOrInside(
+        root,
+        UPLOADER_AVATAR_SELECTORS
+      )) {
+        for (const value of SourceAdapter.thumbnailAttributeValues(element)) {
+          const avatarUrl = SourceAdapter.secureAssetUrl(value);
+
+          if (avatarUrl) {
+            return avatarUrl;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Reads secondary uploader metadata such as sign text or follower count.
+     *
+     * @param {Element} root
+     * @param {string} name
+     * @returns {string | null}
+     */
+    uploaderMetaTextFor(root, name) {
+      for (const element of RegionDiscovery.elementsMatchingOrInside(
+        root,
+        UPLOADER_META_SELECTORS
+      )) {
+        const metaText = RegionDiscovery.cleanUploaderMetaText(
+          DomProbe.compactText(element),
+          name
+        );
+
+        if (metaText) {
+          return metaText;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns candidate descendants while including a matching root element.
+     *
+     * @param {Element} root
+     * @param {string[]} selectors
+     * @returns {Element[]}
+     */
+    static elementsMatchingOrInside(root, selectors) {
+      const elements = [];
+
+      for (const selector of selectors) {
+        if (root.matches(selector)) {
+          elements.push(root);
+        }
+
+        elements.push(...DomProbe.queryAll(root, selector));
+      }
+
+      return DomProbe.unique(elements);
+    }
+
+    /**
+     * Normalizes uploader names and rejects native action labels.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static cleanUploaderName(value) {
+      const name = (value ?? "").replace(/\s+/g, " ").trim();
+
+      if (!name || RegionDiscovery.isUploaderControlText(name)) {
+        return null;
+      }
+
+      return name;
+    }
+
+    /**
+     * Normalizes secondary uploader metadata.
+     *
+     * @param {string | null | undefined} value
+     * @param {string} name
+     * @returns {string | null}
+     */
+    static cleanUploaderMetaText(value, name) {
+      const text = (value ?? "").replace(/\s+/g, " ").trim();
+
+      if (
+        !text ||
+        text === name ||
+        RegionDiscovery.isUploaderControlText(text)
+      ) {
+        return null;
+      }
+
+      return text.slice(0, UPLOADER_META_TEXT_LIMIT);
+    }
+
+    /**
+     * Tests whether text belongs to native uploader controls.
+     *
+     * @param {string} value
+     * @returns {boolean}
+     */
+    static isUploaderControlText(value) {
+      return /^(?:\+?\s*(?:关注|已关注|关注中|发消息|私信|充电|follow(?:ing)?|message))$/iu.test(
+        value
+      );
+    }
+
+    /**
+     * Normalizes profile links for Bilibili uploader pages.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static safeUploaderProfileUrl(value) {
+      if (!value) {
+        return null;
+      }
+
+      try {
+        const url = new URL(value, window.location.href);
+
+        if (!["http:", "https:"].includes(url.protocol)) {
+          return null;
+        }
+
+        if (!["space.bilibili.com", "www.bilibili.com"].includes(url.hostname)) {
+          return null;
+        }
+
+        if (url.protocol === "http:") {
+          url.protocol = "https:";
+        }
+
+        return url.href;
+      } catch (_error) {
+        return null;
+      }
     }
 
     /**
@@ -4179,6 +4506,11 @@
       this.commentReloadButton = null;
       this.dock = null;
       this.sourceBar = null;
+      this.uploaderSummary = null;
+      this.uploaderAvatar = null;
+      this.uploaderAvatarImage = null;
+      this.uploaderName = null;
+      this.uploaderMeta = null;
       this.actionGroup = null;
       this.rail = null;
       this.playerNode = null;
@@ -4190,6 +4522,7 @@
       this.sourceButtons = new Map();
       /** @type {WeakMap<HTMLElement, VideoCardRenderState>} */
       this.videoCardStates = new WeakMap();
+      this.currentUploader = null;
       this.currentActions = [];
       this.currentSources = [];
       this.accountControl = null;
@@ -4253,6 +4586,7 @@
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
       this.setComments(regions.comments, regions.commentState);
+      this.currentUploader = regions.uploader;
       this.currentActions = regions.actions;
       this.accountControl = regions.accountControl;
       this.onWatchLaterAdd = onWatchLaterAdd;
@@ -5087,7 +5421,123 @@
       }
 
       UiControl.removeStaleButtons(this.sourceButtons, availableKinds);
+      const uploaderSummary = this.renderUploaderSummary(
+        this.currentUploader,
+        previous
+      );
+      previous = uploaderSummary ?? previous;
       this.renderWatchActionGroup(this.currentActions, previous);
+    }
+
+    /**
+     * Renders the current uploader summary before mirrored watch actions.
+     *
+     * @param {UploaderInfo | null} uploader
+     * @param {Element} placementAnchor
+     * @returns {Element | null}
+     */
+    renderUploaderSummary(uploader, placementAnchor) {
+      if (!this.sourceBar) {
+        return null;
+      }
+
+      if (!uploader) {
+        this.uploaderSummary?.remove();
+        return null;
+      }
+
+      this.ensureUploaderSummary();
+      this.updateUploaderSummary(uploader);
+
+      const reference = placementAnchor.nextSibling;
+      if (reference !== this.uploaderSummary) {
+        this.sourceBar.insertBefore(this.uploaderSummary, reference);
+      }
+
+      return this.uploaderSummary;
+    }
+
+    /**
+     * Ensures the stable uploader summary nodes exist.
+     */
+    ensureUploaderSummary() {
+      if (this.uploaderSummary) {
+        return;
+      }
+
+      this.uploaderSummary = this.document.createElement("a");
+      this.uploaderSummary.className = "bibilili-uploader-summary";
+
+      this.uploaderAvatar = this.document.createElement("span");
+      this.uploaderAvatar.className = "bibilili-uploader-avatar";
+      this.uploaderAvatar.setAttribute("aria-hidden", "true");
+
+      this.uploaderAvatarImage = this.document.createElement("img");
+      this.uploaderAvatarImage.alt = "";
+      this.uploaderAvatar.append(this.uploaderAvatarImage);
+
+      const text = this.document.createElement("span");
+      text.className = "bibilili-uploader-text";
+
+      this.uploaderName = this.document.createElement("span");
+      this.uploaderName.className = "bibilili-uploader-name";
+
+      this.uploaderMeta = this.document.createElement("span");
+      this.uploaderMeta.className = "bibilili-uploader-meta";
+
+      text.append(this.uploaderName, this.uploaderMeta);
+      this.uploaderSummary.append(this.uploaderAvatar, text);
+    }
+
+    /**
+     * Updates the uploader summary content in place.
+     *
+     * @param {UploaderInfo} uploader
+     */
+    updateUploaderSummary(uploader) {
+      if (
+        !this.uploaderSummary ||
+        !this.uploaderAvatar ||
+        !this.uploaderAvatarImage ||
+        !this.uploaderName ||
+        !this.uploaderMeta
+      ) {
+        return;
+      }
+
+      if (uploader.profileUrl) {
+        this.uploaderSummary.href = uploader.profileUrl;
+        this.uploaderSummary.target = "_blank";
+        this.uploaderSummary.rel = "noopener noreferrer";
+      } else {
+        this.uploaderSummary.removeAttribute("href");
+        this.uploaderSummary.removeAttribute("target");
+        this.uploaderSummary.removeAttribute("rel");
+      }
+
+      const label = UiStrings.uploaderLabel(uploader.name, this.language);
+      const summaryLabel = uploader.metaText
+        ? `${label} - ${uploader.metaText}`
+        : label;
+      UiControl.setLabel(this.uploaderSummary, summaryLabel);
+
+      this.uploaderName.textContent = uploader.name;
+
+      if (uploader.metaText) {
+        this.uploaderMeta.hidden = false;
+        this.uploaderMeta.textContent = uploader.metaText;
+      } else {
+        this.uploaderMeta.hidden = true;
+        this.uploaderMeta.textContent = "";
+      }
+
+      if (uploader.avatarUrl) {
+        this.uploaderAvatar.hidden = false;
+        this.uploaderAvatarImage.src = uploader.avatarUrl;
+      } else {
+        this.uploaderAvatar.hidden = true;
+        this.uploaderAvatarImage.removeAttribute("src");
+      }
     }
 
     /**
@@ -7699,6 +8149,14 @@
    */
 
   /**
+   * @typedef {object} UploaderInfo
+   * @property {string} name Page-owned uploader display name.
+   * @property {string | null} profileUrl Optional uploader profile URL.
+   * @property {string | null} avatarUrl Optional secure avatar image URL.
+   * @property {string | null} metaText Optional secondary uploader metadata.
+   */
+
+  /**
    * @typedef {object} AccountControl
    * @property {Element} trigger Page-owned native account trigger.
    */
@@ -7707,6 +8165,7 @@
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
+   * @property {UploaderInfo | null} uploader Current watch uploader metadata.
    * @property {WatchAction[]} actions Page-owned watch action controls.
    * @property {AccountControl | null} accountControl Page-owned account control.
    * @property {Element | null} comments Page-owned comment region.
