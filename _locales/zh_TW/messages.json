@@ -19,6 +19,10 @@
     "message": "評論",
     "description": "Accessible name for the comment pane."
   },
+  "videoDescriptionLabel": {
+    "message": "影片簡介",
+    "description": "Accessible name for the video description shown above comments."
+  },
   "videoListsLabel": {
     "message": "影片列表",
     "description": "Accessible name for the video list dock."

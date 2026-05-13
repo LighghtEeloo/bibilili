@@ -19,6 +19,10 @@
     "message": "Comments",
     "description": "Accessible name for the comment pane."
   },
+  "videoDescriptionLabel": {
+    "message": "Video description",
+    "description": "Accessible name for the video description shown above comments."
+  },
   "videoListsLabel": {
     "message": "Video lists",
     "description": "Accessible name for the video list dock."

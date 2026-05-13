@@ -145,6 +145,23 @@
     "h1[title]"
   ];
 
+  const VIDEO_DESCRIPTION_SELECTORS = [
+    "#v_desc .desc-info-text",
+    "#v_desc .desc-info",
+    "#v_desc",
+    ".video-desc-container .basic-desc-info",
+    ".video-desc-container .desc-info",
+    ".video-desc-container",
+    ".video-desc .desc-info",
+    ".video-desc",
+    ".video-info-detail-list .item-desc",
+    "[class*='video-desc']",
+    "[class*='VideoDesc']"
+  ];
+  const VIDEO_DESCRIPTION_CONTROL_TEXT_PATTERN =
+    /^(?:展开更多|收起|展开|更多|show\s*more|show\s*less|more|less)$/iu;
+  const VIDEO_DESCRIPTION_MAX_LENGTH = 4000;
+
   const VIDEO_LINK_SELECTOR = "a[href]";
 
   const VIDEO_TARGET_DATA_SELECTOR = [
@@ -3470,6 +3487,7 @@
       return {
         player: this.findPlayerRegion(),
         title: this.findWatchTitle(),
+        description: this.findVideoDescription(),
         uploader: this.findUploaderInfo(),
         actions: this.findActions(),
         accountControl: this.findAccountControl(),
@@ -3559,6 +3577,80 @@
         .trim();
 
       return title || null;
+    }
+
+    /**
+     * Finds the current video's page-owned description text.
+     *
+     * @returns {string | null}
+     */
+    findVideoDescription() {
+      for (const element of this.videoDescriptionCandidates()) {
+        const description = RegionDiscovery.cleanVideoDescription(
+          typeof element.innerText === "string"
+            ? element.innerText
+            : DomProbe.compactText(element)
+        );
+
+        if (description) {
+          return description;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns likely current-video description elements.
+     *
+     * @returns {Element[]}
+     */
+    videoDescriptionCandidates() {
+      const candidates = [];
+
+      for (const selector of VIDEO_DESCRIPTION_SELECTORS) {
+        candidates.push(...DomProbe.queryAll(this.document, selector));
+      }
+
+      return DomProbe.unique(candidates).filter(
+        (element) =>
+          !DomProbe.isOwned(element) &&
+          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
+          !element.closest(UPLOADER_CONTEXT_SELECTOR)
+      );
+    }
+
+    /**
+     * Normalizes video description text from page-owned markup.
+     *
+     * @param {string | null | undefined} value
+     * @returns {string | null}
+     */
+    static cleanVideoDescription(value) {
+      const lines = (value ?? "")
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) =>
+          line
+            .replace(/[ \t\f\v]+/g, " ")
+            .replace(
+              /\s*(?:展开更多|收起|show\s*more|show\s*less)\s*$/iu,
+              ""
+            )
+            .trim()
+        )
+        .filter(
+          (line) =>
+            line && !VIDEO_DESCRIPTION_CONTROL_TEXT_PATTERN.test(line)
+        );
+      const description = lines
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+
+      return description
+        ? description.slice(0, VIDEO_DESCRIPTION_MAX_LENGTH)
+        : null;
     }
 
     /**
@@ -4504,6 +4596,8 @@
       this.commentRetryView = null;
       this.commentRetryMessage = null;
       this.commentReloadButton = null;
+      this.videoDescriptionView = null;
+      this.videoDescriptionText = null;
       this.dock = null;
       this.sourceBar = null;
       this.uploaderSummary = null;
@@ -4522,6 +4616,7 @@
       this.sourceButtons = new Map();
       /** @type {WeakMap<HTMLElement, VideoCardRenderState>} */
       this.videoCardStates = new WeakMap();
+      this.currentVideoDescription = null;
       this.currentUploader = null;
       this.currentActions = [];
       this.currentSources = [];
@@ -4585,6 +4680,7 @@
       this.setLanguage(language);
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
+      this.currentVideoDescription = regions.description;
       this.setComments(regions.comments, regions.commentState);
       this.currentUploader = regions.uploader;
       this.currentActions = regions.actions;
@@ -4757,6 +4853,7 @@
         "aria-label",
         UiStrings.message(UiMessage.COMMENTS_LABEL, this.language)
       );
+      this.updateVideoDescriptionLabel();
       this.updateCommentPaneResizeLabel();
       this.dock?.setAttribute(
         "aria-label",
@@ -4863,6 +4960,8 @@
      * Restores moved comments and hides the comment pane.
      */
     hideComments() {
+      this.videoDescriptionView?.remove();
+
       if (this.commentNode) {
         this.restoreNode(this.commentNode);
         this.commentNode = null;
@@ -4885,8 +4984,65 @@
 
       this.commentNode = comments;
       this.movePageNode(comments, this.commentPane, "comments");
+      this.renderVideoDescription();
       this.root.classList.add("bibilili-has-comments");
       this.root.classList.remove("bibilili-has-comment-retry");
+    }
+
+    /**
+     * Renders the current video description before the moved comment tree.
+     */
+    renderVideoDescription() {
+      if (!this.commentPane || !this.commentNode) {
+        return;
+      }
+
+      if (!this.currentVideoDescription) {
+        this.videoDescriptionView?.remove();
+        return;
+      }
+
+      this.ensureVideoDescriptionView();
+      this.updateVideoDescriptionLabel();
+      this.videoDescriptionText.textContent = this.currentVideoDescription;
+
+      if (this.commentNode.previousSibling !== this.videoDescriptionView) {
+        this.commentPane.insertBefore(
+          this.videoDescriptionView,
+          this.commentNode
+        );
+      }
+    }
+
+    /**
+     * Ensures the stable video description view exists.
+     */
+    ensureVideoDescriptionView() {
+      if (this.videoDescriptionView) {
+        return;
+      }
+
+      this.videoDescriptionView = this.document.createElement("section");
+      this.videoDescriptionView.className = "bibilili-video-description";
+
+      this.videoDescriptionText = this.document.createElement("p");
+      this.videoDescriptionText.className = "bibilili-video-description-text";
+
+      this.videoDescriptionView.append(this.videoDescriptionText);
+    }
+
+    /**
+     * Updates the video description accessible label.
+     */
+    updateVideoDescriptionLabel() {
+      if (!this.videoDescriptionView) {
+        return;
+      }
+
+      this.videoDescriptionView.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.VIDEO_DESCRIPTION_LABEL, this.language)
+      );
     }
 
     /**
@@ -8165,6 +8321,7 @@
    * @typedef {object} DiscoveredRegions
    * @property {Element | null} player Page-owned player region.
    * @property {string | null} title Current watch title.
+   * @property {string | null} description Current watch description text.
    * @property {UploaderInfo | null} uploader Current watch uploader metadata.
    * @property {WatchAction[]} actions Page-owned watch action controls.
    * @property {AccountControl | null} accountControl Page-owned account control.
@@ -8212,6 +8369,7 @@
       AccountSourceAdapter,
       AccountSourceStore,
       LayoutRoot,
+      RegionDiscovery,
       SourceAdapter,
       SourceKind,
       SourceMerger

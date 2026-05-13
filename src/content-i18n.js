@@ -21,6 +21,7 @@
     LAYOUT_LABEL: "layoutLabel",
     PLAYER_LABEL: "playerLabel",
     COMMENTS_LABEL: "commentsLabel",
+    VIDEO_DESCRIPTION_LABEL: "videoDescriptionLabel",
     VIDEO_LISTS_LABEL: "videoListsLabel",
     TURN_ON_LABEL: "turnOnLabel",
     TURN_OFF_LABEL: "turnOffLabel",

@@ -239,6 +239,22 @@
   padding: 12px !important;
 }
 
+.bibilili-comment-pane > .bibilili-video-description {
+  padding: 14px 14px 12px !important;
+  border-bottom: 1px solid var(--bibilili-border);
+  background: var(--bibilili-comment-bg);
+}
+
+.bibilili-video-description-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--bibilili-comment-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .bibilili-comment-retry {
   box-sizing: border-box;
   display: flex;
