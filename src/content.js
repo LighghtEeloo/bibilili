@@ -573,6 +573,16 @@
     "[class*='collection-m']",
     "[class*='Collection']"
   ].join(",");
+  const COIN_DIALOG_CONTENT_SELECTOR = [
+    ".coin-operated-m-exp",
+    ".coin-operated-m",
+    ".coin-dialog-mask",
+    "[class*='coin-operated']"
+  ].join(",");
+  const WATCH_ACTION_DIALOG_ROOT_SELECTOR = [
+    ".bili-dialog-m",
+    ".coin-dialog-mask"
+  ].join(",");
   const COMMENT_IMAGE_PREVIEW_SELECTOR = [
     ".pswp",
     ".pswp__scroll-wrap",
@@ -6366,13 +6376,16 @@
      * @param {Element} trigger
      */
     static liftNativeWatchActionOverlay(kind, trigger) {
-      if (kind !== WatchActionKind.FAVORITE) {
+      if (
+        kind !== WatchActionKind.COIN &&
+        kind !== WatchActionKind.FAVORITE
+      ) {
         return;
       }
 
       const document = trigger.ownerDocument;
       LayoutRoot.scheduleNativeOverlayLift(() => {
-        const dialog = LayoutRoot.favoriteDialog(document);
+        const dialog = LayoutRoot.watchActionDialog(kind, document);
 
         if (dialog) {
           LayoutRoot.markNativeOverlay(dialog);
@@ -6512,6 +6525,40 @@
     }
 
     /**
+     * Finds a native dialog opened by a mirrored watch action.
+     *
+     * @param {string} kind
+     * @param {Document} document
+     * @returns {Element | null}
+     */
+    static watchActionDialog(kind, document) {
+      if (kind === WatchActionKind.COIN) {
+        return LayoutRoot.coinDialog(document);
+      }
+
+      if (kind === WatchActionKind.FAVORITE) {
+        return LayoutRoot.favoriteDialog(document);
+      }
+
+      return null;
+    }
+
+    /**
+     * Finds Bilibili's coin dialog after the coin action opens it.
+     *
+     * Note: Bilibili renders the coin view as a global `bili-dialog-m` overlay
+     * on watch pages and as `coin-dialog-mask` in adjacent page variants.
+     *
+     * @param {Document} document
+     * @returns {Element | null}
+     */
+    static coinDialog(document) {
+      const content = document.querySelector(COIN_DIALOG_CONTENT_SELECTOR);
+
+      return content ? LayoutRoot.watchActionDialogRoot(content) : null;
+    }
+
+    /**
      * Finds Bilibili's favorite-folder dialog after the favorite action opens it.
      *
      * Note: Bilibili renders the favorite dialog as a global `bili-dialog-m`
@@ -6523,7 +6570,17 @@
     static favoriteDialog(document) {
       const content = document.querySelector(FAVORITE_DIALOG_CONTENT_SELECTOR);
 
-      return content?.closest(".bili-dialog-m") ?? null;
+      return content ? LayoutRoot.watchActionDialogRoot(content) : null;
+    }
+
+    /**
+     * Returns the stackable root for a native watch-action dialog.
+     *
+     * @param {Element} content
+     * @returns {Element}
+     */
+    static watchActionDialogRoot(content) {
+      return content.closest(WATCH_ACTION_DIALOG_ROOT_SELECTOR) ?? content;
     }
 
     /**

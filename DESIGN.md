@@ -66,8 +66,9 @@ account API. These operations are account-list mutations. They do not activate
 native watch-later controls or replace Bilibili navigation behavior.
 
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
-coin, and favorite forward clicks to Bilibili's page-owned triggers. Share
-copies the current watch URL.
+coin, and favorite forward clicks to Bilibili's page-owned triggers. Coin and
+favorite dialogs remain page-owned overlays. Share copies the current watch
+URL.
 
 Bibilili forwards current-user comment avatar activation to the page-owned
 account control when that control is available. Account menus, login prompts,
@@ -310,7 +311,8 @@ native actions are absent from the dock.
 The like, coin, and favorite buttons present sanitized clones of native visual
 content and dispatch clicks to their native triggers. Bibilili does not call
 their action APIs directly or replace native action dialogs or account logic.
-The favorite action may open Bilibili's native collection dialog.
+The coin action may open Bilibili's native coin dialog. The favorite action may
+open Bilibili's native collection dialog.
 
 The share button presents the native share count and copies a clean current
 watch URL when activated. The copied URL drops tracking parameters and keeps the
@@ -357,7 +359,8 @@ pane. Comment-row avatars retain their native link and profile behavior.
 
 Native overlay lift is the stacking adjustment for page-owned popovers and
 dialogs opened from controls that Bibilili forwards. It applies to the account
-popover, the favorite collection dialog, and comment image previews.
+popover, the coin dialog, the favorite collection dialog, and comment image
+previews.
 
 Comment image previews are page-owned overlays opened from images inside the
 comment pane. Bibilili detects preview-triggering comment image clicks and
