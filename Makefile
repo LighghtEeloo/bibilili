@@ -44,6 +44,11 @@ validate-assets:
 	test -f assets/bibilili-logo-32.png
 	test -f assets/bibilili-logo-48.png
 	test -f assets/bibilili-logo-128.png
+	test -f assets/bibilili-logo-thick.svg
+	test -f assets/bibilili-logo-thick-16.png
+	test -f assets/bibilili-logo-thick-32.png
+	test -f assets/bibilili-logo-thick-48.png
+	test -f assets/bibilili-logo-thick-128.png
 
 manual-checklist:
 	@printf '%s\n' 'Manual browser checks before publishing:'
