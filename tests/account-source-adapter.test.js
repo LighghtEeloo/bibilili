@@ -13,6 +13,9 @@ const {
 
 function currentWatchLaterLayout() {
   return Object.assign(Object.create(LayoutRoot.prototype), {
+    language: "en",
+    watchLaterAccountCount: null,
+    watchLaterVisualSnapshot: [],
     watchLaterArchiveKeys: new Set(),
     completedWatchLaterAddKeys: new Set()
   });
@@ -33,6 +36,44 @@ test("extracts account list entries from successful payload shapes", () => {
     [{ title: "One" }, { title: "Two" }]
   );
   assert.deepEqual(AccountSourceAdapter.entriesFromPayload({ data: {} }), []);
+});
+
+test("reads account watch-later totals from payload metadata", () => {
+  assert.equal(
+    AccountSourceAdapter.watchLaterCountFromPayload({
+      data: {
+        count: "123",
+        list: [{ title: "Loaded card" }]
+      }
+    }),
+    123
+  );
+  assert.equal(
+    AccountSourceAdapter.watchLaterCountFromPayload({
+      data: {
+        page: { total: 88 },
+        list: [{ title: "Loaded card" }]
+      }
+    }),
+    88
+  );
+  assert.equal(
+    AccountSourceAdapter.watchLaterCountFromPayload({
+      data: {
+        count: "",
+        list: [{ title: "Loaded card" }]
+      }
+    }),
+    null
+  );
+  assert.equal(
+    AccountSourceAdapter.watchLaterCountFromPayload({
+      data: {
+        list: [{ title: "Loaded card" }, { title: "Another loaded card" }]
+      }
+    }),
+    null
+  );
 });
 
 test("resolves account record targets by direct URL and ids", () => {
@@ -134,6 +175,92 @@ test("omits empty account sources", () => {
   );
 });
 
+test("returns watch-later count with account source records", async () => {
+  const previousFetchApiPayload = AccountSourceStore.fetchApiPayload;
+
+  AccountSourceStore.fetchApiPayload = async () => ({
+    code: 0,
+    data: {
+      count: 101,
+      list: [
+        {
+          bvid: "BV1xx411c7mD",
+          title: "First"
+        }
+      ]
+    }
+  });
+
+  try {
+    const record = await AccountSourceStore.fetchSourceRecord(
+      SourceKind.WATCH_LATER,
+      "https://api.example.test/watch-later",
+      new AbortController().signal,
+      "en"
+    );
+
+    assert.equal(record.kind, SourceKind.WATCH_LATER);
+    assert.equal(record.watchLaterCount, 101);
+    assert.equal(record.source.kind, SourceKind.WATCH_LATER);
+    assert.equal(record.source.items.length, 1);
+    assert.equal(
+      record.source.items[0].targetUrl,
+      "https://www.bilibili.com/video/BV1xx411c7mD"
+    );
+  } finally {
+    AccountSourceStore.fetchApiPayload = previousFetchApiPayload;
+  }
+});
+
+test("aggregates account source records with the watch-later count", async () => {
+  const previousFetchSourceRecord = AccountSourceStore.fetchSourceRecord;
+  const watchLaterSource = {
+    kind: SourceKind.WATCH_LATER,
+    root: null,
+    items: [
+      {
+        targetUrl: "https://www.bilibili.com/video/BV1xx411c7mD",
+        title: "Watch later"
+      }
+    ]
+  };
+  const historySource = {
+    kind: SourceKind.HISTORY,
+    root: null,
+    items: [
+      {
+        targetUrl: "https://www.bilibili.com/video/BV2xx411c7mD",
+        title: "History"
+      }
+    ]
+  };
+
+  AccountSourceStore.fetchSourceRecord = async (kind) =>
+    kind === SourceKind.WATCH_LATER
+      ? {
+          kind,
+          source: watchLaterSource,
+          watchLaterCount: 42
+        }
+      : {
+          kind,
+          source: historySource,
+          watchLaterCount: null
+        };
+
+  try {
+    assert.deepEqual(
+      await AccountSourceStore.fetchSources(new AbortController().signal, "en"),
+      {
+        sources: [watchLaterSource, historySource],
+        watchLaterCount: 42
+      }
+    );
+  } finally {
+    AccountSourceStore.fetchSourceRecord = previousFetchSourceRecord;
+  }
+});
+
 test("posts watch-later additions with archive identity and csrf", async () => {
   const previousFetch = global.fetch;
   let request = null;
@@ -195,11 +322,59 @@ test("exposes the current archive as a watch-later dock action after share", () 
   const layout = currentWatchLaterLayout();
 
   try {
+    layout.watchLaterAccountCount = 123;
+
     assert.deepEqual(layout.currentWatchLaterAddState(), {
       key: "bvid:BV1xx411c7mD",
       targetUrl: "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
     });
 
+    const orderedActions = layout.orderedWatchActions([
+      {
+        kind: WatchActionKind.SHARE
+      },
+      {
+        kind: WatchActionKind.WATCH_LATER,
+        trigger: null,
+        visualSource: { isConnected: true },
+        countText: "1",
+        countSelectors: ["span"],
+        isActive: false
+      }
+    ]);
+    const watchLaterAction = orderedActions.find(
+      (action) => action.kind === WatchActionKind.WATCH_LATER
+    );
+
+    assert.deepEqual(
+      orderedActions.map((action) => action.kind),
+      [WatchActionKind.SHARE, WatchActionKind.WATCH_LATER]
+    );
+    assert.equal(watchLaterAction.countText, "123");
+    assert.equal(watchLaterAction.nativeCountText, "1");
+  } finally {
+    window.location.href = previousHref;
+  }
+});
+
+test("omits the current watch-later dock action without a native visual", () => {
+  const previousHref = window.location.href;
+  window.location.href = "https://www.bilibili.com/video/av123456";
+  const layout = currentWatchLaterLayout();
+
+  try {
+    assert.deepEqual(
+      layout
+        .orderedWatchActions([
+          {
+            kind: WatchActionKind.SHARE
+          }
+        ])
+        .map((action) => action.kind),
+      [WatchActionKind.SHARE]
+    );
+
+    layout.watchLaterVisualSnapshot = [{ cloneNode: () => ({}) }];
     assert.deepEqual(
       layout
         .orderedWatchActions([
@@ -212,6 +387,70 @@ test("exposes the current archive as a watch-later dock action after share", () 
     );
   } finally {
     window.location.href = previousHref;
+  }
+});
+
+test("drops native watch-later labels from cloned action visuals", () => {
+  const action = {
+    kind: WatchActionKind.WATCH_LATER,
+    countText: "199",
+    nativeCountText: "2",
+    labelPattern: /(?:稍后再看|稍後再看|watch\s*later)/iu
+  };
+
+  assert.equal(
+    LayoutRoot.shouldDropWatchActionVisualText("稍后再看", action),
+    true
+  );
+  assert.equal(
+    LayoutRoot.shouldDropWatchActionVisualText("Watch later", action),
+    true
+  );
+  assert.equal(LayoutRoot.shouldDropWatchActionVisualText("2", action), true);
+  assert.equal(LayoutRoot.shouldDropWatchActionVisualText("199", action), true);
+  assert.equal(
+    LayoutRoot.shouldDropWatchActionVisualText("unrelated", action),
+    false
+  );
+});
+
+test("decrements loaded watch-later count after successful deletion", async () => {
+  const previousDeleteWatchLaterApiItem =
+    AccountSourceStore.deleteWatchLaterApiItem;
+  let deletedAid = null;
+  let changes = 0;
+  const store = new AccountSourceStore(() => {
+    changes += 1;
+  });
+  store.watchLaterCount = 7;
+  store.sources = [
+    {
+      kind: SourceKind.WATCH_LATER,
+      root: null,
+      items: [
+        {
+          targetUrl: "https://www.bilibili.com/video/av123456",
+          title: "Watch later",
+          watchLaterAid: "123456"
+        }
+      ]
+    }
+  ];
+
+  AccountSourceStore.deleteWatchLaterApiItem = async (aid) => {
+    deletedAid = aid;
+  };
+
+  try {
+    await store.deleteWatchLaterItem("123456");
+
+    assert.equal(deletedAid, "123456");
+    assert.equal(store.currentWatchLaterCount(), 6);
+    assert.deepEqual(store.currentSources(), []);
+    assert.equal(changes, 1);
+  } finally {
+    AccountSourceStore.deleteWatchLaterApiItem =
+      previousDeleteWatchLaterApiItem;
   }
 });
 

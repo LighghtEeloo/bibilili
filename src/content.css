@@ -487,7 +487,7 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   width: 72px;
   height: 30px;
   padding: 0 6px;
@@ -526,7 +526,7 @@
 
 .bibilili-action-native-visual {
   display: inline-flex;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
   max-height: 24px;
@@ -591,14 +591,6 @@
   stroke-width: 2;
 }
 
-.bibilili-action-native-visual .bibilili-action-watch-later-icon {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-}
-
 .bibilili-action-button[data-watch-action-kind="share"]:hover
   [data-bibilili-action-native-icon-part="true"],
 .bibilili-action-button[data-watch-action-kind="share"]:hover
@@ -626,11 +618,13 @@
 
 .bibilili-action-count {
   display: block;
-  flex: 0 1 auto;
-  max-width: 4.5ch;
+  flex: 0 0 auto;
+  max-width: 6ch;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font: inherit;
+  line-height: 1;
   white-space: nowrap;
 }
 

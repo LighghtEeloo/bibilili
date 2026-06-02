@@ -408,7 +408,11 @@
     ".video-coin",
     ".video-fav",
     ".video-favorite",
-    ".video-share"
+    ".video-share",
+    ".video-watch-later",
+    ".video-watchlater",
+    ".watch-later",
+    ".watchlater"
   ].join(",");
 
   const WATCH_ACTION_ACTIVE_SELECTOR = [
@@ -657,7 +661,8 @@
     [WatchActionKind.LIKE]: UiMessage.WATCH_ACTION_LIKE_LABEL,
     [WatchActionKind.COIN]: UiMessage.WATCH_ACTION_COIN_LABEL,
     [WatchActionKind.FAVORITE]: UiMessage.WATCH_ACTION_FAVORITE_LABEL,
-    [WatchActionKind.SHARE]: UiMessage.WATCH_ACTION_SHARE_LABEL
+    [WatchActionKind.SHARE]: UiMessage.WATCH_ACTION_SHARE_LABEL,
+    [WatchActionKind.WATCH_LATER]: UiMessage.WATCH_LATER_ADD_LABEL
   });
 
   UiStrings.configure({
@@ -888,6 +893,46 @@
       ],
       labelPattern: /(?:分享|share|shared)/iu,
       activePattern: /$^/u
+    },
+    {
+      kind: WatchActionKind.WATCH_LATER,
+      selectors: [
+        "#arc_toolbar_report .video-watch-later",
+        "#arc_toolbar_report .video-watchlater",
+        ".video-toolbar .video-watch-later",
+        ".video-toolbar .video-watchlater",
+        ".video-toolbar-left .video-watch-later",
+        ".video-toolbar-left .video-watchlater",
+        ".video-toolbar-left-main .video-watch-later",
+        ".video-toolbar-left-main .video-watchlater",
+        ".ops .watch-later",
+        ".ops .watchlater",
+        ".video-watch-later",
+        ".video-watchlater",
+        "[class*='video-watch-later']",
+        "[class*='video-watchlater']",
+        "[title*='稍后']",
+        "[aria-label*='稍后']",
+        "[title*='稍後']",
+        "[aria-label*='稍後']",
+        "[title*='Watch later']",
+        "[aria-label*='Watch later']",
+        "[title*='watch later']",
+        "[aria-label*='watch later']"
+      ],
+      countSelectors: [
+        ".video-watch-later-info",
+        ".video-watchlater-info",
+        "[class*='watch-later-info']",
+        "[class*='watchlater-info']",
+        ".video-toolbar-item-text",
+        ".video-toolbar-left-item-text",
+        ".toolbar-left-item-text",
+        "[class*='count']",
+        "span"
+      ],
+      labelPattern: /(?:稍后再看|稍後再看|watch\s*later)/iu,
+      activePattern: /(?:\bon\b|\bactive\b|\bis-active\b|\bselected\b|已添加|已加入)/iu
     }
   ]);
 
@@ -2639,6 +2684,33 @@
     }
 
     /**
+     * Reads the full account watch-later count from a to-view payload.
+     *
+     * @param {object} payload
+     * @returns {number | null}
+     */
+    static watchLaterCountFromPayload(payload) {
+      const candidates = [
+        payload?.data?.count,
+        payload?.data?.total,
+        payload?.data?.page?.count,
+        payload?.data?.page?.total,
+        payload?.data?.cursor?.count,
+        payload?.data?.cursor?.total
+      ];
+
+      for (const candidate of candidates) {
+        const count = AccountSourceAdapter.nonNegativeInteger(candidate);
+
+        if (count !== null) {
+          return count;
+        }
+      }
+
+      return null;
+    }
+
+    /**
      * Reads the archive id from account record id fields.
      *
      * @param {object} entry
@@ -2709,6 +2781,26 @@
     }
 
     /**
+     * Converts a non-negative integer value from Bilibili payloads.
+     *
+     * @param {unknown} value
+     * @returns {number | null}
+     */
+    static nonNegativeInteger(value) {
+      if (typeof value === "string" && !value.trim()) {
+        return null;
+      }
+
+      const number = AccountSourceAdapter.numberValue(value);
+
+      if (number === null || number < 0) {
+        return null;
+      }
+
+      return Math.trunc(number);
+    }
+
+    /**
      * Converts a string value from Bilibili payloads.
      *
      * @param {unknown} value
@@ -2746,6 +2838,7 @@
       this.sequence = 0;
       this.loadedLanguage = null;
       this.loadingLanguage = null;
+      this.watchLaterCount = null;
     }
 
     /**
@@ -2755,6 +2848,15 @@
      */
     currentSources() {
       return this.sources;
+    }
+
+    /**
+     * Returns the latest account watch-later total count.
+     *
+     * @returns {number | null}
+     */
+    currentWatchLaterCount() {
+      return this.watchLaterCount;
     }
 
     /**
@@ -2790,9 +2892,26 @@
 
       await AccountSourceStore.deleteWatchLaterApiItem(normalizedAid);
 
-      if (this.removeWatchLaterItem(normalizedAid)) {
+      const didRemove = this.removeWatchLaterItem(normalizedAid);
+      const didDecrement = this.decrementWatchLaterCount();
+
+      if (didRemove || didDecrement) {
         this.onChange();
       }
+    }
+
+    /**
+     * Decrements the loaded watch-later count after a successful deletion.
+     *
+     * @returns {boolean}
+     */
+    decrementWatchLaterCount() {
+      if (this.watchLaterCount === null) {
+        return false;
+      }
+
+      this.watchLaterCount = Math.max(0, this.watchLaterCount - 1);
+      return true;
     }
 
     /**
@@ -2860,12 +2979,13 @@
       this.loadingLanguage = normalizedLanguage;
 
       AccountSourceStore.fetchSources(controller.signal, normalizedLanguage)
-        .then((sources) => {
+        .then((result) => {
           if (sequence !== this.sequence) {
             return;
           }
 
-          this.sources = sources;
+          this.sources = result.sources;
+          this.watchLaterCount = result.watchLaterCount;
           this.onChange();
         })
         .catch((error) => {
@@ -2875,6 +2995,7 @@
 
           if (sequence === this.sequence) {
             this.sources = [];
+            this.watchLaterCount = null;
           }
         })
         .finally(() => {
@@ -2900,6 +3021,7 @@
       this.sources = [];
       this.loadedLanguage = null;
       this.loadingLanguage = null;
+      this.watchLaterCount = null;
     }
 
     /**
@@ -2907,7 +3029,7 @@
      *
      * @param {AbortSignal} signal
      * @param {string} language
-     * @returns {Promise<VideoListSource[]>}
+     * @returns {Promise<AccountSourceFetchResult>}
      */
     static async fetchSources(signal, language) {
       const requests = [
@@ -2915,13 +3037,18 @@
         { kind: SourceKind.HISTORY, url: HISTORY_SOURCE_URL }
       ];
 
-      const sources = await Promise.all(
+      const records = await Promise.all(
         requests.map(({ kind, url }) =>
-          AccountSourceStore.fetchSource(kind, url, signal, language)
+          AccountSourceStore.fetchSourceRecord(kind, url, signal, language)
         )
       );
 
-      return sources.filter(Boolean);
+      return {
+        sources: records.map((record) => record.source).filter(Boolean),
+        watchLaterCount:
+          records.find((record) => record.kind === SourceKind.WATCH_LATER)
+            ?.watchLaterCount ?? null
+      };
     }
 
     /**
@@ -2947,24 +3074,45 @@
      * @param {string} url
      * @param {AbortSignal} signal
      * @param {string} language
-     * @returns {Promise<VideoListSource | null>}
+     * @returns {Promise<AccountSourceFetchRecord>}
      */
-    static async fetchSource(kind, url, signal, language) {
+    static async fetchSourceRecord(kind, url, signal, language) {
       try {
         const payload = await AccountSourceStore.fetchApiPayload(url, signal);
 
         if (!AccountSourceStore.isSuccessfulPayload(payload)) {
-          return null;
+          return AccountSourceStore.emptySourceRecord(kind);
         }
 
-        return AccountSourceAdapter.sourceFromPayload(kind, payload, language);
+        return {
+          kind,
+          source: AccountSourceAdapter.sourceFromPayload(kind, payload, language),
+          watchLaterCount:
+            kind === SourceKind.WATCH_LATER
+              ? AccountSourceAdapter.watchLaterCountFromPayload(payload)
+              : null
+        };
       } catch (error) {
         if (error?.name === "AbortError") {
           throw error;
         }
 
-        return null;
+        return AccountSourceStore.emptySourceRecord(kind);
       }
+    }
+
+    /**
+     * Returns an empty account-source record for a failed source request.
+     *
+     * @param {string} kind
+     * @returns {AccountSourceFetchRecord}
+     */
+    static emptySourceRecord(kind) {
+      return {
+        kind,
+        source: null,
+        watchLaterCount: null
+      };
     }
 
     /**
@@ -4128,6 +4276,7 @@
           visualSource: this.watchActionVisualSource(trigger),
           countSelectors: definition.countSelectors,
           countText: this.watchActionCountText(trigger, definition),
+          labelPattern: definition.labelPattern,
           isActive: this.isWatchActionActive(trigger, definition)
         };
       }
@@ -4793,6 +4942,9 @@
       this.currentSources = [];
       this.accountControl = null;
       this.currentActivationControl = null;
+      this.watchLaterAccountCount = null;
+      /** @type {Node[]} */
+      this.watchLaterVisualSnapshot = [];
       this.onCommentReload = null;
       this.onWatchActionForward = null;
       this.onWatchLaterAdd = null;
@@ -4823,6 +4975,7 @@
      * @param {boolean} resetSourceRoute
      * @param {ActivationControl} activationControl
      * @param {string} language
+     * @param {number | null} watchLaterAccountCount
      * @param {() => void} onCommentReload
      * @param {() => void} onWatchActionForward
      * @param {(targetUrl: string) => Promise<void>} onWatchLaterAdd
@@ -4836,6 +4989,7 @@
       resetSourceRoute,
       activationControl,
       language,
+      watchLaterAccountCount,
       onCommentReload,
       onWatchActionForward,
       onWatchLaterAdd,
@@ -4849,6 +5003,7 @@
       this.onCommentReload = onCommentReload;
       this.onWatchActionForward = onWatchActionForward;
       this.setLanguage(language);
+      this.watchLaterAccountCount = watchLaterAccountCount;
       this.setPlayer(regions.player);
       this.setPlayerTitle(regions.title);
       this.currentVideoDescription =
@@ -6123,7 +6278,9 @@
       return WATCH_ACTION_ORDER
         .map((kind) =>
           kind === WatchActionKind.WATCH_LATER
-            ? this.currentWatchLaterAction()
+            ? this.currentWatchLaterAction(
+                actions.find((action) => action.kind === kind) ?? null
+              )
             : actions.find((action) => action.kind === kind)
         )
         .filter(Boolean);
@@ -6132,21 +6289,34 @@
     /**
      * Returns the current-video watch-later action when the archive is addable.
      *
+     * @param {WatchAction | null} nativeAction
      * @returns {WatchAction | null}
      */
-    currentWatchLaterAction() {
+    currentWatchLaterAction(nativeAction = null) {
       const state = this.currentWatchLaterAddState();
 
       if (!state) {
         return null;
       }
 
+      if (
+        !LayoutRoot.watchActionHasConnectedVisual(nativeAction) &&
+        !this.hasWatchLaterVisualSnapshot()
+      ) {
+        return null;
+      }
+
       return {
         kind: WatchActionKind.WATCH_LATER,
-        trigger: null,
-        visualSource: null,
-        countText: null,
-        countSelectors: [],
+        trigger: nativeAction?.trigger ?? null,
+        visualSource: nativeAction?.visualSource ?? null,
+        countText: LayoutRoot.watchLaterAccountCountText(
+          this.watchLaterAccountCount,
+          this.language
+        ),
+        countSelectors: nativeAction?.countSelectors ?? [],
+        nativeCountText: nativeAction?.countText ?? null,
+        labelPattern: nativeAction?.labelPattern ?? null,
         isActive: false,
         watchLaterAddKey: state.key,
         watchLaterAddTargetUrl: state.targetUrl
@@ -6252,11 +6422,8 @@
       );
       const visual = button.querySelector(".bibilili-action-native-visual");
       const count = button.querySelector(".bibilili-action-count");
-      const nativeVisualHasCount = this.updateWatchActionNativeVisual(
-        visual,
-        action
-      );
 
+      this.updateWatchActionNativeVisual(visual, action);
       UiControl.setLabel(button, label);
 
       if (WATCH_ACTION_STATEFUL_KINDS.has(action.kind)) {
@@ -6266,7 +6433,7 @@
       }
 
       count.textContent = action.countText ?? "";
-      count.hidden = !action.countText || nativeVisualHasCount;
+      count.hidden = !action.countText;
     }
 
     /**
@@ -6279,8 +6446,16 @@
       const visual = button.querySelector(".bibilili-action-native-visual");
       const count = button.querySelector(".bibilili-action-count");
       const key = action.watchLaterAddKey ?? "";
+      const countText = action.countText ?? "";
 
-      UiControl.setLabel(button, UiStrings.watchLaterAddLabel(this.language));
+      UiControl.setLabel(
+        button,
+        UiStrings.watchActionButtonLabel(
+          action.kind,
+          action.countText,
+          this.language
+        )
+      );
       button.removeAttribute("aria-pressed");
       button.disabled = key ? this.pendingWatchLaterAddKeys.has(key) : true;
       button.dataset.bibililiWatchLaterAction = WatchLaterCardAction.ADD;
@@ -6288,25 +6463,94 @@
       button.dataset.bibililiWatchLaterAddTargetUrl =
         action.watchLaterAddTargetUrl ?? "";
 
-      this.updateCurrentWatchLaterActionVisual(visual);
-      count.textContent = "";
-      count.hidden = true;
+      button.hidden = !this.updateCurrentWatchLaterActionVisual(visual, action);
+      count.textContent = countText;
+      count.hidden = !countText;
     }
 
     /**
-     * Renders the current-video watch-later icon in an action button.
+     * Renders the native-cloned current-video watch-later visual.
+     *
+     * @param {Element} visual
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    updateCurrentWatchLaterActionVisual(visual, action) {
+      visual.replaceChildren();
+      visual.removeAttribute("data-bibilili-fallback");
+
+      const fragment = LayoutRoot.watchActionVisualFragment(
+        this.document,
+        action
+      );
+
+      if (fragment) {
+        visual.append(fragment);
+        this.rememberWatchLaterVisualSnapshot(visual);
+        return true;
+      }
+
+      if (this.hasWatchLaterVisualSnapshot()) {
+        visual.replaceChildren(...this.watchLaterVisualSnapshotNodes());
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
+     * Formats the account watch-later count for the dock action.
+     *
+     * @param {number | null} count
+     * @param {string} language
+     * @returns {string | null}
+     */
+    static watchLaterAccountCountText(count, language) {
+      return count === null
+        ? null
+        : AccountSourceAdapter.compactNumber(count, language);
+    }
+
+    /**
+     * Returns true when one native action can supply cloneable visual nodes.
+     *
+     * @param {WatchAction | null} action
+     * @returns {boolean}
+     */
+    static watchActionHasConnectedVisual(action) {
+      return Boolean(
+        action &&
+          (action.visualSource?.isConnected || action.trigger?.isConnected)
+      );
+    }
+
+    /**
+     * Returns true when this page session has a cloned watch-later visual.
+     *
+     * @returns {boolean}
+     */
+    hasWatchLaterVisualSnapshot() {
+      return this.watchLaterVisualSnapshot.length > 0;
+    }
+
+    /**
+     * Stores cloneable watch-later visual nodes for later lazy reconciles.
      *
      * @param {Element} visual
      */
-    updateCurrentWatchLaterActionVisual(visual) {
-      visual.replaceChildren(
-        LayoutRoot.watchLaterActionIcon(
-          this.document,
-          WatchLaterCardAction.ADD,
-          "bibilili-action-watch-later-icon"
-        )
+    rememberWatchLaterVisualSnapshot(visual) {
+      this.watchLaterVisualSnapshot = Array.from(visual.childNodes).map((node) =>
+        node.cloneNode(true)
       );
-      visual.removeAttribute("data-bibilili-fallback");
+    }
+
+    /**
+     * Returns fresh clones of the captured native watch-later visual.
+     *
+     * @returns {Node[]}
+     */
+    watchLaterVisualSnapshotNodes() {
+      return this.watchLaterVisualSnapshot.map((node) => node.cloneNode(true));
     }
 
     /**
@@ -6314,7 +6558,6 @@
      *
      * @param {Element} visual
      * @param {WatchAction} action
-     * @returns {boolean} True when the native visual contains the count text.
      */
     updateWatchActionNativeVisual(visual, action) {
       visual.replaceChildren();
@@ -6337,11 +6580,6 @@
       if (action.kind === WatchActionKind.SHARE) {
         LayoutRoot.insertWatchActionCopyIcon(this.document, visual);
       }
-
-      return LayoutRoot.watchActionVisualContainsCount(
-        visual,
-        action.countText
-      );
     }
 
     /**
@@ -7038,14 +7276,17 @@
       }
 
       if (!fragment.hasChildNodes()) {
-        const text = DomProbe.compactText(source);
+        const text =
+          action.kind === WatchActionKind.WATCH_LATER
+            ? ""
+            : DomProbe.compactText(source);
 
         if (text) {
           fragment.append(document.createTextNode(text));
         }
       }
 
-      return LayoutRoot.hasWatchActionVisualContent(fragment)
+      return LayoutRoot.hasRequiredWatchActionVisualContent(fragment, action)
         ? fragment
         : null;
     }
@@ -7060,12 +7301,20 @@
      */
     static safeWatchActionVisualClone(document, node, action) {
       if (node.nodeType === Node.TEXT_NODE) {
-        return (node.textContent ?? "").trim()
-          ? document.createTextNode(node.textContent)
-          : null;
+        const text = (node.textContent ?? "").trim();
+
+        if (!text || LayoutRoot.shouldDropWatchActionVisualText(text, action)) {
+          return null;
+        }
+
+        return document.createTextNode(node.textContent);
       }
 
       if (!(node instanceof Element)) {
+        return null;
+      }
+
+      if (LayoutRoot.isWatchActionTextOnlySource(node, action)) {
         return null;
       }
 
@@ -7166,6 +7415,41 @@
     }
 
     /**
+     * Returns true when a cloned visual has the content required for an action.
+     *
+     * @param {Node} node
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static hasRequiredWatchActionVisualContent(node, action) {
+      return action.kind === WatchActionKind.WATCH_LATER
+        ? LayoutRoot.hasWatchActionIconContent(node)
+        : LayoutRoot.hasWatchActionVisualContent(node);
+    }
+
+    /**
+     * Returns true when a clone contains icon-like visual content.
+     *
+     * @param {Node} node
+     * @returns {boolean}
+     */
+    static hasWatchActionIconContent(node) {
+      if (node instanceof Element) {
+        return (
+          node.matches("svg, path, use, img, picture, canvas") ||
+          Boolean(node.querySelector("svg, path, use, img, picture, canvas")) ||
+          Boolean(
+            node.querySelector("[data-bibilili-action-icon-clone='true']")
+          )
+        );
+      }
+
+      return Array.from(node.childNodes ?? []).some((child) =>
+        LayoutRoot.hasWatchActionIconContent(child)
+      );
+    }
+
+    /**
      * Returns true when a native node is the action count visual.
      *
      * @param {Element} source
@@ -7173,19 +7457,89 @@
      * @returns {boolean}
      */
     static isWatchActionCountSource(source, action) {
-      const countText = action.countText;
+      const countTexts = LayoutRoot.watchActionCountTexts(action);
 
-      if (!countText) {
+      if (countTexts.size === 0) {
         return false;
       }
 
       const text = DomProbe.compactText(source);
 
-      if (text !== countText) {
+      if (!countTexts.has(text)) {
         return false;
       }
 
       return action.countSelectors.some((selector) => source.matches(selector));
+    }
+
+    /**
+     * Returns count strings that should stay outside cloned native visuals.
+     *
+     * @param {WatchAction} action
+     * @returns {Set<string>}
+     */
+    static watchActionCountTexts(action) {
+      return new Set(
+        [action.countText, action.nativeCountText].filter(
+          (text) => typeof text === "string" && text
+        )
+      );
+    }
+
+    /**
+     * Returns true when native text is a count or unwanted watch-later label.
+     *
+     * @param {string} text
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static shouldDropWatchActionVisualText(text, action) {
+      if (LayoutRoot.watchActionCountTexts(action).has(text)) {
+        return true;
+      }
+
+      if (action.kind !== WatchActionKind.WATCH_LATER) {
+        return false;
+      }
+
+      return LayoutRoot.watchActionLabelPatternMatches(text, action);
+    }
+
+    /**
+     * Returns true when text matches the action's native label pattern.
+     *
+     * @param {string} text
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static watchActionLabelPatternMatches(text, action) {
+      const pattern = action.labelPattern;
+
+      if (!(pattern instanceof RegExp)) {
+        return false;
+      }
+
+      return new RegExp(pattern.source, pattern.flags.replace("g", "")).test(
+        text
+      );
+    }
+
+    /**
+     * Returns true when a native node carries only removable action text.
+     *
+     * @param {Element} source
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static isWatchActionTextOnlySource(source, action) {
+      const text = DomProbe.compactText(source);
+
+      return (
+        text &&
+        LayoutRoot.shouldDropWatchActionVisualText(text, action) &&
+        !source.matches("svg, img, picture, canvas") &&
+        !source.querySelector("svg, img, picture, canvas")
+      );
     }
 
     /**
@@ -7202,20 +7556,6 @@
         source.matches("svg, img, picture, canvas") ||
         /(?:^|[-_\s])icon(?:[-_\s]|$)/iu.test(className) ||
         (!text && Boolean(source.querySelector("svg, img, picture, canvas")))
-      );
-    }
-
-    /**
-     * Returns true when the sanitized native visual already contains the count.
-     *
-     * @param {Element} visual
-     * @param {string | null} countText
-     * @returns {boolean}
-     */
-    static watchActionVisualContainsCount(visual, countText) {
-      return Boolean(
-        countText &&
-        DomProbe.compactText(visual).includes(countText)
       );
     }
 
@@ -8549,6 +8889,7 @@
         resetSourceRoute,
         this.activationControl,
         language,
+        this.accountSources.currentWatchLaterCount(),
         () => this.reloadComments(),
         () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
         (targetUrl) => this.addWatchLaterItem(targetUrl),
@@ -8885,10 +9226,25 @@
    * @property {Element | null} trigger Page-owned native action trigger when present.
    * @property {Element | null} visualSource Native source for visual cloning.
    * @property {string[]} countSelectors Native count text probes.
-   * @property {string | null} countText Native count text.
+   * @property {string | null} countText Displayed count text.
+   * @property {string | null} [nativeCountText] Native count text inside cloned visuals.
+   * @property {RegExp | null} [labelPattern] Native action label matcher.
    * @property {boolean} isActive Native active state.
    * @property {string} [watchLaterAddKey] Account watch-later add identity key.
    * @property {string} [watchLaterAddTargetUrl] Current archive URL to add.
+   */
+
+  /**
+   * @typedef {object} AccountSourceFetchResult
+   * @property {VideoListSource[]} sources Account-backed source records.
+   * @property {number | null} watchLaterCount Full account watch-later count when available.
+   */
+
+  /**
+   * @typedef {object} AccountSourceFetchRecord
+   * @property {string} kind Closed source kind.
+   * @property {VideoListSource | null} source Account-backed source when the payload has valid items.
+   * @property {number | null} watchLaterCount Full watch-later count for the watch-later source.
    */
 
   /**

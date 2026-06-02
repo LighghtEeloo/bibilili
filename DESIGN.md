@@ -232,6 +232,11 @@ sources. History is read-only in the dock. Watch later supports additions from
 the current watch action and page-owned collection and recommendation cards.
 It supports removals from account-backed watch-later cards.
 
+Watch later also reads the full list count from to-view response metadata when
+Bilibili exposes it. The count is account-state metadata. It is independent of
+the rendered rail item count, which may be capped by source limits or filtered
+by valid-item rules.
+
 Account source fetches are advisory and never block the first transformed
 layout. When an account request fails, requires login, or returns no valid
 video items, that source is absent for the current render pass.
@@ -309,7 +314,8 @@ action kind is a closed set with that stable order.
 Bibilili discovers native watch action triggers from the page toolbar. It reads
 the displayed count text and active state when Bilibili exposes them. Missing
 native actions are absent from the dock. The watch-later action is absent when
-the current watch URL is not an addable archive target.
+the current watch URL is not an addable archive target or no native
+watch-later visual has been captured.
 
 The like, coin, and favorite buttons present sanitized clones of native visual
 content and dispatch clicks to their native triggers. Bibilili does not call
@@ -326,9 +332,11 @@ share popover.
 
 The watch-later button sits after share when the current watch URL identifies
 an addable archive. It uses the same account API mutation path as card
-additions. It remains available when the archive is already present in the
-account-backed watch-later source, so activation can move that archive to the
-top of the watch-later list.
+additions. It uses a sanitized clone of Bilibili's native watch-later visual
+and does not draw an extension fallback. It shows the full account watch-later
+count next to the icon when that count is known. It remains available when the
+archive is already present in the account-backed watch-later source, so
+activation can move that archive to the top of the watch-later list.
 
 Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
