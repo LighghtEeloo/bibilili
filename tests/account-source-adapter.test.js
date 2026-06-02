@@ -3,8 +3,20 @@ const test = require("node:test");
 
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 
-const { AccountSourceAdapter, AccountSourceStore, SourceKind } =
-  loadContentRuntime();
+const {
+  AccountSourceAdapter,
+  AccountSourceStore,
+  LayoutRoot,
+  SourceKind,
+  WatchActionKind
+} = loadContentRuntime();
+
+function currentWatchLaterLayout() {
+  return Object.assign(Object.create(LayoutRoot.prototype), {
+    watchLaterArchiveKeys: new Set(),
+    completedWatchLaterAddKeys: new Set()
+  });
+}
 
 test("extracts account list entries from successful payload shapes", () => {
   assert.deepEqual(
@@ -173,5 +185,88 @@ test("resolves addable watch-later identities from archive URLs", () => {
       "https://www.bilibili.com/bangumi/play/ep12345"
     ),
     null
+  );
+});
+
+test("exposes the current archive as a watch-later dock action after share", () => {
+  const previousHref = window.location.href;
+  window.location.href =
+    "https://www.bilibili.com/video/BV1xx411c7mD?spm_id_from=333.788&p=2";
+  const layout = currentWatchLaterLayout();
+
+  try {
+    assert.deepEqual(layout.currentWatchLaterAddState(), {
+      key: "bvid:BV1xx411c7mD",
+      targetUrl: "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
+    });
+
+    assert.deepEqual(
+      layout
+        .orderedWatchActions([
+          {
+            kind: WatchActionKind.SHARE
+          }
+        ])
+        .map((action) => action.kind),
+      [WatchActionKind.SHARE, WatchActionKind.WATCH_LATER]
+    );
+  } finally {
+    window.location.href = previousHref;
+  }
+});
+
+test("keeps the current watch-later dock action for known archive targets", () => {
+  const previousHref = window.location.href;
+  window.location.href = "https://www.bilibili.com/video/av123456";
+  const layout = currentWatchLaterLayout();
+  const expectedState = {
+    key: "aid:123456",
+    targetUrl: "https://www.bilibili.com/video/av123456"
+  };
+
+  try {
+    layout.watchLaterArchiveKeys.add("aid:123456");
+    assert.deepEqual(layout.currentWatchLaterAddState(), expectedState);
+
+    layout.watchLaterArchiveKeys.clear();
+    layout.completedWatchLaterAddKeys.add("aid:123456");
+    assert.deepEqual(layout.currentWatchLaterAddState(), expectedState);
+  } finally {
+    window.location.href = previousHref;
+  }
+});
+
+test("ignores page-owned watch-later roots when suppressing add controls", () => {
+  const pageOwnedWatchLater = {
+    kind: SourceKind.WATCH_LATER,
+    root: {},
+    items: [
+      {
+        targetUrl: "https://www.bilibili.com/video/av123456",
+        title: "Toolbar false positive"
+      }
+    ]
+  };
+  const accountWatchLater = {
+    kind: SourceKind.WATCH_LATER,
+    root: null,
+    items: [
+      {
+        targetUrl: "https://www.bilibili.com/video/BV1xx411c7mD",
+        title: "Account watch later"
+      }
+    ]
+  };
+
+  assert.deepEqual(
+    LayoutRoot.watchLaterArchiveKeysFor([pageOwnedWatchLater]),
+    new Set()
+  );
+  assert.deepEqual(
+    LayoutRoot.watchLaterArchiveKeysFor([
+      pageOwnedWatchLater,
+      accountWatchLater
+    ]),
+    new Set(["bvid:BV1xx411c7mD"])
   );
 });

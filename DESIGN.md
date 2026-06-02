@@ -49,8 +49,8 @@ into the bottom dock.
 
 Bibilili owns the layout root, stage, panes, player title overlay, list dock,
 source bar, video description presentation, uploader summary, watch action
-group, list rail, video cards, watch-later mutation controls, extension
-classes, and bookkeeping attributes.
+group, current-video watch-later control, list rail, video cards,
+watch-later mutation controls, extension classes, and bookkeeping attributes.
 Bilibili owns the player, comments, source roots, links, native watch metadata,
 native uploader card, watch action triggers, account controls, account lists,
 and network-backed content.
@@ -68,7 +68,7 @@ native watch-later controls or replace Bilibili navigation behavior.
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
 coin, and favorite forward clicks to Bilibili's page-owned triggers. Coin and
 favorite dialogs remain page-owned overlays. Share copies the current watch
-URL.
+URL. The watch-later action adds the current archive through the account API.
 
 Bibilili forwards current-user comment avatar activation to the page-owned
 account control when that control is available. Account menus, login prompts,
@@ -229,8 +229,8 @@ The account source kinds are watch later and history. Watch later reads
 Bilibili's to-view list; history reads the recent video history list. Each API
 response is normalized into the same video item shape used by page-owned
 sources. History is read-only in the dock. Watch later supports additions from
-page-owned collection and recommendation cards and removals from
-account-backed watch-later cards.
+the current watch action and page-owned collection and recommendation cards.
+It supports removals from account-backed watch-later cards.
 
 Account source fetches are advisory and never block the first transformed
 layout. When an account request fails, requires login, or returns no valid
@@ -244,9 +244,11 @@ endpoint when the account payload exposes it. A successful deletion removes the
 item from the loaded watch-later source and reconciles the dock. Deleting the
 currently open video from watch later leaves the watch page open.
 
-Collection and recommendation cards derive a to-view add identity from their
-archive target URL. A successful addition refreshes account-backed sources and
-hides the add control for that card during the current layout session.
+The current watch action and collection and recommendation cards derive a
+to-view add identity from their archive target URL. A successful card addition
+refreshes account-backed sources and hides the card add control for that target
+during the current layout session. The current watch action remains available
+after a successful addition.
 
 ## Video Item
 
@@ -300,13 +302,14 @@ height minus the source bar height.
 
 ## Watch Action Control
 
-A watch action control is an extension-owned dock control derived from a native
-Bilibili watch action. The initial action kinds are like, coin, favorite, and
-share. The action kind is a closed set with that stable order.
+A watch action control is an extension-owned dock control for the current watch
+video. The action kinds are like, coin, favorite, share, and watch later. The
+action kind is a closed set with that stable order.
 
 Bibilili discovers native watch action triggers from the page toolbar. It reads
 the displayed count text and active state when Bilibili exposes them. Missing
-native actions are absent from the dock.
+native actions are absent from the dock. The watch-later action is absent when
+the current watch URL is not an addable archive target.
 
 The like, coin, and favorite buttons present sanitized clones of native visual
 content and dispatch clicks to their native triggers. Bibilili does not call
@@ -321,9 +324,15 @@ native share visual normally and replaces only the cloned share icon with a
 Bibilili-owned copy icon while hovered. It does not proxy Bilibili's native
 share popover.
 
+The watch-later button sits after share when the current watch URL identifies
+an addable archive. It uses the same account API mutation path as card
+additions. It remains available when the archive is already present in the
+account-backed watch-later source, so activation can move that archive to the
+top of the watch-later list.
+
 Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
-for absent native triggers.
+for absent native triggers or unavailable account mutations.
 
 ## Uploader Summary
 

@@ -509,6 +509,15 @@
   background: var(--bibilili-control-bg);
 }
 
+.bibilili-action-button:disabled {
+  cursor: progress;
+  opacity: 0.58;
+}
+
+.bibilili-action-button[hidden] {
+  display: none;
+}
+
 .bibilili-action-button[aria-pressed="true"] {
   border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
@@ -575,6 +584,14 @@
 
 .bibilili-action-native-visual .bibilili-action-copy-mark {
   display: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.bibilili-action-native-visual .bibilili-action-watch-later-icon {
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;

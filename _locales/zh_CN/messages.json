@@ -85,7 +85,7 @@
   },
   "watchLaterAddLabel": {
     "message": "添加到稍后再看",
-    "description": "Accessible label for adding one video card to the watch-later list."
+    "description": "Accessible label for adding one video to the watch-later list."
   },
   "watchLaterRemoveLabel": {
     "message": "从稍后再看移除",

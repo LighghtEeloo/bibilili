@@ -85,7 +85,7 @@
   },
   "watchLaterAddLabel": {
     "message": "Add to Watch Later",
-    "description": "Accessible label for adding one video card to the watch-later list."
+    "description": "Accessible label for adding one video to the watch-later list."
   },
   "watchLaterRemoveLabel": {
     "message": "Remove from Watch Later",

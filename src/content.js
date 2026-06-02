@@ -636,13 +636,14 @@
   });
 
   /**
-   * Closed watch action kinds mirrored by the bottom dock.
+   * Closed watch action kinds rendered by the bottom dock.
    */
   const WatchActionKind = Object.freeze({
     LIKE: "like",
     COIN: "coin",
     FAVORITE: "favorite",
-    SHARE: "share"
+    SHARE: "share",
+    WATCH_LATER: "watch_later"
   });
 
   const SOURCE_LABEL_MESSAGE_NAMES = Object.freeze({
@@ -690,7 +691,8 @@
     WatchActionKind.LIKE,
     WatchActionKind.COIN,
     WatchActionKind.FAVORITE,
-    WatchActionKind.SHARE
+    WatchActionKind.SHARE,
+    WatchActionKind.WATCH_LATER
   ]);
 
   const WATCH_ACTION_STATEFUL_KINDS = new Set([
@@ -6072,9 +6074,7 @@
         return null;
       }
 
-      const orderedActions = WATCH_ACTION_ORDER
-        .map((kind) => actions.find((action) => action.kind === kind))
-        .filter(Boolean);
+      const orderedActions = this.orderedWatchActions(actions);
       const availableKinds = new Set();
 
       if (orderedActions.length === 0) {
@@ -6114,7 +6114,78 @@
     }
 
     /**
-     * Returns the keyed dock button for a mirrored watch action.
+     * Orders native and extension-owned watch actions by the closed action set.
+     *
+     * @param {WatchAction[]} actions
+     * @returns {WatchAction[]}
+     */
+    orderedWatchActions(actions) {
+      return WATCH_ACTION_ORDER
+        .map((kind) =>
+          kind === WatchActionKind.WATCH_LATER
+            ? this.currentWatchLaterAction()
+            : actions.find((action) => action.kind === kind)
+        )
+        .filter(Boolean);
+    }
+
+    /**
+     * Returns the current-video watch-later action when the archive is addable.
+     *
+     * @returns {WatchAction | null}
+     */
+    currentWatchLaterAction() {
+      const state = this.currentWatchLaterAddState();
+
+      if (!state) {
+        return null;
+      }
+
+      return {
+        kind: WatchActionKind.WATCH_LATER,
+        trigger: null,
+        visualSource: null,
+        countText: null,
+        countSelectors: [],
+        isActive: false,
+        watchLaterAddKey: state.key,
+        watchLaterAddTargetUrl: state.targetUrl
+      };
+    }
+
+    /**
+     * Returns the add target for the current watch URL.
+     *
+     * @returns {{ key: string, targetUrl: string } | null}
+     */
+    currentWatchLaterAddState() {
+      const targetUrl = LayoutRoot.currentWatchLaterAddTargetUrl();
+      if (!targetUrl) {
+        return null;
+      }
+
+      const identity = AccountSourceStore.watchLaterAddIdentityForUrl(targetUrl);
+      if (!identity) {
+        return null;
+      }
+
+      return {
+        key: identity.key,
+        targetUrl
+      };
+    }
+
+    /**
+     * Returns a clean current watch URL suitable for account-list mutation.
+     *
+     * @returns {string | null}
+     */
+    static currentWatchLaterAddTargetUrl() {
+      return BilibiliRoute.shareUrlFor(window.location.href);
+    }
+
+    /**
+     * Returns the keyed dock button for one watch action.
      *
      * @param {string} kind
      * @returns {HTMLButtonElement}
@@ -6163,12 +6234,17 @@
     }
 
     /**
-     * Updates a mirrored watch action button in place.
+     * Updates a watch action button in place.
      *
      * @param {HTMLButtonElement} button
      * @param {WatchAction} action
      */
     updateWatchActionButton(button, action) {
+      if (action.kind === WatchActionKind.WATCH_LATER) {
+        this.updateCurrentWatchLaterActionButton(button, action);
+        return;
+      }
+
       const label = UiStrings.watchActionButtonLabel(
         action.kind,
         action.countText,
@@ -6191,6 +6267,46 @@
 
       count.textContent = action.countText ?? "";
       count.hidden = !action.countText || nativeVisualHasCount;
+    }
+
+    /**
+     * Updates the current-video watch-later button in place.
+     *
+     * @param {HTMLButtonElement} button
+     * @param {WatchAction} action
+     */
+    updateCurrentWatchLaterActionButton(button, action) {
+      const visual = button.querySelector(".bibilili-action-native-visual");
+      const count = button.querySelector(".bibilili-action-count");
+      const key = action.watchLaterAddKey ?? "";
+
+      UiControl.setLabel(button, UiStrings.watchLaterAddLabel(this.language));
+      button.removeAttribute("aria-pressed");
+      button.disabled = key ? this.pendingWatchLaterAddKeys.has(key) : true;
+      button.dataset.bibililiWatchLaterAction = WatchLaterCardAction.ADD;
+      button.dataset.bibililiWatchLaterAddKey = key;
+      button.dataset.bibililiWatchLaterAddTargetUrl =
+        action.watchLaterAddTargetUrl ?? "";
+
+      this.updateCurrentWatchLaterActionVisual(visual);
+      count.textContent = "";
+      count.hidden = true;
+    }
+
+    /**
+     * Renders the current-video watch-later icon in an action button.
+     *
+     * @param {Element} visual
+     */
+    updateCurrentWatchLaterActionVisual(visual) {
+      visual.replaceChildren(
+        LayoutRoot.watchLaterActionIcon(
+          this.document,
+          WatchLaterCardAction.ADD,
+          "bibilili-action-watch-later-icon"
+        )
+      );
+      visual.removeAttribute("data-bibilili-fallback");
     }
 
     /**
@@ -6243,6 +6359,11 @@
         return;
       }
 
+      if (kind === WatchActionKind.WATCH_LATER) {
+        this.handleCurrentWatchLaterAddClick();
+        return;
+      }
+
       if (!action?.trigger?.isConnected) {
         return;
       }
@@ -6250,6 +6371,53 @@
       LayoutRoot.clickNativeTrigger(action.trigger);
       LayoutRoot.liftNativeWatchActionOverlay(kind, action.trigger);
       this.onWatchActionForward?.();
+    }
+
+    /**
+     * Adds the current watch video to the account watch-later list.
+     */
+    handleCurrentWatchLaterAddClick() {
+      const button = this.actionButtons.get(WatchActionKind.WATCH_LATER);
+      const state = this.currentWatchLaterAddState();
+
+      if (
+        !state ||
+        !this.onWatchLaterAdd ||
+        this.pendingWatchLaterAddKeys.has(state.key)
+      ) {
+        return;
+      }
+
+      this.pendingWatchLaterAddKeys.add(state.key);
+
+      if (button?.isConnected) {
+        button.disabled = true;
+      }
+
+      this.onWatchLaterAdd(state.targetUrl)
+        .then(() => {
+          this.pendingWatchLaterAddKeys.delete(state.key);
+          this.completedWatchLaterAddKeys.add(state.key);
+          this.rerenderSourceDock();
+        })
+        .catch(() => {
+          this.pendingWatchLaterAddKeys.delete(state.key);
+
+          if (button?.isConnected) {
+            button.disabled = false;
+          }
+        });
+    }
+
+    /**
+     * Re-renders source controls with current layout state.
+     */
+    rerenderSourceDock() {
+      if (!this.currentActivationControl) {
+        return;
+      }
+
+      this.renderSourceDock(this.currentSources, this.currentActivationControl);
     }
 
     /**
@@ -7211,14 +7379,15 @@
     }
 
     /**
-     * Returns archive identity keys already present in the watch-later source.
+     * Returns archive identity keys from the account-backed watch-later source.
      *
      * @param {VideoListSource[]} sources
      * @returns {Set<string>}
      */
     static watchLaterArchiveKeysFor(sources) {
       const watchLaterSource = sources.find(
-        (source) => source.kind === SourceKind.WATCH_LATER
+        (source) =>
+          source.kind === SourceKind.WATCH_LATER && source.root === null
       );
       const keys = new Set();
 
@@ -7627,11 +7796,16 @@
      *
      * @param {Document} document
      * @param {string} action
+     * @param {string} [className]
      * @returns {SVGSVGElement}
      */
-    static watchLaterActionIcon(document, action) {
+    static watchLaterActionIcon(
+      document,
+      action,
+      className = "bibilili-card-watch-later-icon"
+    ) {
       const svg = document.createElementNS(SVG_NS, "svg");
-      svg.classList.add("bibilili-card-watch-later-icon");
+      svg.classList.add(className);
       svg.setAttribute("viewBox", "0 0 24 24");
       svg.setAttribute("aria-hidden", "true");
       svg.setAttribute("focusable", "false");
@@ -8708,11 +8882,13 @@
   /**
    * @typedef {object} WatchAction
    * @property {string} kind Closed watch action kind.
-   * @property {Element} trigger Page-owned native action trigger.
+   * @property {Element | null} trigger Page-owned native action trigger when present.
    * @property {Element | null} visualSource Native source for visual cloning.
    * @property {string[]} countSelectors Native count text probes.
    * @property {string | null} countText Native count text.
    * @property {boolean} isActive Native active state.
+   * @property {string} [watchLaterAddKey] Account watch-later add identity key.
+   * @property {string} [watchLaterAddTargetUrl] Current archive URL to add.
    */
 
   /**
@@ -8789,6 +8965,7 @@
       LayoutRoot,
       RegionDiscovery,
       SourceAdapter,
+      WatchActionKind,
       SourceKind,
       SourceMerger
     });
