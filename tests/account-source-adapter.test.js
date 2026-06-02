@@ -16,6 +16,11 @@ function currentWatchLaterLayout() {
     language: "en",
     watchLaterAccountCount: null,
     watchLaterVisualSnapshot: [],
+    watchLaterVisualSnapshotKey: "",
+    watchLaterDeleteVisualSnapshot: [],
+    watchLaterDeleteVisualSnapshotKey: "",
+    pendingWatchLaterAddKeys: new Set(),
+    pendingWatchLaterDeleteAids: new Set(),
     watchLaterArchiveKeys: new Set(),
     completedWatchLaterAddKeys: new Set()
   });
@@ -412,6 +417,83 @@ test("drops native watch-later labels from cloned action visuals", () => {
     LayoutRoot.shouldDropWatchActionVisualText("unrelated", action),
     false
   );
+});
+
+test("uses captured native watch-later visuals for card mutation buttons", () => {
+  const layout = currentWatchLaterLayout();
+  const card = { dataset: {} };
+  const button = {
+    dataset: {},
+    disabled: false,
+    hidden: false,
+    title: "",
+    children: [],
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+    replaceChildren(...children) {
+      this.children = children;
+    }
+  };
+  const state = {
+    watchLaterAction: "add",
+    watchLaterActionKey: "bvid:BV1xx411c7mD",
+    watchLaterActionTargetUrl: "https://www.bilibili.com/video/BV1xx411c7mD",
+    watchLaterActionLabel: "Add to watch later"
+  };
+
+  layout.updateWatchLaterActionControl(card, button, state);
+
+  assert.equal(button.hidden, true);
+  assert.equal(button.disabled, true);
+  assert.deepEqual(button.children, []);
+  assert.equal(card.dataset.bibililiWatchLaterAction, undefined);
+
+  layout.watchLaterVisualSnapshotKey = "<svg></svg>";
+  layout.watchLaterVisualSnapshot = [
+    {
+      cloneNode: () => ({ source: "native-watch-later" })
+    }
+  ];
+  layout.updateWatchLaterActionControl(card, button, state);
+
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(button.dataset.bibililiWatchLaterAction, "add");
+  assert.equal(button.dataset.bibililiWatchLaterIcon, "<svg></svg>");
+  assert.deepEqual(button.children, [{ source: "native-watch-later" }]);
+  assert.equal(
+    card.dataset.bibililiWatchLaterAddTargetUrl,
+    "https://www.bilibili.com/video/BV1xx411c7mD"
+  );
+
+  const deleteState = {
+    watchLaterAction: "delete",
+    watchLaterActionKey: "123456",
+    watchLaterActionTargetUrl: "",
+    watchLaterActionLabel: "Remove from watch later"
+  };
+
+  layout.updateWatchLaterActionControl(card, button, deleteState);
+
+  assert.equal(button.hidden, true);
+  assert.deepEqual(button.children, []);
+  assert.equal(card.dataset.bibililiWatchLaterAid, "123456");
+
+  layout.watchLaterDeleteVisualSnapshotKey = "<svg data-trash></svg>";
+  layout.watchLaterDeleteVisualSnapshot = [
+    {
+      cloneNode: () => ({ source: "native-trash" })
+    }
+  ];
+  layout.updateWatchLaterActionControl(card, button, deleteState);
+
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(button.dataset.bibililiWatchLaterAction, "delete");
+  assert.equal(button.dataset.bibililiWatchLaterIcon, "<svg data-trash></svg>");
+  assert.deepEqual(button.children, [{ source: "native-trash" }]);
+  assert.equal(card.dataset.bibililiWatchLaterAid, "123456");
 });
 
 test("decrements loaded watch-later count after successful deletion", async () => {

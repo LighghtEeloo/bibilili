@@ -747,10 +747,11 @@
   z-index: 2;
   top: 2px;
   right: 2px;
-  display: grid;
+  display: inline-flex;
   width: 22px;
   height: 22px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.82);
   border-radius: 4px;
@@ -759,6 +760,31 @@
   cursor: pointer;
   opacity: 0;
   visibility: hidden;
+}
+
+.bibilili-card-watch-later-button,
+.bibilili-card-watch-later-button * {
+  box-sizing: border-box;
+}
+
+.bibilili-card-watch-later-button > * {
+  flex: 0 0 auto;
+  max-width: 16px;
+  max-height: 16px;
+  margin: 0 !important;
+  color: inherit;
+  pointer-events: none !important;
+}
+
+.bibilili-card-watch-later-button svg,
+.bibilili-card-watch-later-button img {
+  display: block;
+  width: 15px !important;
+  max-width: 15px;
+  height: 15px !important;
+  max-height: 15px;
+  color: inherit;
+  fill: currentColor;
 }
 
 .bibilili-video-card[data-bibilili-watch-later-action="add"]:hover
@@ -790,11 +816,6 @@
 
 .bibilili-card-watch-later-button[hidden] {
   display: none;
-}
-
-.bibilili-card-watch-later-icon {
-  width: 14px;
-  height: 14px;
 }
 
 .bibilili-card-thumb {

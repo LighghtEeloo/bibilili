@@ -486,7 +486,10 @@ Collection and recommendation cards with archive targets include an overlay
 add-to-watch-later button. Watch-later cards with a deletion identity include
 an overlay removal button. The mutation button appears on card hover or card
 focus, sits at the top-right of the card, and handles its own activation.
-Activating the rest of the card follows the card link.
+Add controls use the same captured native watch-later visual as the
+current-video watch-later action. Removal controls use Bilibili's captured
+native trash visual. Neither state draws a separate extension icon. Activating
+the rest of the card follows the card link.
 
 ## Runtime Controller
 

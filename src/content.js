@@ -427,6 +427,38 @@
   ].join(",");
 
   const WATCH_ACTION_COUNT_TEXT_LIMIT = 18;
+  const WATCH_LATER_DELETE_LABEL_PATTERN =
+    /(?:删除|刪除|移除|移出|remove|delete|trash)/iu;
+  const WATCH_LATER_DELETE_VISUAL_SELECTOR = [
+    ".watch-later-list [class*='delete']",
+    ".watch-later-list [class*='remove']",
+    ".watch-later-list [class*='trash']",
+    ".watch-later-list [class*='del']",
+    ".watchlater-list [class*='delete']",
+    ".watchlater-list [class*='remove']",
+    ".watchlater-list [class*='trash']",
+    ".watchlater-list [class*='del']",
+    "[class*='watch-later'] [title*='删除']",
+    "[class*='watch-later'] [aria-label*='删除']",
+    "[class*='watch-later'] [title*='刪除']",
+    "[class*='watch-later'] [aria-label*='刪除']",
+    "[class*='watch-later'] [title*='移除']",
+    "[class*='watch-later'] [aria-label*='移除']",
+    "[class*='watch-later'] [title*='Remove']",
+    "[class*='watch-later'] [aria-label*='Remove']",
+    "[class*='watch-later'] [title*='Delete']",
+    "[class*='watch-later'] [aria-label*='Delete']",
+    "[class*='watchlater'] [title*='删除']",
+    "[class*='watchlater'] [aria-label*='删除']",
+    "[class*='watchlater'] [title*='刪除']",
+    "[class*='watchlater'] [aria-label*='刪除']",
+    "[class*='watchlater'] [title*='移除']",
+    "[class*='watchlater'] [aria-label*='移除']",
+    "[class*='watchlater'] [title*='Remove']",
+    "[class*='watchlater'] [aria-label*='Remove']",
+    "[class*='watchlater'] [title*='Delete']",
+    "[class*='watchlater'] [aria-label*='Delete']"
+  ].join(",");
   const UPLOADER_PROFILE_LINK_SELECTOR = "a[href*='space.bilibili.com']";
   const UPLOADER_META_TEXT_LIMIT = 64;
   /**
@@ -3668,6 +3700,7 @@
         tags: this.findVideoTags(),
         uploader: this.findUploaderInfo(),
         actions: this.findActions(),
+        watchLaterDeleteVisual: this.findWatchLaterDeleteVisual(),
         accountControl: this.findAccountControl(),
         comments: hasUsableComments ? comments : null,
         commentState: hasUsableComments
@@ -4282,6 +4315,44 @@
       }
 
       return null;
+    }
+
+    /**
+     * Finds the native visual Bilibili uses for removing watch-later items.
+     *
+     * Note: Bilibili exposes this icon inside watch-later list rows rather than
+     * the main watch toolbar, so it is discovered separately from watch actions.
+     *
+     * @returns {Element | null}
+     */
+    findWatchLaterDeleteVisual() {
+      for (const candidate of DomProbe.queryAll(
+        this.document,
+        WATCH_LATER_DELETE_VISUAL_SELECTOR
+      )) {
+        if (!candidate.isConnected || DomProbe.isOwned(candidate)) {
+          continue;
+        }
+
+        if (RegionDiscovery.hasIconVisual(candidate)) {
+          return candidate;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns true when an element exposes cloneable icon-like visual content.
+     *
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    static hasIconVisual(element) {
+      return (
+        element.matches("svg, path, use, img, picture, canvas") ||
+        Boolean(element.querySelector("svg, path, use, img, picture, canvas"))
+      );
     }
 
     /**
@@ -4945,6 +5016,10 @@
       this.watchLaterAccountCount = null;
       /** @type {Node[]} */
       this.watchLaterVisualSnapshot = [];
+      this.watchLaterVisualSnapshotKey = "";
+      /** @type {Node[]} */
+      this.watchLaterDeleteVisualSnapshot = [];
+      this.watchLaterDeleteVisualSnapshotKey = "";
       this.onCommentReload = null;
       this.onWatchActionForward = null;
       this.onWatchLaterAdd = null;
@@ -5012,6 +5087,7 @@
       this.setComments(regions.comments, regions.commentState);
       this.currentUploader = regions.uploader;
       this.currentActions = regions.actions;
+      this.rememberWatchLaterDeleteVisual(regions.watchLaterDeleteVisual);
       this.accountControl = regions.accountControl;
       this.onWatchLaterAdd = onWatchLaterAdd;
       this.onWatchLaterDelete = onWatchLaterDelete;
@@ -6486,12 +6562,14 @@
 
       if (fragment) {
         visual.append(fragment);
-        this.rememberWatchLaterVisualSnapshot(visual);
+        this.rememberWatchLaterVisualSnapshot(WatchLaterCardAction.ADD, visual);
         return true;
       }
 
-      if (this.hasWatchLaterVisualSnapshot()) {
-        visual.replaceChildren(...this.watchLaterVisualSnapshotNodes());
+      if (this.hasWatchLaterVisualSnapshot(WatchLaterCardAction.ADD)) {
+        visual.replaceChildren(
+          ...this.watchLaterVisualSnapshotNodes(WatchLaterCardAction.ADD)
+        );
         return true;
       }
 
@@ -6529,28 +6607,128 @@
      *
      * @returns {boolean}
      */
-    hasWatchLaterVisualSnapshot() {
-      return this.watchLaterVisualSnapshot.length > 0;
+    hasWatchLaterVisualSnapshot(action = WatchLaterCardAction.ADD) {
+      return this.watchLaterVisualSnapshotFor(action).length > 0;
+    }
+
+    /**
+     * Returns the stored native visual snapshot for one watch-later action.
+     *
+     * @param {string} action
+     * @returns {Node[]}
+     */
+    watchLaterVisualSnapshotFor(action) {
+      return action === WatchLaterCardAction.DELETE
+        ? this.watchLaterDeleteVisualSnapshot
+        : this.watchLaterVisualSnapshot;
+    }
+
+    /**
+     * Returns the snapshot identity for one watch-later action.
+     *
+     * @param {string} action
+     * @returns {string}
+     */
+    watchLaterVisualSnapshotKeyFor(action) {
+      return action === WatchLaterCardAction.DELETE
+        ? this.watchLaterDeleteVisualSnapshotKey
+        : this.watchLaterVisualSnapshotKey;
+    }
+
+    /**
+     * Stores one native visual snapshot for a watch-later action.
+     *
+     * @param {string} action
+     * @param {string} key
+     * @param {Node[]} nodes
+     */
+    setWatchLaterVisualSnapshot(action, key, nodes) {
+      if (action === WatchLaterCardAction.DELETE) {
+        this.watchLaterDeleteVisualSnapshotKey = key;
+        this.watchLaterDeleteVisualSnapshot = nodes;
+        return;
+      }
+
+      this.watchLaterVisualSnapshotKey = key;
+      this.watchLaterVisualSnapshot = nodes;
+    }
+
+    /**
+     * Stores Bilibili's native trash visual for watch-later removals.
+     *
+     * @param {Element | null} visualSource
+     */
+    rememberWatchLaterDeleteVisual(visualSource) {
+      if (!visualSource) {
+        return;
+      }
+
+      const fragment = LayoutRoot.watchActionVisualFragment(
+        this.document,
+        LayoutRoot.watchLaterDeleteVisualAction(visualSource)
+      );
+
+      if (!fragment) {
+        return;
+      }
+
+      const visual = this.document.createElement("span");
+      visual.append(fragment);
+      this.rememberWatchLaterVisualSnapshot(
+        WatchLaterCardAction.DELETE,
+        visual
+      );
+    }
+
+    /**
+     * Creates a clone action for Bilibili's native watch-later trash icon.
+     *
+     * @param {Element} visualSource
+     * @returns {WatchAction}
+     */
+    static watchLaterDeleteVisualAction(visualSource) {
+      return {
+        kind: WatchActionKind.WATCH_LATER,
+        trigger: visualSource,
+        visualSource,
+        countSelectors: [],
+        countText: null,
+        nativeCountText: null,
+        labelPattern: WATCH_LATER_DELETE_LABEL_PATTERN,
+        isActive: false
+      };
     }
 
     /**
      * Stores cloneable watch-later visual nodes for later lazy reconciles.
      *
+     * @param {string} action
      * @param {Element} visual
      */
-    rememberWatchLaterVisualSnapshot(visual) {
-      this.watchLaterVisualSnapshot = Array.from(visual.childNodes).map((node) =>
-        node.cloneNode(true)
+    rememberWatchLaterVisualSnapshot(action, visual) {
+      const key = visual.innerHTML;
+
+      if (key === this.watchLaterVisualSnapshotKeyFor(action)) {
+        return;
+      }
+
+      this.setWatchLaterVisualSnapshot(
+        action,
+        key,
+        Array.from(visual.childNodes).map((node) => node.cloneNode(true))
       );
     }
 
     /**
      * Returns fresh clones of the captured native watch-later visual.
      *
+     * @param {string} action
      * @returns {Node[]}
      */
-    watchLaterVisualSnapshotNodes() {
-      return this.watchLaterVisualSnapshot.map((node) => node.cloneNode(true));
+    watchLaterVisualSnapshotNodes(action) {
+      return this.watchLaterVisualSnapshotFor(action).map((node) =>
+        node.cloneNode(true)
+      );
     }
 
     /**
@@ -8132,42 +8310,6 @@
     }
 
     /**
-     * Creates the card overlay icon for a watch-later mutation.
-     *
-     * @param {Document} document
-     * @param {string} action
-     * @param {string} [className]
-     * @returns {SVGSVGElement}
-     */
-    static watchLaterActionIcon(
-      document,
-      action,
-      className = "bibilili-card-watch-later-icon"
-    ) {
-      const svg = document.createElementNS(SVG_NS, "svg");
-      svg.classList.add(className);
-      svg.setAttribute("viewBox", "0 0 24 24");
-      svg.setAttribute("aria-hidden", "true");
-      svg.setAttribute("focusable", "false");
-
-      const path = document.createElementNS(SVG_NS, "path");
-      path.setAttribute(
-        "d",
-        action === WatchLaterCardAction.ADD
-          ? "M12 21a8 8 0 1 1 6.3-12.9M12 8v5l3 2M18 3v6M15 6h6"
-          : "M6 7h12M9 7V5h6v2m-7 3 1 9h6l1-9"
-      );
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", "currentColor");
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-
-      svg.append(path);
-      return svg;
-    }
-
-    /**
      * Updates one card's watch-later mutation control.
      *
      * @param {HTMLElement} card
@@ -8177,7 +8319,9 @@
     updateWatchLaterActionControl(card, button, state) {
       const action = state.watchLaterAction;
       const key = state.watchLaterActionKey;
-      const isActionable = Boolean(action && key);
+      const isActionable = Boolean(
+        action && key && this.hasWatchLaterVisualSnapshot(action)
+      );
 
       button.hidden = !isActionable;
       button.disabled = isActionable
@@ -8192,6 +8336,8 @@
       } else {
         delete card.dataset.bibililiWatchLaterAction;
         delete button.dataset.bibililiWatchLaterAction;
+        delete button.dataset.bibililiWatchLaterIcon;
+        button.replaceChildren();
       }
 
       if (action === WatchLaterCardAction.DELETE) {
@@ -8236,14 +8382,14 @@
      * @param {string} action
      */
     updateWatchLaterActionIcon(button, action) {
-      if (button.dataset.bibililiWatchLaterIcon === action) {
+      const key = this.watchLaterVisualSnapshotKeyFor(action) || "snapshot";
+
+      if (button.dataset.bibililiWatchLaterIcon === key) {
         return;
       }
 
-      button.replaceChildren(
-        LayoutRoot.watchLaterActionIcon(this.document, action)
-      );
-      button.dataset.bibililiWatchLaterIcon = action;
+      button.replaceChildren(...this.watchLaterVisualSnapshotNodes(action));
+      button.dataset.bibililiWatchLaterIcon = key;
     }
 
     /**
@@ -9274,6 +9420,7 @@
    * @property {VideoTag[]} tags Current watch video tag links.
    * @property {UploaderInfo | null} uploader Current watch uploader metadata.
    * @property {WatchAction[]} actions Page-owned watch action controls.
+   * @property {Element | null} watchLaterDeleteVisual Page-owned watch-later removal visual.
    * @property {AccountControl | null} accountControl Page-owned account control.
    * @property {Element | null} comments Page-owned comment region.
    * @property {string} commentState Closed comment pane render state.
