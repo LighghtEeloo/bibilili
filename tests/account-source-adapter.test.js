@@ -13,17 +13,41 @@ const {
 
 function currentWatchLaterLayout() {
   return Object.assign(Object.create(LayoutRoot.prototype), {
+    document: fakeSvgDocument(),
     language: "en",
     watchLaterAccountCount: null,
     watchLaterVisualSnapshot: [],
     watchLaterVisualSnapshotKey: "",
-    watchLaterDeleteVisualSnapshot: [],
-    watchLaterDeleteVisualSnapshotKey: "",
     pendingWatchLaterAddKeys: new Set(),
     pendingWatchLaterDeleteAids: new Set(),
     watchLaterArchiveKeys: new Set(),
     completedWatchLaterAddKeys: new Set()
   });
+}
+
+function fakeSvgDocument() {
+  return {
+    createElementNS(namespaceURI, localName) {
+      return {
+        namespaceURI,
+        localName,
+        attributes: {},
+        children: [],
+        classList: {
+          values: [],
+          add(value) {
+            this.values.push(value);
+          }
+        },
+        append(...children) {
+          this.children.push(...children);
+        },
+        setAttribute(name, value) {
+          this.attributes[name] = String(value);
+        }
+      };
+    }
+  };
 }
 
 test("extracts account list entries from successful payload shapes", () => {
@@ -419,7 +443,7 @@ test("drops native watch-later labels from cloned action visuals", () => {
   );
 });
 
-test("uses captured native watch-later visuals for card mutation buttons", () => {
+test("uses native add visuals and local delete visuals for card mutation buttons", () => {
   const layout = currentWatchLaterLayout();
   const card = { dataset: {} };
   const button = {
@@ -476,23 +500,15 @@ test("uses captured native watch-later visuals for card mutation buttons", () =>
 
   layout.updateWatchLaterActionControl(card, button, deleteState);
 
-  assert.equal(button.hidden, true);
-  assert.deepEqual(button.children, []);
-  assert.equal(card.dataset.bibililiWatchLaterAid, "123456");
-
-  layout.watchLaterDeleteVisualSnapshotKey = "<svg data-trash></svg>";
-  layout.watchLaterDeleteVisualSnapshot = [
-    {
-      cloneNode: () => ({ source: "native-trash" })
-    }
-  ];
-  layout.updateWatchLaterActionControl(card, button, deleteState);
-
   assert.equal(button.hidden, false);
   assert.equal(button.disabled, false);
   assert.equal(button.dataset.bibililiWatchLaterAction, "delete");
-  assert.equal(button.dataset.bibililiWatchLaterIcon, "<svg data-trash></svg>");
-  assert.deepEqual(button.children, [{ source: "native-trash" }]);
+  assert.equal(
+    button.dataset.bibililiWatchLaterIcon,
+    "bibilili-local-watch-later-delete-icon"
+  );
+  assert.equal(button.children[0].localName, "svg");
+  assert.equal(button.children[0].attributes.viewBox, "0 0 16 16");
   assert.equal(card.dataset.bibililiWatchLaterAid, "123456");
 });
 
