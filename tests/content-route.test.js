@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+global.window = globalThis;
+
 require("../src/content-route.js");
 
 const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = globalThis.__bibililiRoute;

@@ -20,7 +20,10 @@
       }
     }
   },
-  "host_permissions": ["https://api.bilibili.com/*"],
+  "host_permissions": [
+    "https://www.bilibili.com/*",
+    "https://api.bilibili.com/*"
+  ],
   "web_accessible_resources": [
     {
       "resources": [

@@ -13,8 +13,8 @@
      * @returns {string}
      */
     static defaultBaseHref() {
-      return typeof globalThis.location?.href === "string"
-        ? globalThis.location.href
+      return typeof window.location?.href === "string"
+        ? window.location.href
         : BILIBILI_WEB_ORIGIN;
     }
 
@@ -300,7 +300,7 @@
    * @property {string} queryValue Bilibili archive id query value.
    */
 
-  globalThis.__bibililiRoute = Object.freeze({
+  window.__bibililiRoute = Object.freeze({
     BILIBILI_WEB_ORIGIN,
     BilibiliRoute
   });

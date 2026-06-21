@@ -141,7 +141,7 @@
   /**
    * Stable DOM helpers loaded before i18n and the main content-script runtime.
    */
-  globalThis.__bibililiDom = Object.freeze({
+  window.__bibililiDom = Object.freeze({
     DomProbe
   });
 })();
