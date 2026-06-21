@@ -55,6 +55,7 @@ validate-assets:
 	test -f assets/bibilili-logo-thick-16.png
 	test -f assets/bibilili-logo-thick-32.png
 	test -f assets/bibilili-logo-thick-48.png
+	test -f assets/bibilili-logo-thick-64.png
 	test -f assets/bibilili-logo-thick-128.png
 
 manual-checklist:
