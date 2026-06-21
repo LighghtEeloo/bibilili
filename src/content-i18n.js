@@ -279,8 +279,35 @@
     static message(name, language, substitutions = []) {
       return (
         UiStrings.catalogMessage(name, language, substitutions) ||
+        UiStrings.extensionMessage(name, substitutions) ||
         name
       );
+    }
+
+    /**
+     * Reads one message through the browser i18n API when catalogs are absent.
+     *
+     * @param {string} name
+     * @param {string[]} substitutions
+     * @returns {string}
+     */
+    static extensionMessage(name, substitutions) {
+      const i18n = UiStrings.extensionI18n();
+
+      if (!i18n) {
+        return "";
+      }
+
+      try {
+        return (
+          i18n.getMessage(
+            name,
+            substitutions.length > 0 ? substitutions : undefined
+          ) || ""
+        );
+      } catch (_error) {
+        return "";
+      }
     }
 
     /**

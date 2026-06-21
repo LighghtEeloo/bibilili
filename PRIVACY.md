@@ -2,7 +2,7 @@
 
 Effective date: April 26, 2026
 
-Bibilili is a Chrome extension for Bilibili watch pages. It rearranges the Bilibili player, comments, and video lists into a transformed viewing layout.
+Bibilili is a browser extension for Bilibili watch pages. It rearranges the Bilibili player, comments, and video lists into a transformed viewing layout.
 
 ## Data handled
 
@@ -31,4 +31,3 @@ The local enabled or disabled preference remains in the browser until the user c
 ## Remote code
 
 Bibilili does not load or execute remote JavaScript or WebAssembly. All extension code is included in the extension package.
-

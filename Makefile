@@ -3,11 +3,16 @@ SHELL := /bin/sh
 EXTENSION_SLUG := bibilili
 VERSION := $(shell node -p "require('./manifest.json').version")
 DIST_DIR := dist
-PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-$(VERSION).zip
-PACKAGE_FILES := manifest.json README.md src assets _locales
+CHROME_PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-chrome-$(VERSION).zip
+FIREFOX_PACKAGE := $(DIST_DIR)/$(EXTENSION_SLUG)-firefox-$(VERSION).zip
+CHROME_MANIFEST_DIR := $(DIST_DIR)/chrome
+FIREFOX_MANIFEST_DIR := $(DIST_DIR)/firefox
+CHROME_MANIFEST := $(CHROME_MANIFEST_DIR)/manifest.json
+FIREFOX_MANIFEST := $(FIREFOX_MANIFEST_DIR)/manifest.json
+COMMON_PACKAGE_FILES := README.md src assets _locales
 CONTENT_SCRIPT_FILES := $(shell node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); process.stdout.write(manifest.content_scripts.flatMap((script)=>script.js ?? []).join(' '));")
 
-.PHONY: help validate validate-js validate-tests validate-json validate-assets manual-checklist package inspect-package test-package clean
+.PHONY: help validate validate-js validate-tests validate-json validate-assets manual-checklist package package-chrome package-firefox inspect-package test-package clean
 
 help:
 	@printf '%s\n' 'Targets:'
@@ -17,9 +22,11 @@ help:
 	@printf '%s\n' '  make validate-json     Parse manifest and locale JSON.'
 	@printf '%s\n' '  make validate-assets   Verify required package assets.'
 	@printf '%s\n' '  make manual-checklist  Print browser checks required before store submission.'
-	@printf '%s\n' '  make package           Build dist/bibilili-<manifest version>.zip.'
-	@printf '%s\n' '  make inspect-package   List the package contents.'
-	@printf '%s\n' '  make test-package      Verify the package zip can be read.'
+	@printf '%s\n' '  make package           Build Chrome and Firefox store zips.'
+	@printf '%s\n' '  make package-chrome    Build dist/bibilili-chrome-<manifest version>.zip.'
+	@printf '%s\n' '  make package-firefox   Build dist/bibilili-firefox-<manifest version>.zip.'
+	@printf '%s\n' '  make inspect-package   List both package contents.'
+	@printf '%s\n' '  make test-package      Verify both package zips can be read.'
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
 
 validate: validate-js validate-tests validate-json validate-assets
@@ -63,14 +70,37 @@ manual-checklist:
 $(DIST_DIR):
 	mkdir -p $(DIST_DIR)
 
-package: validate | $(DIST_DIR)
-	zip -r -FS $(PACKAGE) $(PACKAGE_FILES) -x '*.DS_Store'
+$(CHROME_MANIFEST_DIR) $(FIREFOX_MANIFEST_DIR): | $(DIST_DIR)
+	mkdir -p $@
+
+$(CHROME_MANIFEST): manifest.json | $(CHROME_MANIFEST_DIR)
+	node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); delete manifest.browser_specific_settings; fs.writeFileSync('$@', JSON.stringify(manifest, null, 2) + '\n');"
+
+$(FIREFOX_MANIFEST): manifest.json | $(FIREFOX_MANIFEST_DIR)
+	cp manifest.json $@
+
+package: package-chrome package-firefox
+
+package-chrome: validate $(CHROME_MANIFEST) | $(DIST_DIR)
+	rm -f $(CHROME_PACKAGE)
+	zip -r $(CHROME_PACKAGE) $(COMMON_PACKAGE_FILES) -x '*.DS_Store'
+	zip -j $(CHROME_PACKAGE) $(CHROME_MANIFEST)
+
+package-firefox: validate $(FIREFOX_MANIFEST) | $(DIST_DIR)
+	rm -f $(FIREFOX_PACKAGE)
+	zip -r $(FIREFOX_PACKAGE) $(COMMON_PACKAGE_FILES) -x '*.DS_Store'
+	zip -j $(FIREFOX_PACKAGE) $(FIREFOX_MANIFEST)
 
 inspect-package: package
-	unzip -l $(PACKAGE)
+	@printf '%s\n' 'Chrome package:'
+	unzip -l $(CHROME_PACKAGE)
+	@printf '%s\n' 'Firefox package:'
+	unzip -l $(FIREFOX_PACKAGE)
 
 test-package: package
-	unzip -t $(PACKAGE)
+	unzip -t $(CHROME_PACKAGE)
+	unzip -t $(FIREFOX_PACKAGE)
 
 clean:
 	rm -f $(DIST_DIR)/$(EXTENSION_SLUG)-*.zip
+	rm -rf $(CHROME_MANIFEST_DIR) $(FIREFOX_MANIFEST_DIR)

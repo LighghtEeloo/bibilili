@@ -9411,9 +9411,7 @@
   const startToken = Symbol("bibilili-start");
   window.__bibililiStartToken = startToken;
 
-  const start = async () => {
-    await UiStrings.loadSupported();
-
+  const start = () => {
     if (window.__bibililiStartToken !== startToken) {
       return;
     }
@@ -9421,6 +9419,22 @@
     const controller = new BibililiController(document);
     window.__bibililiController = controller;
     controller.start();
+
+    const refreshAfterCatalogLoad = () => {
+      if (
+        window.__bibililiStartToken !== startToken ||
+        window.__bibililiController !== controller
+      ) {
+        return;
+      }
+
+      controller.scheduleReconcile(false, ReconcilePriority.LAZY);
+    };
+
+    void UiStrings.loadSupported().then(
+      refreshAfterCatalogLoad,
+      refreshAfterCatalogLoad
+    );
   };
 
   if (document.readyState === "loading") {

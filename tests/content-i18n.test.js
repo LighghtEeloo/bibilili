@@ -84,6 +84,32 @@ test("interpolates named placeholders and positional substitutions", () => {
   );
 });
 
+test("falls back to browser i18n messages before catalogs load", () => {
+  const previousChrome = global.chrome;
+  const calls = [];
+
+  global.chrome = {
+    i18n: {
+      getMessage: (name, substitutions) => {
+        calls.push({ name, substitutions });
+        return `${name}:${substitutions.join(",")}`;
+      }
+    }
+  };
+
+  try {
+    assert.equal(
+      UiStrings.viewCount("10", UiLanguage.TRADITIONAL_CHINESE),
+      "viewCount:10"
+    );
+    assert.deepEqual(calls, [
+      { name: "viewCount", substitutions: ["10"] }
+    ]);
+  } finally {
+    global.chrome = previousChrome;
+  }
+});
+
 test("resolves language from document and Bilibili chrome signals", () => {
   const document = {
     documentElement: fakeElement({ lang: "zh-TW" }),
