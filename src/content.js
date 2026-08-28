@@ -441,6 +441,7 @@
    */
   const HEADER_SURFACE_SELECTOR = [
     "#i_cecream",
+    "#biliMainHeader",
     ".bili-header",
     ".international-header",
     ".mini-header"
@@ -449,11 +450,12 @@
    * Static uploader discovery configuration.
    *
    * Note: Bilibili has moved the current-video uploader panel between several
-   * watch-page generations. Broad class-name fallbacks stay bounded by
-   * source-root and header exclusion so recommendation-card authors and the
-   * viewer's own navigation links do not become page metadata.
+   * watch-page generations and now nests it inside the right-column list
+   * container. Named panel roots are trusted wherever they render; broad
+   * class-name probes stay bounded by source-root exclusion so
+   * recommendation-card authors do not become page metadata.
    */
-  const UPLOADER_CONTEXT_SELECTOR = [
+  const UPLOADER_CONTEXT_ROOT_SELECTORS = [
     "#v_upinfo",
     ".up-panel-container",
     ".up-info-container",
@@ -461,12 +463,22 @@
     ".up-info--left",
     ".video-owner",
     ".owner-card",
-    ".uploader",
+    ".uploader"
+  ];
+  const UPLOADER_CONTEXT_FALLBACK_SELECTORS = [
     "[class*='up-panel']",
     "[class*='up_info']",
     "[class*='up-info']",
     "[class*='UpInfo']",
     "[class*='upInfo']"
+  ];
+  const UPLOADER_CONTEXT_ROOT_SELECTOR =
+    UPLOADER_CONTEXT_ROOT_SELECTORS.join(",");
+  const UPLOADER_CONTEXT_FALLBACK_SELECTOR =
+    UPLOADER_CONTEXT_FALLBACK_SELECTORS.join(",");
+  const UPLOADER_CONTEXT_SELECTOR = [
+    UPLOADER_CONTEXT_ROOT_SELECTOR,
+    UPLOADER_CONTEXT_FALLBACK_SELECTOR
   ].join(",");
   const UPLOADER_NAME_SELECTORS = [
     ".up-name",
@@ -4004,12 +4016,35 @@
     /**
      * Returns likely current-video uploader roots.
      *
+     * Named uploader-panel roots lead and are trusted wherever Bilibili
+     * renders them. Broad class-name probes and profile links follow and stay
+     * bounded by source-root exclusion.
+     *
      * @returns {Element[]}
      */
     uploaderCandidates() {
-      const candidates = [
-        ...DomProbe.queryAll(this.document, UPLOADER_CONTEXT_SELECTOR)
-      ];
+      const trusted = DomProbe.queryAll(
+        this.document,
+        UPLOADER_CONTEXT_ROOT_SELECTOR
+      );
+      const bounded = DomProbe.unique([
+        ...DomProbe.queryAll(this.document, UPLOADER_CONTEXT_FALLBACK_SELECTOR),
+        ...this.uploaderProfileLinkCandidates()
+      ]).filter((element) => !element.closest(SOURCE_BOUNDARY_SELECTOR));
+
+      return [...trusted, ...bounded].filter(
+        (element) =>
+          !DomProbe.isOwned(element) && !element.closest(HEADER_SURFACE_SELECTOR)
+      );
+    }
+
+    /**
+     * Returns uploader roots derived from bare space-home profile links.
+     *
+     * @returns {Element[]}
+     */
+    uploaderProfileLinkCandidates() {
+      const candidates = [];
 
       for (const link of DomProbe.queryAll(
         this.document,
@@ -4028,12 +4063,7 @@
         );
       }
 
-      return DomProbe.unique(candidates).filter(
-        (element) =>
-          !DomProbe.isOwned(element) &&
-          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
-          !element.closest(HEADER_SURFACE_SELECTOR)
-      );
+      return candidates;
     }
 
     /**

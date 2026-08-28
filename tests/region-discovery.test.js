@@ -218,6 +218,38 @@ test("uploader discovery ignores viewer header space links", () => {
   assert.equal(info.profileUrl, "https://space.bilibili.com/42/");
 });
 
+test("uploader discovery reads the up panel inside list-column containers", () => {
+  const panel = new FakeDomNode({ className: "up-panel-container" });
+  panel.append(
+    new FakeDomNode({
+      tagName: "a",
+      className: "up-name",
+      text: "琪露诺的完美哲学教室",
+      attributes: { href: "//space.bilibili.com/3546956708186252/" }
+    })
+  );
+
+  const card = new FakeDomNode({ className: "video-card" });
+  card.append(
+    new FakeDomNode({
+      tagName: "a",
+      className: "upname",
+      text: "马库斯Tullius-Cirno",
+      attributes: { href: "//space.bilibili.com/327432656" }
+    })
+  );
+
+  const column = new FakeDomNode({ className: "playlist-container" });
+  column.append(panel, card);
+
+  const info = new RegionDiscovery(
+    fakeWatchDocument(fakeViewerHeader(), column)
+  ).findUploaderInfo();
+
+  assert.equal(info.name, "琪露诺的完美哲学教室");
+  assert.equal(info.profileUrl, "https://space.bilibili.com/3546956708186252/");
+});
+
 test("uploader discovery stays absent with only viewer header links", () => {
   const info = new RegionDiscovery(
     fakeWatchDocument(fakeViewerHeader())
