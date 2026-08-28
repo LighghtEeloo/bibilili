@@ -159,6 +159,10 @@ class FakeDomNode {
     return null;
   }
 
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
   querySelectorAll(selector) {
     const matches = [];
 
@@ -248,6 +252,37 @@ test("uploader discovery reads the up panel inside list-column containers", () =
 
   assert.equal(info.name, "琪露诺的完美哲学教室");
   assert.equal(info.profileUrl, "https://space.bilibili.com/3546956708186252/");
+});
+
+test("description discovery reads the desc module inside list-column containers", () => {
+  const desc = new FakeDomNode({ id: "v_desc", text: "这是视频简介" });
+  const column = new FakeDomNode({ className: "playlist-container" });
+  column.append(desc);
+
+  assert.equal(
+    new RegionDiscovery(fakeWatchDocument(column)).findVideoDescription(),
+    desc
+  );
+});
+
+test("tag discovery reads the tag module inside list-column containers", () => {
+  const tagModule = new FakeDomNode({ id: "v_tag" });
+  tagModule.append(
+    new FakeDomNode({
+      tagName: "a",
+      className: "tag-link",
+      text: "标签",
+      attributes: { href: "//search.bilibili.com/all?keyword=test" }
+    })
+  );
+
+  const column = new FakeDomNode({ className: "playlist-container" });
+  column.append(tagModule);
+
+  const tags = new RegionDiscovery(fakeWatchDocument(column)).findVideoTags();
+
+  assert.equal(tags.length, 1);
+  assert.equal(tags[0].text, "标签");
 });
 
 test("uploader discovery stays absent with only viewer header links", () => {

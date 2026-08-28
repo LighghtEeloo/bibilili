@@ -41,6 +41,11 @@ The comment region contains the page-owned comment tree. Bibilili moves this
 region into a right-side scroll container and may prepend the extension-owned
 video description presentation in the same scrolling surface.
 
+Discovery identifies the uploader card, video description, and tags by their
+named module roots wherever Bilibili nests them. Broad class-name probes stay
+bounded by list-container exclusion so list-card authors and card text do not
+become page metadata.
+
 Video-list sources contain page-owned list data or Bilibili account list data.
 Bibilili reads them into uniform list items and routes one source at a time
 into the bottom dock.

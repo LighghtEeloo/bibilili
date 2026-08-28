@@ -172,6 +172,17 @@
     "[class*='video-tag']",
     "[class*='VideoTag']"
   ];
+  /**
+   * Note: Newer Bilibili watch pages nest the description and tag modules
+   * inside the right-column list container, so named module roots are trusted
+   * wherever they render; broad probes stay bounded by source-root exclusion.
+   */
+  const VIDEO_DESCRIPTION_ROOT_SELECTOR = [
+    "#v_desc",
+    ".video-desc-container",
+    ".video-desc"
+  ].join(",");
+  const VIDEO_TAGS_ROOT_SELECTOR = ["#v_tag", ".video-tag-container"].join(",");
   const VIDEO_TAG_LINK_SELECTOR = [
     "a.tag-link[href]",
     "a[href*='from_source=video_tag']",
@@ -3822,8 +3833,9 @@
       return DomProbe.unique(candidates).filter(
         (element) =>
           !DomProbe.isOwned(element) &&
-          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
-          !element.closest(UPLOADER_CONTEXT_SELECTOR)
+          !element.closest(UPLOADER_CONTEXT_SELECTOR) &&
+          (element.closest(VIDEO_DESCRIPTION_ROOT_SELECTOR) ||
+            !element.closest(SOURCE_BOUNDARY_SELECTOR))
       );
     }
 
@@ -3925,9 +3937,10 @@
       return DomProbe.unique(candidates).filter(
         (element) =>
           !DomProbe.isOwned(element) &&
-          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
           !element.closest(UPLOADER_CONTEXT_SELECTOR) &&
-          Boolean(element.querySelector(VIDEO_TAG_LINK_SELECTOR))
+          Boolean(element.querySelector(VIDEO_TAG_LINK_SELECTOR)) &&
+          (element.closest(VIDEO_TAGS_ROOT_SELECTOR) ||
+            !element.closest(SOURCE_BOUNDARY_SELECTOR))
       );
     }
 
