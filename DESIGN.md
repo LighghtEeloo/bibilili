@@ -52,9 +52,9 @@ into the bottom dock.
 
 ## DOM Ownership
 
-Bibilili owns the layout root, stage, panes, player title overlay, list dock,
-source bar, video description presentation, uploader summary, watch action
-group, current-video watch-later control, list rail, video cards,
+Bibilili owns the layout root, stage, panes, video header, list dock,
+source bar, video description presentation, watch action group,
+current-video watch-later control, list rail, video cards,
 watch-later mutation controls, extension classes, and bookkeeping attributes.
 Bilibili owns the player, comments, source roots, links, native watch metadata,
 native uploader card, watch action triggers, account controls, account lists,
@@ -172,17 +172,13 @@ column of the stage. The comment pane determines its width reduction; the list
 dock determines its height reduction. Bibilili leaves player controls, player
 events, and playback state under Bilibili ownership.
 
-The player pane may contain an extension-owned title overlay. The overlay reads
-the watch title, appears at the top of the player pane when pointer movement or
-focus indicates interest, uses a vertical opacity gradient for legibility, and
-remains pointer-transparent. During pointer hover, the overlay hides after a
-short idle period and reappears on the next pointer movement.
-
 ## Comment Pane
 
 The comment pane is the right-side container for comments. It has the same
 height as the player pane and owns vertical scrolling, so comment scrolling does
-not move the player or list dock. It contains page-owned comment nodes and may
+not move the player or list dock. The extension-owned video header sits at the
+top of the comment pane and stays pinned while comments scroll. It contains
+page-owned comment nodes and may
 wrap the comment region; comment controls remain page-owned markup.
 
 The comment pane may begin with an extension-owned video description
@@ -347,24 +343,22 @@ Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
 for absent native triggers or unavailable account mutations.
 
-## Uploader Summary
+## Video Header
 
-The uploader summary is extension-owned dock chrome derived from the
-page-owned current-video uploader card. It shows the uploader avatar, display
-name, and one secondary metadata line when Bilibili exposes them.
+The video header is extension-owned pane chrome at the top of the comment
+pane. It shows the watch title, the uploader avatar and display name, and the
+publish date when Bilibili exposes them. The uploader link opens the uploader
+profile in a new browser page.
 
-Discovery derives metadata from the native uploader card. Profile-link
-fallbacks accept only bare space-home addresses outside the global header, so
-viewer account links never supply uploader metadata.
-
-The summary sits between source buttons and watch action buttons, immediately
-to the left of the like action when like is available. When Bilibili exposes a
-profile link, the summary opens that profile in a new browser page. Follow
+Discovery derives metadata from the native uploader card and publish-date
+text. Profile-link fallbacks accept only bare space-home addresses outside the
+global header, so viewer account links never supply uploader metadata. Follow
 controls, message controls, and native uploader-card popovers remain under
 Bilibili ownership.
 
-Uploader summary reconciliation updates the stable summary node in place and
-removes it when no current-video uploader metadata is available.
+Video header reconciliation updates the stable header nodes in place. The
+comment pane reserves the header while any header part is available, including
+before comments load.
 
 ## Account Control Bridge
 
@@ -429,8 +423,8 @@ after their fetch completes.
 
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
-kind, then contains the uploader summary when available, then contains the
-watch action group when native watch actions are available. The initial source
+kind, then contains the watch action group when native watch actions are
+available. The initial source
 buttons represent collection, recommendations, watch later, and history when
 those sources are available. Their labels use the current UI language.
 
@@ -537,8 +531,8 @@ changes.
 When a source root changes or an account source finishes loading, that source is
 re-extracted and the list rail is re-rendered from the current source route.
 When the comment region changes, the comment pane receives the current
-page-owned comment tree. When the watch title changes, the player title overlay
-receives the current title.
+page-owned comment tree. When the watch title, uploader, or publish date
+changes, the video header receives the current values.
 
 At startup and after same-tab navigation, the controller schedules a bounded
 set of lazy settling passes. These passes refresh comments, list items, and
@@ -567,7 +561,8 @@ Bibilili mounts only after it discovers a player region.
 If comments are unavailable or only an empty shell is present, the comment pane
 shows the comment retry state.
 
-If the watch title is unavailable, the player title overlay is not shown.
+The video header shows only the parts Bilibili exposes. When no header part
+is available, the comment pane follows its comment state alone.
 
 If no video-list source yields valid video items, the list dock is shown only
 as the enabled activation surface.

@@ -44,8 +44,7 @@
   const COMMENT_PANE_MAX_STAGE_RATIO = 0.5;
   const COMMENT_PANE_KEYBOARD_STEP = 24;
   const COMMENT_PANE_RESIZING_CLASS = "bibilili-is-resizing-comment-pane";
-  const PLAYER_TITLE_VISIBLE_CLASS = "bibilili-player-title-visible";
-  const PLAYER_TITLE_IDLE_DELAY_MS = 3000;
+  const HAS_VIDEO_HEADER_CLASS = "bibilili-has-video-header";
   const LAZY_SETTLING_RECONCILE_DELAYS_MS = Object.freeze([
     400,
     1200,
@@ -5065,9 +5064,6 @@
       this.root = null;
       this.stage = null;
       this.playerPane = null;
-      this.playerTitleOverlay = null;
-      this.playerTitleText = null;
-      this.playerTitleIdleTimer = null;
       this.commentPane = null;
       this.commentResizeHandle = null;
       /** @type {{ pointerId: number } | null} */
@@ -5075,17 +5071,20 @@
       this.commentRetryView = null;
       this.commentRetryMessage = null;
       this.commentReloadButton = null;
+      this.videoHeader = null;
+      this.videoHeaderTitle = null;
+      this.videoHeaderMeta = null;
+      this.videoHeaderAuthor = null;
+      this.videoHeaderAvatar = null;
+      this.videoHeaderAvatarImage = null;
+      this.videoHeaderName = null;
+      this.videoHeaderDate = null;
       this.videoDescriptionView = null;
       this.videoDescriptionSlot = null;
       this.videoDescriptionNode = null;
       this.videoTagsList = null;
       this.dock = null;
       this.sourceBar = null;
-      this.uploaderSummary = null;
-      this.uploaderAvatar = null;
-      this.uploaderAvatarImage = null;
-      this.uploaderName = null;
-      this.uploaderMeta = null;
       this.actionGroup = null;
       this.rail = null;
       this.playerNode = null;
@@ -5101,6 +5100,8 @@
       this.currentVideoTags = [];
       this.renderedVideoTagsKey = "";
       this.currentUploader = null;
+      this.currentPublishedAt = null;
+      this.currentTitle = null;
       this.currentActions = [];
       this.currentSources = [];
       this.accountControl = null;
@@ -5169,12 +5170,14 @@
       this.setLanguage(language);
       this.watchLaterAccountCount = watchLaterAccountCount;
       this.setPlayer(regions.player);
-      this.setPlayerTitle(regions.title);
+      this.currentTitle = regions.title;
       this.currentVideoDescription =
         regions.description ?? this.currentMovedVideoDescription();
       this.currentVideoTags = regions.tags;
       this.setComments(regions.comments, regions.commentState);
       this.currentUploader = regions.uploader;
+      this.currentPublishedAt = regions.publishedAt;
+      this.renderVideoHeader();
       this.currentActions = regions.actions;
       this.accountControl = regions.accountControl;
       this.onWatchLaterAdd = onWatchLaterAdd;
@@ -5221,7 +5224,6 @@
      */
     releasePageOwnership() {
       LayoutRoot.clearNativeOverlayLift(this.document);
-      this.hidePlayerTitleOverlay();
       this.endCommentPaneResize();
       this.unmarkSourceRoots();
       this.restoreNode(this.playerNode);
@@ -5254,15 +5256,6 @@
 
       this.playerPane = this.document.createElement("section");
       this.playerPane.className = "bibilili-player-pane";
-      this.playerPane.addEventListener("pointerenter", (event) => {
-        this.handlePlayerPanePointerActivity(event);
-      });
-      this.playerPane.addEventListener("pointermove", (event) => {
-        this.handlePlayerPanePointerActivity(event);
-      });
-      this.playerPane.addEventListener("pointerleave", () => {
-        this.hidePlayerTitleOverlay();
-      });
 
       this.commentPane = this.document.createElement("aside");
       this.commentPane.className = "bibilili-comment-pane";
@@ -5385,110 +5378,135 @@
 
       this.playerNode = player;
       this.movePageNode(player, this.playerPane, "player");
-      this.ensurePlayerTitleOverlay();
     }
 
     /**
-     * Updates the hover title text without changing mouse-idle visibility.
+     * Renders the extension-owned video header at the top of the comment pane.
      *
-     * @param {string | null} title
+     * The header shows the watch title, the uploader link, and the publish
+     * date. It keeps the comment pane reserved whenever any part is
+     * available, even before comments load.
      */
-    setPlayerTitle(title) {
-      if (!this.root || !this.playerPane) {
+    renderVideoHeader() {
+      if (!this.root || !this.commentPane) {
         return;
       }
 
-      this.ensurePlayerTitleOverlay();
+      const hasContent = Boolean(
+        this.currentTitle || this.currentUploader || this.currentPublishedAt
+      );
 
-      if (!title) {
-        this.hidePlayerTitleOverlay();
-        this.playerTitleOverlay.hidden = true;
-        this.playerTitleOverlay.removeAttribute("title");
-        this.playerTitleText.textContent = "";
+      this.root.classList.toggle(HAS_VIDEO_HEADER_CLASS, hasContent);
+
+      if (!hasContent) {
+        this.videoHeader?.remove();
         return;
       }
 
-      this.playerTitleOverlay.hidden = false;
-      this.playerTitleText.textContent = title;
-      this.playerTitleOverlay.setAttribute("title", title);
-    }
+      this.ensureVideoHeader();
+      this.updateVideoHeader();
 
-    /**
-     * Ensures the extension-owned player title overlay exists above the player.
-     */
-    ensurePlayerTitleOverlay() {
-      if (!this.playerPane) {
-        return;
-      }
-
-      if (!this.playerTitleOverlay) {
-        this.playerTitleOverlay = this.document.createElement("div");
-        this.playerTitleOverlay.className = "bibilili-player-title-overlay";
-        this.playerTitleOverlay.setAttribute("aria-hidden", "true");
-
-        this.playerTitleText = this.document.createElement("div");
-        this.playerTitleText.className = "bibilili-player-title";
-        this.playerTitleOverlay.append(this.playerTitleText);
-      }
-
-      if (this.playerTitleOverlay.parentElement !== this.playerPane) {
-        this.playerPane.append(this.playerTitleOverlay);
+      if (this.videoHeader.parentElement !== this.commentPane) {
+        this.commentPane.prepend(this.videoHeader);
       }
     }
 
     /**
-     * Shows the player title after mouse activity over the player pane.
-     *
-     * @param {PointerEvent} event
+     * Ensures the stable video header nodes exist at the pane top.
      */
-    handlePlayerPanePointerActivity(event) {
-      if (event.pointerType === "touch") {
+    ensureVideoHeader() {
+      if (this.videoHeader) {
         return;
       }
 
-      this.showPlayerTitleOverlay();
+      this.videoHeader = this.document.createElement("header");
+      this.videoHeader.className = "bibilili-video-header";
+
+      this.videoHeaderTitle = this.document.createElement("div");
+      this.videoHeaderTitle.className = "bibilili-video-header-title";
+
+      this.videoHeaderMeta = this.document.createElement("div");
+      this.videoHeaderMeta.className = "bibilili-video-header-meta";
+
+      this.videoHeaderAuthor = this.document.createElement("a");
+      this.videoHeaderAuthor.className = "bibilili-video-header-author";
+
+      this.videoHeaderAvatar = this.document.createElement("span");
+      this.videoHeaderAvatar.className = "bibilili-video-header-avatar";
+      this.videoHeaderAvatar.setAttribute("aria-hidden", "true");
+
+      this.videoHeaderAvatarImage = this.document.createElement("img");
+      this.videoHeaderAvatarImage.alt = "";
+      this.videoHeaderAvatar.append(this.videoHeaderAvatarImage);
+
+      this.videoHeaderName = this.document.createElement("span");
+      this.videoHeaderName.className = "bibilili-video-header-name";
+
+      this.videoHeaderDate = this.document.createElement("span");
+      this.videoHeaderDate.className = "bibilili-video-header-date";
+
+      this.videoHeaderAuthor.append(
+        this.videoHeaderAvatar,
+        this.videoHeaderName
+      );
+      this.videoHeaderMeta.append(this.videoHeaderAuthor, this.videoHeaderDate);
+      this.videoHeader.append(this.videoHeaderTitle, this.videoHeaderMeta);
+      this.commentPane.prepend(this.videoHeader);
     }
 
     /**
-     * Shows the player title overlay and schedules mouse-idle hiding.
+     * Updates the video header content in place.
      */
-    showPlayerTitleOverlay() {
-      if (!this.playerPane || this.playerTitleOverlay?.hidden) {
+    updateVideoHeader() {
+      if (
+        !this.videoHeader ||
+        !this.videoHeaderTitle ||
+        !this.videoHeaderAuthor ||
+        !this.videoHeaderAvatar ||
+        !this.videoHeaderAvatarImage ||
+        !this.videoHeaderName ||
+        !this.videoHeaderDate
+      ) {
         return;
       }
 
-      this.playerPane.classList.add(PLAYER_TITLE_VISIBLE_CLASS);
-      this.schedulePlayerTitleIdleHide();
-    }
+      this.videoHeaderTitle.textContent = this.currentTitle ?? "";
+      this.videoHeaderTitle.hidden = !this.currentTitle;
 
-    /**
-     * Hides the mouse-driven player title overlay state.
-     */
-    hidePlayerTitleOverlay() {
-      this.clearPlayerTitleIdleTimer();
-      this.playerPane?.classList.remove(PLAYER_TITLE_VISIBLE_CLASS);
-    }
+      const uploader = this.currentUploader;
 
-    /**
-     * Schedules title hiding after the pointer stops moving over the player.
-     */
-    schedulePlayerTitleIdleHide() {
-      this.clearPlayerTitleIdleTimer();
-      this.playerTitleIdleTimer = window.setTimeout(() => {
-        this.hidePlayerTitleOverlay();
-      }, PLAYER_TITLE_IDLE_DELAY_MS);
-    }
+      if (uploader) {
+        this.videoHeaderAuthor.hidden = false;
 
-    /**
-     * Clears the pending player-title idle timer.
-     */
-    clearPlayerTitleIdleTimer() {
-      if (this.playerTitleIdleTimer === null) {
-        return;
+        if (uploader.profileUrl) {
+          this.videoHeaderAuthor.href = uploader.profileUrl;
+          this.videoHeaderAuthor.target = "_blank";
+          this.videoHeaderAuthor.rel = "noopener noreferrer";
+        } else {
+          this.videoHeaderAuthor.removeAttribute("href");
+          this.videoHeaderAuthor.removeAttribute("target");
+          this.videoHeaderAuthor.removeAttribute("rel");
+        }
+
+        UiControl.setLabel(
+          this.videoHeaderAuthor,
+          UiStrings.uploaderLabel(uploader.name, this.language)
+        );
+        this.videoHeaderName.textContent = uploader.name;
+
+        if (uploader.avatarUrl) {
+          this.videoHeaderAvatar.hidden = false;
+          this.videoHeaderAvatarImage.src = uploader.avatarUrl;
+        } else {
+          this.videoHeaderAvatar.hidden = true;
+          this.videoHeaderAvatarImage.removeAttribute("src");
+        }
+      } else {
+        this.videoHeaderAuthor.hidden = true;
       }
 
-      window.clearTimeout(this.playerTitleIdleTimer);
-      this.playerTitleIdleTimer = null;
+      this.videoHeaderDate.textContent = this.currentPublishedAt ?? "";
+      this.videoHeaderDate.hidden = !this.currentPublishedAt;
     }
 
     /**
@@ -5738,12 +5756,8 @@
       this.ensureCommentRetryView();
       this.updateCommentRetryLabels();
 
-      if (
-        this.commentRetryView.parentElement !== this.commentPane ||
-        this.commentPane.firstElementChild !== this.commentRetryView ||
-        this.commentPane.children.length !== 1
-      ) {
-        this.commentPane.replaceChildren(this.commentRetryView);
+      if (this.commentRetryView.parentElement !== this.commentPane) {
+        this.commentPane.append(this.commentRetryView);
       }
 
       this.root.classList.add("bibilili-has-comment-retry");
@@ -6262,123 +6276,7 @@
       }
 
       UiControl.removeStaleButtons(this.sourceButtons, availableKinds);
-      const uploaderSummary = this.renderUploaderSummary(
-        this.currentUploader,
-        previous
-      );
-      previous = uploaderSummary ?? previous;
       this.renderWatchActionGroup(this.currentActions, previous);
-    }
-
-    /**
-     * Renders the current uploader summary before mirrored watch actions.
-     *
-     * @param {UploaderInfo | null} uploader
-     * @param {Element} placementAnchor
-     * @returns {Element | null}
-     */
-    renderUploaderSummary(uploader, placementAnchor) {
-      if (!this.sourceBar) {
-        return null;
-      }
-
-      if (!uploader) {
-        this.uploaderSummary?.remove();
-        return null;
-      }
-
-      this.ensureUploaderSummary();
-      this.updateUploaderSummary(uploader);
-
-      const reference = placementAnchor.nextSibling;
-      if (reference !== this.uploaderSummary) {
-        this.sourceBar.insertBefore(this.uploaderSummary, reference);
-      }
-
-      return this.uploaderSummary;
-    }
-
-    /**
-     * Ensures the stable uploader summary nodes exist.
-     */
-    ensureUploaderSummary() {
-      if (this.uploaderSummary) {
-        return;
-      }
-
-      this.uploaderSummary = this.document.createElement("a");
-      this.uploaderSummary.className = "bibilili-uploader-summary";
-
-      this.uploaderAvatar = this.document.createElement("span");
-      this.uploaderAvatar.className = "bibilili-uploader-avatar";
-      this.uploaderAvatar.setAttribute("aria-hidden", "true");
-
-      this.uploaderAvatarImage = this.document.createElement("img");
-      this.uploaderAvatarImage.alt = "";
-      this.uploaderAvatar.append(this.uploaderAvatarImage);
-
-      const text = this.document.createElement("span");
-      text.className = "bibilili-uploader-text";
-
-      this.uploaderName = this.document.createElement("span");
-      this.uploaderName.className = "bibilili-uploader-name";
-
-      this.uploaderMeta = this.document.createElement("span");
-      this.uploaderMeta.className = "bibilili-uploader-meta";
-
-      text.append(this.uploaderName, this.uploaderMeta);
-      this.uploaderSummary.append(this.uploaderAvatar, text);
-    }
-
-    /**
-     * Updates the uploader summary content in place.
-     *
-     * @param {UploaderInfo} uploader
-     */
-    updateUploaderSummary(uploader) {
-      if (
-        !this.uploaderSummary ||
-        !this.uploaderAvatar ||
-        !this.uploaderAvatarImage ||
-        !this.uploaderName ||
-        !this.uploaderMeta
-      ) {
-        return;
-      }
-
-      if (uploader.profileUrl) {
-        this.uploaderSummary.href = uploader.profileUrl;
-        this.uploaderSummary.target = "_blank";
-        this.uploaderSummary.rel = "noopener noreferrer";
-      } else {
-        this.uploaderSummary.removeAttribute("href");
-        this.uploaderSummary.removeAttribute("target");
-        this.uploaderSummary.removeAttribute("rel");
-      }
-
-      const label = UiStrings.uploaderLabel(uploader.name, this.language);
-      const summaryLabel = uploader.metaText
-        ? `${label} - ${uploader.metaText}`
-        : label;
-      UiControl.setLabel(this.uploaderSummary, summaryLabel);
-
-      this.uploaderName.textContent = uploader.name;
-
-      if (uploader.metaText) {
-        this.uploaderMeta.hidden = false;
-        this.uploaderMeta.textContent = uploader.metaText;
-      } else {
-        this.uploaderMeta.hidden = true;
-        this.uploaderMeta.textContent = "";
-      }
-
-      if (uploader.avatarUrl) {
-        this.uploaderAvatar.hidden = false;
-        this.uploaderAvatarImage.src = uploader.avatarUrl;
-      } else {
-        this.uploaderAvatar.hidden = true;
-        this.uploaderAvatarImage.removeAttribute("src");
-      }
     }
 
     /**

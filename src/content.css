@@ -85,7 +85,8 @@
 }
 
 #bibilili-layout-root.bibilili-has-comments .bibilili-stage,
-#bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage {
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-stage,
+#bibilili-layout-root.bibilili-has-video-header .bibilili-stage {
   grid-template-columns:
     minmax(0, 1fr)
     var(--bibilili-comment-resize-width)
@@ -110,7 +111,7 @@
   background: #000000;
 }
 
-.bibilili-player-pane > :not(.bibilili-player-title-overlay) {
+.bibilili-player-pane > * {
   flex: 1 1 auto;
   width: 100% !important;
   min-width: 0 !important;
@@ -118,53 +119,6 @@
   height: 100% !important;
   min-height: 0 !important;
   max-height: none !important;
-}
-
-.bibilili-player-title-overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 3;
-  box-sizing: border-box;
-  display: grid;
-  min-height: clamp(72px, 12vh, 132px);
-  align-items: start;
-  padding: clamp(14px, 2vw, 24px) clamp(16px, 2.5vw, 32px) 34px;
-  pointer-events: none;
-  opacity: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.74) 0%,
-    rgba(0, 0, 0, 0.42) 48%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  transform: translateY(-6px);
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
-}
-
-.bibilili-player-title-overlay[hidden] {
-  display: none !important;
-}
-
-.bibilili-player-pane.bibilili-player-title-visible
-  .bibilili-player-title-overlay {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.bibilili-player-title {
-  max-width: min(980px, 86%);
-  overflow: hidden;
-  color: #ffffff;
-  font-size: clamp(15px, 1.6vw, 24px);
-  font-weight: 700;
-  line-height: 1.32;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.88);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .bibilili-player-pane #bilibili-player,
@@ -214,8 +168,8 @@
 }
 
 #bibilili-layout-root.bibilili-has-comments .bibilili-comment-resize-handle,
-#bibilili-layout-root.bibilili-has-comment-retry
-  .bibilili-comment-resize-handle {
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-comment-resize-handle,
+#bibilili-layout-root.bibilili-has-video-header .bibilili-comment-resize-handle {
   display: block;
 }
 
@@ -226,17 +180,112 @@
 }
 
 #bibilili-layout-root.bibilili-has-comments .bibilili-comment-pane,
-#bibilili-layout-root.bibilili-has-comment-retry .bibilili-comment-pane {
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-comment-pane,
+#bibilili-layout-root.bibilili-has-video-header .bibilili-comment-pane {
   display: block;
 }
 
-.bibilili-comment-pane > :not(.bibilili-comment-retry) {
+.bibilili-comment-pane
+  > :not(.bibilili-comment-retry):not(.bibilili-video-header) {
   box-sizing: border-box;
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;
   margin: 0 !important;
   padding: 12px !important;
+}
+
+.bibilili-video-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--bibilili-border);
+  background: var(--bibilili-comment-bg);
+}
+
+.bibilili-video-header-title {
+  color: var(--bibilili-comment-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bibilili-video-header-title[hidden] {
+  display: none;
+}
+
+.bibilili-video-header-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.bibilili-video-header-author {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--bibilili-comment-text);
+  text-decoration: none;
+}
+
+.bibilili-video-header-author:hover,
+.bibilili-video-header-author:focus-visible {
+  color: var(--bibilili-accent);
+}
+
+.bibilili-video-header-author[hidden] {
+  display: none;
+}
+
+.bibilili-video-header-avatar {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.bibilili-video-header-avatar[hidden] {
+  display: none;
+}
+
+.bibilili-video-header-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bibilili-video-header-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bibilili-video-header-date {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bibilili-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bibilili-video-header-date[hidden] {
+  display: none;
 }
 
 .bibilili-comment-pane > .bibilili-video-description {
@@ -390,85 +439,6 @@
   border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
   background: var(--bibilili-selected-bg);
-}
-
-.bibilili-uploader-summary {
-  box-sizing: border-box;
-  display: inline-flex;
-  flex: 0 1 230px;
-  align-items: center;
-  gap: 7px;
-  min-width: 128px;
-  max-width: 240px;
-  height: 30px;
-  padding: 0 8px 0 6px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--bibilili-control-text);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.bibilili-uploader-summary[href]:hover {
-  border-color: var(--bibilili-button-hover-border);
-  color: var(--bibilili-text);
-  background: var(--bibilili-control-bg);
-}
-
-.bibilili-uploader-avatar {
-  display: block;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  overflow: hidden;
-  border-radius: 50%;
-  background: var(--bibilili-thumb-bg);
-}
-
-.bibilili-uploader-avatar[hidden] {
-  display: none !important;
-}
-
-.bibilili-uploader-avatar img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.bibilili-uploader-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  line-height: 1.15;
-}
-
-.bibilili-uploader-name,
-.bibilili-uploader-meta {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bibilili-uploader-name {
-  color: var(--bibilili-text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.bibilili-uploader-meta {
-  margin-top: 1px;
-  color: var(--bibilili-muted);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.bibilili-uploader-meta[hidden] {
-  display: none !important;
 }
 
 .bibilili-action-group {
