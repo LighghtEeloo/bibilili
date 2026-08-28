@@ -285,6 +285,32 @@ test("tag discovery reads the tag module inside list-column containers", () => {
   assert.equal(tags[0].text, "标签");
 });
 
+test("publish-date discovery reads pubdate modules inside list-column containers", () => {
+  const pubdate = new FakeDomNode({
+    className: "pubdate-ip-text",
+    text: "发布于 2025-07-30 04:37:41"
+  });
+  const column = new FakeDomNode({ className: "playlist-container" });
+  column.append(pubdate);
+
+  assert.equal(
+    new RegionDiscovery(fakeWatchDocument(column)).findPublishDate(),
+    "2025-07-30 04:37:41"
+  );
+});
+
+test("publish-date discovery ignores card month-day timestamps", () => {
+  const card = new FakeDomNode({ className: "video-card" });
+  card.append(
+    new FakeDomNode({ className: "video-data", text: "217.7万 08-21" })
+  );
+
+  assert.equal(
+    new RegionDiscovery(fakeWatchDocument(card)).findPublishDate(),
+    null
+  );
+});
+
 test("uploader discovery stays absent with only viewer header links", () => {
   const info = new RegionDiscovery(
     fakeWatchDocument(fakeViewerHeader())

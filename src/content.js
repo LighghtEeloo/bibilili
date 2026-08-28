@@ -189,6 +189,22 @@
     "a[href*='search.bilibili.com/all?keyword=']"
   ].join(",");
   const VIDEO_TAG_MAX_COUNT = 32;
+  const VIDEO_PUBLISH_DATE_SELECTORS = [
+    "[class*='pubdate']",
+    "[class*='Pubdate']",
+    ".video-data",
+    "[class*='video-data']",
+    ".video-info-detail",
+    ".video-info-detail-list .item"
+  ];
+  const VIDEO_PUBLISH_DATE_ROOT_SELECTOR =
+    "[class*='pubdate'],[class*='Pubdate']";
+  /**
+   * Note: Recommendation cards expose month-day timestamps, so a full
+   * year-month-day prefix identifies the current video's publish time.
+   */
+  const VIDEO_PUBLISH_DATE_TEXT_PATTERN =
+    /\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/u;
 
   const VIDEO_LINK_SELECTOR = "a[href]";
 
@@ -3707,6 +3723,7 @@
         description: this.findVideoDescription(),
         tags: this.findVideoTags(),
         uploader: this.findUploaderInfo(),
+        publishedAt: this.findPublishDate(),
         actions: this.findActions(),
         accountControl: this.findAccountControl(),
         comments: hasUsableComments ? comments : null,
@@ -4024,6 +4041,46 @@
       }
 
       return null;
+    }
+
+    /**
+     * Finds the current video's publish date text.
+     *
+     * @returns {string | null}
+     */
+    findPublishDate() {
+      for (const element of this.publishDateCandidates()) {
+        const match = DomProbe.compactText(element).match(
+          VIDEO_PUBLISH_DATE_TEXT_PATTERN
+        );
+
+        if (match) {
+          return match[0];
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Returns likely current-video publish-date elements.
+     *
+     * @returns {Element[]}
+     */
+    publishDateCandidates() {
+      const candidates = [];
+
+      for (const selector of VIDEO_PUBLISH_DATE_SELECTORS) {
+        candidates.push(...DomProbe.queryAll(this.document, selector));
+      }
+
+      return DomProbe.unique(candidates).filter(
+        (element) =>
+          !DomProbe.isOwned(element) &&
+          !element.closest(UPLOADER_CONTEXT_SELECTOR) &&
+          (element.closest(VIDEO_PUBLISH_DATE_ROOT_SELECTOR) ||
+            !element.closest(SOURCE_BOUNDARY_SELECTOR))
+      );
     }
 
     /**
@@ -9440,6 +9497,7 @@
    * @property {Element | null} description Page-owned video description region.
    * @property {VideoTag[]} tags Current watch video tag links.
    * @property {UploaderInfo | null} uploader Current watch uploader metadata.
+   * @property {string | null} publishedAt Current watch publish date text.
    * @property {WatchAction[]} actions Page-owned watch action controls.
    * @property {AccountControl | null} accountControl Page-owned account control.
    * @property {Element | null} comments Page-owned comment region.
