@@ -200,6 +200,18 @@
   padding: 12px !important;
 }
 
+/*
+ * Note: Bilibili sizes comment markup for full-width pages. Page-owned comment
+ * roots are uniformly zoomed to fit the pane instead of restyling inner
+ * comment nodes; extension-owned pane children keep their own sizing. Zoom
+ * multiplies resolved sizes, so the width compensates to keep filling the
+ * pane.
+ */
+#bibilili-layout-root .bibilili-comment-pane > :not([class|='bibilili']) {
+  width: calc(100% / 0.85) !important;
+  zoom: 0.85;
+}
+
 .bibilili-video-header {
   position: sticky;
   top: 0;

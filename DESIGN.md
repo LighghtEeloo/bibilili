@@ -179,7 +179,9 @@ height as the player pane and owns vertical scrolling, so comment scrolling does
 not move the player or list dock. The extension-owned video header sits at the
 top of the comment pane and stays pinned while comments scroll. It contains
 page-owned comment nodes and may
-wrap the comment region; comment controls remain page-owned markup.
+wrap the comment region; comment controls remain page-owned markup. Comment
+content keeps Bilibili sizing and is uniformly zoomed down to fit the pane;
+Bibilili does not restyle inner comment nodes.
 
 The comment pane may begin with an extension-owned video description
 presentation. The presentation contains the page-owned video description node
