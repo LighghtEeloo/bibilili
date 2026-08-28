@@ -52,3 +52,176 @@ test("normalizes video tag search URLs", () => {
   );
   assert.equal(discovery.safeVideoTagUrl("javascript:alert(1)"), null);
 });
+
+test("normalizes uploader space-home profile addresses", () => {
+  assert.equal(RegionDiscovery.isUploaderSpaceHomeUrl(null), false);
+  assert.equal(
+    RegionDiscovery.isUploaderSpaceHomeUrl("//space.bilibili.com/9/favlist"),
+    false
+  );
+  assert.equal(
+    RegionDiscovery.isUploaderSpaceHomeUrl("https://www.bilibili.com/9"),
+    false
+  );
+  assert.equal(
+    RegionDiscovery.isUploaderSpaceHomeUrl("//space.bilibili.com/2045577567/"),
+    true
+  );
+  assert.equal(
+    RegionDiscovery.isUploaderSpaceHomeUrl(
+      "//space.bilibili.com/2045577567/?spm_id_from=333.788.upinfo.detail.click"
+    ),
+    true
+  );
+});
+
+class FakeDomNode {
+  constructor({
+    tagName = "div",
+    id = null,
+    className = "",
+    text = "",
+    attributes = {}
+  } = {}) {
+    this.localName = tagName.toLowerCase();
+    this.id = id;
+    this.className = className;
+    this.text = text;
+    this.attributes = { ...attributes };
+    this.children = [];
+    this.parentElement = null;
+  }
+
+  append(...children) {
+    for (const child of children) {
+      child.parentElement = this;
+      this.children.push(child);
+    }
+  }
+
+  get textContent() {
+    return this.text + this.children.map((child) => child.textContent).join("");
+  }
+
+  getAttribute(name) {
+    if (name === "class") {
+      return this.className || null;
+    }
+    if (name === "id") {
+      return this.id;
+    }
+    return this.attributes[name] ?? null;
+  }
+
+  matches(selectorList) {
+    return selectorList
+      .split(",")
+      .some((selector) => this.matchesSingle(selector.trim()));
+  }
+
+  matchesSingle(selector) {
+    if (!selector) {
+      return false;
+    }
+    if (selector.startsWith("#")) {
+      return this.id === selector.slice(1);
+    }
+    if (selector.startsWith(".")) {
+      return this.className.split(/\s+/u).includes(selector.slice(1));
+    }
+
+    const classContains = selector.match(/^\[class\*=['"](.+)['"]\]$/u);
+    if (classContains) {
+      return this.className.includes(classContains[1]);
+    }
+
+    const tagAttrContains = selector.match(
+      /^([a-z]+)\[([a-z-]+)\*=['"](.+)['"]\]$/iu
+    );
+    if (tagAttrContains) {
+      return (
+        this.localName === tagAttrContains[1].toLowerCase() &&
+        (this.getAttribute(tagAttrContains[2]) ?? "").includes(
+          tagAttrContains[3]
+        )
+      );
+    }
+
+    return this.localName === selector.toLowerCase();
+  }
+
+  closest(selector) {
+    for (let current = this; current; current = current.parentElement) {
+      if (current.matches(selector)) {
+        return current;
+      }
+    }
+    return null;
+  }
+
+  querySelectorAll(selector) {
+    const matches = [];
+
+    for (const child of this.children) {
+      if (child.matches(selector)) {
+        matches.push(child);
+      }
+      matches.push(...child.querySelectorAll(selector));
+    }
+
+    return matches;
+  }
+}
+
+function fakeWatchDocument(...roots) {
+  const body = new FakeDomNode();
+  body.append(...roots);
+
+  return { querySelectorAll: (selector) => body.querySelectorAll(selector) };
+}
+
+function fakeViewerHeader() {
+  const header = new FakeDomNode({ className: "mini-header" });
+  header.append(
+    new FakeDomNode({
+      tagName: "a",
+      className: "right-entry__outside",
+      text: "收藏",
+      attributes: { href: "//space.bilibili.com/9/favlist" }
+    }),
+    new FakeDomNode({
+      tagName: "a",
+      className: "header-avatar-wrap",
+      attributes: { href: "//space.bilibili.com/9" }
+    })
+  );
+
+  return header;
+}
+
+test("uploader discovery ignores viewer header space links", () => {
+  const card = new FakeDomNode({ className: "up-info-container" });
+  card.append(
+    new FakeDomNode({
+      tagName: "a",
+      className: "up-name",
+      text: "铁骨曾曾",
+      attributes: { href: "//space.bilibili.com/42/" }
+    })
+  );
+
+  const info = new RegionDiscovery(
+    fakeWatchDocument(fakeViewerHeader(), card)
+  ).findUploaderInfo();
+
+  assert.equal(info.name, "铁骨曾曾");
+  assert.equal(info.profileUrl, "https://space.bilibili.com/42/");
+});
+
+test("uploader discovery stays absent with only viewer header links", () => {
+  const info = new RegionDiscovery(
+    fakeWatchDocument(fakeViewerHeader())
+  ).findUploaderInfo();
+
+  assert.equal(info, null);
+});

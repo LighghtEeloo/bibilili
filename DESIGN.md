@@ -348,6 +348,10 @@ The uploader summary is extension-owned dock chrome derived from the
 page-owned current-video uploader card. It shows the uploader avatar, display
 name, and one secondary metadata line when Bilibili exposes them.
 
+Discovery derives metadata from the native uploader card. Profile-link
+fallbacks accept only bare space-home addresses outside the global header, so
+viewer account links never supply uploader metadata.
+
 The summary sits between source buttons and watch action buttons, immediately
 to the left of the like action when like is available. When Bilibili exposes a
 profile link, the summary opens that profile in a new browser page. Follow

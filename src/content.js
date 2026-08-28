@@ -430,13 +430,28 @@
   const WATCH_LATER_DELETE_LOCAL_ICON_KEY =
     "bibilili-local-watch-later-delete-icon";
   const UPLOADER_PROFILE_LINK_SELECTOR = "a[href*='space.bilibili.com']";
+  const UPLOADER_PROFILE_HOME_PATH_PATTERN = /^\/\d+\/?$/u;
   const UPLOADER_META_TEXT_LIMIT = 64;
+  /**
+   * Global header surfaces that never contain current-video uploader data.
+   *
+   * Note: Logged-in Bilibili headers link the viewer's own space pages
+   * (avatar, favorites, history), so header nodes cannot become uploader
+   * candidates. Roots mirror the account-control header probes.
+   */
+  const HEADER_SURFACE_SELECTOR = [
+    "#i_cecream",
+    ".bili-header",
+    ".international-header",
+    ".mini-header"
+  ].join(",");
   /**
    * Static uploader discovery configuration.
    *
    * Note: Bilibili has moved the current-video uploader panel between several
-   * watch-page generations. Broad class-name fallbacks stay bounded by source
-   * root exclusion so recommendation-card authors do not become page metadata.
+   * watch-page generations. Broad class-name fallbacks stay bounded by
+   * source-root and header exclusion so recommendation-card authors and the
+   * viewer's own navigation links do not become page metadata.
    */
   const UPLOADER_CONTEXT_SELECTOR = [
     "#v_upinfo",
@@ -4000,7 +4015,11 @@
         this.document,
         UPLOADER_PROFILE_LINK_SELECTOR
       )) {
-        if (DomProbe.isOwned(link)) {
+        if (
+          DomProbe.isOwned(link) ||
+          link.closest(HEADER_SURFACE_SELECTOR) ||
+          !RegionDiscovery.isUploaderSpaceHomeUrl(link.getAttribute("href"))
+        ) {
           continue;
         }
 
@@ -4011,7 +4030,9 @@
 
       return DomProbe.unique(candidates).filter(
         (element) =>
-          !DomProbe.isOwned(element) && !element.closest(SOURCE_BOUNDARY_SELECTOR)
+          !DomProbe.isOwned(element) &&
+          !element.closest(SOURCE_BOUNDARY_SELECTOR) &&
+          !element.closest(HEADER_SURFACE_SELECTOR)
       );
     }
 
@@ -4199,6 +4220,33 @@
       return /^(?:\+?\s*(?:关注|已关注|关注中|发消息|私信|充电|follow(?:ing)?|message))$/iu.test(
         value
       );
+    }
+
+    /**
+     * Tests whether a URL addresses a Bilibili user space home page.
+     *
+     * Note: Bilibili account pages such as the favorites list reuse the space
+     * host with a subpath, so the bare numeric space root is the URL shape
+     * shared by uploader profile links across watch-page generations.
+     *
+     * @param {string | null | undefined} value
+     * @returns {boolean}
+     */
+    static isUploaderSpaceHomeUrl(value) {
+      if (!value) {
+        return false;
+      }
+
+      try {
+        const url = new URL(value, window.location.href);
+
+        return (
+          url.hostname === "space.bilibili.com" &&
+          UPLOADER_PROFILE_HOME_PATH_PATTERN.test(url.pathname)
+        );
+      } catch (_error) {
+        return false;
+      }
     }
 
     /**
