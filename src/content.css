@@ -185,6 +185,11 @@
   display: block;
 }
 
+#bibilili-layout-root.bibilili-has-comment-retry .bibilili-comment-pane {
+  display: flex;
+  flex-direction: column;
+}
+
 .bibilili-comment-pane
   > :not(.bibilili-comment-retry):not(.bibilili-video-header) {
   box-sizing: border-box;
@@ -339,7 +344,7 @@
 .bibilili-comment-retry {
   box-sizing: border-box;
   display: flex;
-  min-height: 100%;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
