@@ -95,6 +95,10 @@
     "message": "Resize comments",
     "description": "Accessible label for the divider that resizes the comment pane."
   },
+  "fitVideoLabel": {
+    "message": "Fit video",
+    "description": "Visible label for the header action that sets the comment pane width so the player matches the video aspect."
+  },
   "commentRetryMessage": {
     "message": "Comments did not load.",
     "description": "Message shown in the comment pane when comments are missing or empty."

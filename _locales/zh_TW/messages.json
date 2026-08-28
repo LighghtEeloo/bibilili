@@ -95,6 +95,10 @@
     "message": "調整評論寬度",
     "description": "Accessible label for the divider that resizes the comment pane."
   },
+  "fitVideoLabel": {
+    "message": "平鋪影片",
+    "description": "Visible label for the header action that sets the comment pane width so the player matches the video aspect."
+  },
   "commentRetryMessage": {
     "message": "評論未載入。",
     "description": "Message shown in the comment pane when comments are missing or empty."

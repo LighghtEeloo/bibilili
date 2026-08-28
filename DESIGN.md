@@ -183,6 +183,11 @@ wrap the comment region; comment controls remain page-owned markup. Comment
 content keeps Bilibili sizing and is uniformly zoomed down to fit the pane;
 Bibilili does not restyle inner comment nodes.
 
+The video header exposes a fit action. It reads the current video's intrinsic
+aspect ratio and sets the comment pane width so the player pane matches the
+video at stage height, under the same clamps and persistence as divider
+resizing.
+
 The comment pane may begin with an extension-owned video description
 presentation. The presentation contains the page-owned video description node
 and tag links, has no extension divider from comments, and scrolls in the same

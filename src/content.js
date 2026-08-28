@@ -5079,6 +5079,7 @@
       this.videoHeaderAvatarImage = null;
       this.videoHeaderName = null;
       this.videoHeaderDate = null;
+      this.videoHeaderFitButton = null;
       this.videoDescriptionView = null;
       this.videoDescriptionSlot = null;
       this.videoDescriptionNode = null;
@@ -5445,11 +5446,21 @@
       this.videoHeaderDate = this.document.createElement("span");
       this.videoHeaderDate.className = "bibilili-video-header-date";
 
+      this.videoHeaderFitButton = UiControl.button(
+        this.document,
+        "bibilili-video-header-fit",
+        () => this.fitCommentPaneToVideo()
+      );
+
       this.videoHeaderAuthor.append(
         this.videoHeaderAvatar,
         this.videoHeaderName
       );
-      this.videoHeaderMeta.append(this.videoHeaderAuthor, this.videoHeaderDate);
+      this.videoHeaderMeta.append(
+        this.videoHeaderAuthor,
+        this.videoHeaderDate,
+        this.videoHeaderFitButton
+      );
       this.videoHeader.append(this.videoHeaderTitle, this.videoHeaderMeta);
       this.commentPane.prepend(this.videoHeader);
     }
@@ -5507,6 +5518,11 @@
 
       this.videoHeaderDate.textContent = this.currentPublishedAt ?? "";
       this.videoHeaderDate.hidden = !this.currentPublishedAt;
+
+      UiControl.setTextButtonLabel(
+        this.videoHeaderFitButton,
+        UiStrings.message(UiMessage.FIT_VIDEO_LABEL, this.language)
+      );
     }
 
     /**
@@ -5955,6 +5971,38 @@
       this.setCommentPaneWidth(
         stageRect.right - clientX - handleWidth / 2,
         persist
+      );
+    }
+
+    /**
+     * Sets the comment pane width so the player pane matches the video aspect.
+     *
+     * The current video's intrinsic aspect ratio tiles the player at stage
+     * height; the remaining stage width goes to the comment pane under the
+     * same clamps and persistence as divider resizing.
+     */
+    fitCommentPaneToVideo() {
+      const video = this.playerNode?.querySelector("video");
+      const stageRect = this.stage?.getBoundingClientRect();
+
+      if (
+        !video ||
+        !video.videoWidth ||
+        !video.videoHeight ||
+        !stageRect ||
+        stageRect.height <= 0
+      ) {
+        return;
+      }
+
+      const handleWidth =
+        this.commentResizeHandle?.getBoundingClientRect().width ?? 0;
+      const tiledPlayerWidth =
+        (stageRect.height * video.videoWidth) / video.videoHeight;
+
+      this.setCommentPaneWidth(
+        stageRect.width - handleWidth - tiledPlayerWidth,
+        true
       );
     }
 

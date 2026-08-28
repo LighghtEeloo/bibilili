@@ -36,6 +36,7 @@
     WATCH_LATER_ADD_LABEL: "watchLaterAddLabel",
     WATCH_LATER_REMOVE_LABEL: "watchLaterRemoveLabel",
     COMMENT_RESIZE_LABEL: "commentResizeLabel",
+    FIT_VIDEO_LABEL: "fitVideoLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
     COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
