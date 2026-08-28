@@ -6010,8 +6010,8 @@
     /**
      * Sets the comment pane width so the player pane matches the video aspect.
      *
-     * The current video's intrinsic aspect ratio tiles the player at stage
-     * height; the remaining stage width goes to the comment pane under the
+     * The current video's intrinsic aspect ratio tiles the player's video
+     * area; the remaining stage width goes to the comment pane under the
      * same clamps and persistence as divider resizing.
      */
     fitCommentPaneToVideo() {
@@ -6028,10 +6028,24 @@
         return;
       }
 
+      /*
+       * Note: The bpx player keeps its control bar below the video area, so
+       * the video tiles at video-area height rather than pane height.
+       */
+      const videoArea = this.playerNode?.querySelector(
+        ".bpx-player-video-area"
+      );
+      const tilingHeight = (videoArea ?? this.playerPane)?.getBoundingClientRect()
+        .height;
+
+      if (!tilingHeight || tilingHeight <= 0) {
+        return;
+      }
+
       const handleWidth =
         this.commentResizeHandle?.getBoundingClientRect().width ?? 0;
       const tiledPlayerWidth =
-        (stageRect.height * video.videoWidth) / video.videoHeight;
+        (tilingHeight * video.videoWidth) / video.videoHeight;
 
       this.setCommentPaneWidth(
         stageRect.width - handleWidth - tiledPlayerWidth,
