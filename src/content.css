@@ -135,7 +135,8 @@
 
 .bibilili-comment-pane {
   display: none;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: clip;
   color: var(--bibilili-comment-text);
   background: var(--bibilili-comment-bg);
   overscroll-behavior: contain;
@@ -204,11 +205,10 @@
  * Note: Bilibili sizes comment markup for full-width pages. Page-owned comment
  * roots are uniformly zoomed to fit the pane instead of restyling inner
  * comment nodes; extension-owned pane children keep their own sizing. Zoom
- * multiplies resolved sizes, so the width compensates to keep filling the
- * pane.
+ * scales the inner comment layout without scaling the node's own percentage
+ * width, so the moved root keeps filling the pane.
  */
 #bibilili-layout-root .bibilili-comment-pane > :not([class|='bibilili']) {
-  width: calc(100% / 0.85) !important;
   zoom: 0.85;
 }
 
