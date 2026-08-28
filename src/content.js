@@ -5451,6 +5451,9 @@
         "bibilili-video-header-fit",
         () => this.fitCommentPaneToVideo()
       );
+      this.videoHeaderFitButton.append(
+        LayoutRoot.fitVideoActionIcon(this.document)
+      );
 
       this.videoHeaderAuthor.append(
         this.videoHeaderAvatar,
@@ -5519,10 +5522,40 @@
       this.videoHeaderDate.textContent = this.currentPublishedAt ?? "";
       this.videoHeaderDate.hidden = !this.currentPublishedAt;
 
-      UiControl.setTextButtonLabel(
+      UiControl.setLabel(
         this.videoHeaderFitButton,
         UiStrings.message(UiMessage.FIT_VIDEO_LABEL, this.language)
       );
+    }
+
+    /**
+     * Creates the expand-arrows icon for the fit video action.
+     *
+     * @param {Document} document
+     * @returns {SVGElement}
+     */
+    static fitVideoActionIcon(document) {
+      const namespace = "http://www.w3.org/2000/svg";
+      const icon = document.createElementNS(namespace, "svg");
+      icon.setAttribute("viewBox", "0 0 16 16");
+      icon.setAttribute("width", "14");
+      icon.setAttribute("height", "14");
+      icon.setAttribute("aria-hidden", "true");
+
+      const path = document.createElementNS(namespace, "path");
+      path.setAttribute(
+        "d",
+        "M2.5 2.5v11M13.5 2.5v11M6 8H3.9m0 0 1.6-1.6M3.9 8l1.6 1.6" +
+          "M10 8h2.1m0 0-1.6-1.6M12.1 8l-1.6 1.6"
+      );
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "1.4");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      icon.append(path);
+
+      return icon;
     }
 
     /**

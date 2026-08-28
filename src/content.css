@@ -306,17 +306,18 @@
 }
 
 .bibilili-video-header-fit {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   margin-left: auto;
+  width: 24px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0;
   border: 1px solid var(--bibilili-border);
   border-radius: 6px;
   color: var(--bibilili-muted);
   background: transparent;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1;
   cursor: pointer;
 }
 
