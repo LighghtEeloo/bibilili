@@ -5484,7 +5484,10 @@
         return;
       }
 
-      this.videoHeaderTitle.textContent = this.currentTitle ?? "";
+      LayoutRoot.setStableText(
+        this.videoHeaderTitle,
+        this.currentTitle ?? ""
+      );
       this.videoHeaderTitle.hidden = !this.currentTitle;
 
       const uploader = this.currentUploader;
@@ -5506,11 +5509,17 @@
           this.videoHeaderAuthor,
           UiStrings.uploaderLabel(uploader.name, this.language)
         );
-        this.videoHeaderName.textContent = uploader.name;
+        LayoutRoot.setStableText(this.videoHeaderName, uploader.name);
 
         if (uploader.avatarUrl) {
           this.videoHeaderAvatar.hidden = false;
-          this.videoHeaderAvatarImage.src = uploader.avatarUrl;
+
+          if (
+            this.videoHeaderAvatarImage.getAttribute("src") !==
+            uploader.avatarUrl
+          ) {
+            this.videoHeaderAvatarImage.src = uploader.avatarUrl;
+          }
         } else {
           this.videoHeaderAvatar.hidden = true;
           this.videoHeaderAvatarImage.removeAttribute("src");
@@ -5519,13 +5528,33 @@
         this.videoHeaderAuthor.hidden = true;
       }
 
-      this.videoHeaderDate.textContent = this.currentPublishedAt ?? "";
+      LayoutRoot.setStableText(
+        this.videoHeaderDate,
+        this.currentPublishedAt ?? ""
+      );
       this.videoHeaderDate.hidden = !this.currentPublishedAt;
 
       UiControl.setLabel(
         this.videoHeaderFitButton,
         UiStrings.message(UiMessage.FIT_VIDEO_LABEL, this.language)
       );
+    }
+
+    /**
+     * Writes element text only when the value changed.
+     *
+     * Reconciliation renders on every pass; replacing unchanged text nodes
+     * would destroy DOM selections anchored inside them.
+     *
+     * @param {Element | null} element
+     * @param {string} text
+     */
+    static setStableText(element, text) {
+      if (!element || element.textContent === text) {
+        return;
+      }
+
+      element.textContent = text;
     }
 
     /**
