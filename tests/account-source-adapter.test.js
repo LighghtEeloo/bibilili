@@ -241,7 +241,7 @@ test("returns watch-later count with account source records", async () => {
   }
 });
 
-test("aggregates account source records with the watch-later count", async () => {
+test("loads account source records with the watch-later count", async () => {
   const previousFetchSourceRecord = AccountSourceStore.fetchSourceRecord;
   const watchLaterSource = {
     kind: SourceKind.WATCH_LATER,
@@ -269,22 +269,28 @@ test("aggregates account source records with the watch-later count", async () =>
       ? {
           kind,
           source: watchLaterSource,
+          cursor: null,
           watchLaterCount: 42
         }
       : {
           kind,
           source: historySource,
+          cursor: null,
           watchLaterCount: null
         };
 
   try {
+    const store = new AccountSourceStore(() => {});
+    await store.refresh("en");
+
     assert.deepEqual(
-      await AccountSourceStore.fetchSources(new AbortController().signal, "en"),
-      {
-        sources: [watchLaterSource, historySource],
-        watchLaterCount: 42
-      }
+      store.currentSources(),
+      [watchLaterSource, historySource].map((source) => ({
+        ...source,
+        pagination: { hasMore: false, status: "ready" }
+      }))
     );
+    assert.equal(store.currentWatchLaterCount(), 42);
   } finally {
     AccountSourceStore.fetchSourceRecord = previousFetchSourceRecord;
   }
@@ -520,18 +526,13 @@ test("decrements loaded watch-later count after successful deletion", async () =
   const store = new AccountSourceStore(() => {
     changes += 1;
   });
-  store.watchLaterCount = 7;
-  store.sources = [
+  const record = store.records.get(SourceKind.WATCH_LATER);
+  record.watchLaterCount = 7;
+  record.items = [
     {
-      kind: SourceKind.WATCH_LATER,
-      root: null,
-      items: [
-        {
-          targetUrl: "https://www.bilibili.com/video/av123456",
-          title: "Watch later",
-          watchLaterAid: "123456"
-        }
-      ]
+      targetUrl: "https://www.bilibili.com/video/av123456",
+      title: "Watch later",
+      watchLaterAid: "123456"
     }
   ];
 

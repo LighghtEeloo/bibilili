@@ -259,14 +259,28 @@ sources. History is read-only in the dock. Watch later supports additions from
 the current watch action and page-owned collection and recommendation cards.
 It supports removals from account-backed watch-later cards.
 
+The account source store retains valid items and expansion state separately for
+each source. History starts with a request for 30 entries and retains the
+response cursor for older pages. Watch later retains the returned list and
+initially exposes up to 80 items. Each expansion reveals up to 30 additional
+items, fetching one older page when history has no retained items left to show.
+History pages merge by playable route identity in API order. Empty pages,
+missing cursors, and repeated cursors end history continuation.
+
+Expansion survives source switches, ordinary reconciliation, and same-document
+video navigation. Disabling the extension, replacing the document, or changing
+the UI language resets the account source session.
+
 Watch later also reads the full list count from to-view response metadata when
 Bilibili exposes it. The count is account-state metadata. It is independent of
-the rendered rail item count, which may be capped by source limits or filtered
-by valid-item rules.
+the rendered rail item count, which follows the current expansion depth and
+valid-item rules.
 
 Account source fetches are advisory and never block the first transformed
-layout. When an account request fails, requires login, or returns no valid
-video items, that source is absent for the current render pass.
+layout. A source remains absent until its initial request yields valid items.
+Failed refreshes preserve usable items. Failed continuation requests preserve
+the loaded items and cursor so the same page can be retried. Each source allows
+one active request and discards completions from canceled requests.
 
 Account sources do not have page-owned roots. They are rendered in the bottom
 dock but do not participate in source-root hiding.
@@ -278,9 +292,9 @@ currently open video from watch later leaves the watch page open.
 
 The current watch action and collection and recommendation cards derive a
 to-view add identity from their archive target URL. A successful card addition
-refreshes account-backed sources and hides the card add control for that target
-during the current layout session. The current watch action remains available
-after a successful addition.
+refreshes watch later at its current expansion depth and hides the card add
+control for that target during the current layout session. The current watch
+action remains available after a successful addition.
 
 ## Video Item
 
@@ -477,6 +491,17 @@ bottom presentation.
 
 The rail scrolls horizontally across the selected source's cards. Route changes
 replace the group in place and reopen the rail.
+
+Account-backed history and watch-later groups end with a Show more button while
+additional items are available. The button uses the video card dimensions and
+stays at the end as cards are appended. It keeps its DOM identity during
+reconciliation, presents Loading while a request is active, and presents Retry
+after a continuation failure. It is removed when continuation ends.
+
+Expansion preserves the rail scroll position and does not recenter the current
+video. Keyboard activation focuses the first appended card if focus remains on
+the button when loading completes. If continuation ends without adding a card,
+focus moves to the last existing card before the button is removed.
 
 When an origin route selects the destination source, the rail opens with that
 source's cards. The behavior applies to extension-owned bottom-rail card links;

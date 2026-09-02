@@ -714,6 +714,35 @@
   gap: 10px;
 }
 
+.bibilili-source-more-button {
+  box-sizing: content-box;
+  flex: 0 0 var(--bibilili-card-width);
+  height: 124px;
+  padding: 0;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 6px;
+  color: var(--bibilili-muted);
+  background: var(--bibilili-panel);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.bibilili-source-more-button:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
+}
+
+.bibilili-source-more-button:focus-visible {
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: 2px;
+}
+
+.bibilili-source-more-button[aria-disabled="true"] {
+  cursor: progress;
+  opacity: 0.58;
+}
+
 .bibilili-video-card {
   box-sizing: content-box;
   position: relative;

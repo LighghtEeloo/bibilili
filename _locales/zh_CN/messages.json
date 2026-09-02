@@ -27,6 +27,32 @@
     "message": "视频列表",
     "description": "Accessible name for the video list dock."
   },
+  "sourceMoreLabel": {
+    "message": "显示更多",
+    "description": "Button text for showing another batch of account videos."
+  },
+  "sourceMoreLoadingLabel": {
+    "message": "加载中…",
+    "description": "Button text while more account videos are loading."
+  },
+  "sourceMoreRetryLabel": {
+    "message": "重试",
+    "description": "Button text for retrying a failed account continuation request."
+  },
+  "sourceMoreButtonLabel": {
+    "message": "$SOURCE$：$ACTION$",
+    "description": "Accessible name for an account continuation button with its source name.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Show more"
+      },
+      "source": {
+        "content": "$2",
+        "example": "History"
+      }
+    }
+  },
   "turnOnLabel": {
     "message": "开启 Bibilili",
     "description": "Accessible name for enabling the transformed layout."

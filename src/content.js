@@ -37,6 +37,8 @@
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
+  const ACCOUNT_WATCH_LATER_INITIAL_SIZE = 80;
+  const ACCOUNT_MORE_BATCH_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const COMMENT_PANE_WIDTH_PROPERTY = "--bibilili-comment-pane-width";
   const COMMENT_PANE_MIN_WIDTH = 240;
@@ -759,6 +761,20 @@
     SourceKind.WATCH_LATER,
     SourceKind.HISTORY
   ]);
+
+  const ACCOUNT_SOURCE_ORDER = Object.freeze([
+    SourceKind.WATCH_LATER,
+    SourceKind.HISTORY
+  ]);
+
+  /**
+   * Closed loading states for account-source pagination controls.
+   */
+  const AccountSourceStatus = Object.freeze({
+    READY: "ready",
+    LOADING: "loading",
+    ERROR: "error"
+  });
 
   configureStorageState({
     sourceOrder: SOURCE_ORDER,
@@ -2709,6 +2725,45 @@
     }
 
     /**
+     * Reads the continuation cursor from a nonempty history response.
+     *
+     * Note: History continuation uses the response cursor even when individual
+     * entries cannot become cards. A short page alone does not mark the end.
+     *
+     * @param {object} payload
+     * @returns {HistoryCursor | null}
+     */
+    static historyCursorFromPayload(payload) {
+      const data = payload?.data;
+      if (!Array.isArray(data?.list) || data.list.length === 0) {
+        return null;
+      }
+
+      const max = AccountSourceAdapter.nonNegativeInteger(data.cursor?.max);
+      const viewAt = AccountSourceAdapter.nonNegativeInteger(data.cursor?.view_at);
+
+      if (max === null || viewAt === null || (max === 0 && viewAt === 0)) {
+        return null;
+      }
+
+      return {
+        max,
+        viewAt,
+        business: AccountSourceAdapter.stringValue(data.cursor?.business) ?? ""
+      };
+    }
+
+    /**
+     * Returns the playable route identity used to merge account pages.
+     *
+     * @param {VideoItem} item
+     * @returns {string}
+     */
+    static itemKey(item) {
+      return SourceAdapter.watchRouteKeyForUrl(item.targetUrl) ?? item.targetUrl;
+    }
+
+    /**
      * Extracts valid account list items while preserving Bilibili order.
      *
      * @param {string} kind
@@ -2720,8 +2775,8 @@
       return VideoItemCollector.collect(
         entries,
         (entry) => AccountSourceAdapter.itemFromEntry(kind, entry, language),
-        (item) => `${item.targetUrl}\n${item.title}`,
-        MAX_ITEMS_PER_SOURCE
+        AccountSourceAdapter.itemKey,
+        entries.length
       );
     }
 
@@ -3097,45 +3152,57 @@
   }
 
   /**
-   * Loads account-backed list sources and notifies reconciliation on completion.
+   * Retains account lists, owns per-source pagination, and notifies rendering.
    */
   class AccountSourceStore {
     /**
-     * Creates an account source store.
+     * Creates independently loaded account sources.
      *
      * @param {() => void} onChange
      */
     constructor(onChange) {
       this.onChange = onChange;
-      this.sources = [];
-      this.loading = false;
-      this.abortController = null;
-      this.sequence = 0;
-      this.loadedLanguage = null;
-      this.loadingLanguage = null;
-      this.watchLaterCount = null;
+      /** @type {Map<string, AccountSourceRecord>} */
+      this.records = new Map();
+      this.language = null;
+      this.stop();
     }
 
     /**
-     * Returns the latest loaded account sources.
+     * Returns visible account items and their pagination state in source order.
      *
      * @returns {VideoListSource[]}
      */
     currentSources() {
-      return this.sources;
+      return ACCOUNT_SOURCE_ORDER.flatMap((kind) => {
+        const record = this.records.get(kind);
+        const items = record.items.slice(0, record.visibleCount);
+
+        return items.length > 0
+          ? [{
+              kind,
+              root: null,
+              items,
+              pagination: {
+                hasMore: AccountSourceStore.hasMore(record),
+                status: record.status
+              }
+            }]
+          : [];
+      });
     }
 
     /**
-     * Returns the latest account watch-later total count.
+     * Returns the full account watch-later count when available.
      *
      * @returns {number | null}
      */
     currentWatchLaterCount() {
-      return this.watchLaterCount;
+      return this.records.get(SourceKind.WATCH_LATER).watchLaterCount;
     }
 
     /**
-     * Adds one archive to Bilibili's watch-later list.
+     * Adds an archive and refreshes watch later at its current expansion depth.
      *
      * @param {string} targetUrl
      * @param {string} language
@@ -3148,12 +3215,22 @@
         throw new Error("Missing watch-later target identity");
       }
 
+      const records = this.records;
       await AccountSourceStore.addWatchLaterApiItem(identity);
-      this.refresh(language, true);
+
+      if (records !== this.records) {
+        return;
+      }
+
+      if (this.language !== UiStrings.normalizeLanguage(language)) {
+        await this.refresh(language);
+      } else {
+        await this.refreshSource(SourceKind.WATCH_LATER);
+      }
     }
 
     /**
-     * Deletes one archive from Bilibili's watch-later list and local source.
+     * Deletes an archive from the account and the retained watch-later items.
      *
      * @param {string} aid
      * @returns {Promise<void>}
@@ -3165,165 +3242,259 @@
         throw new Error("Missing watch-later aid");
       }
 
+      const record = this.records.get(SourceKind.WATCH_LATER);
       await AccountSourceStore.deleteWatchLaterApiItem(normalizedAid);
 
+      if (this.records.get(SourceKind.WATCH_LATER) !== record) {
+        return;
+      }
+
+      const wasRefreshing = Boolean(record.controller);
+      record.controller?.abort();
+      record.controller = null;
+      record.status = AccountSourceStatus.READY;
       const didRemove = this.removeWatchLaterItem(normalizedAid);
       const didDecrement = this.decrementWatchLaterCount();
 
-      if (didRemove || didDecrement) {
+      if (didRemove || didDecrement || wasRefreshing) {
         this.onChange();
+      }
+
+      if (wasRefreshing) {
+        await this.refreshSource(SourceKind.WATCH_LATER);
       }
     }
 
     /**
-     * Decrements the loaded watch-later count after a successful deletion.
+     * Decrements the loaded account count after a successful deletion.
      *
      * @returns {boolean}
      */
     decrementWatchLaterCount() {
-      if (this.watchLaterCount === null) {
+      const record = this.records.get(SourceKind.WATCH_LATER);
+      if (record.watchLaterCount === null) {
         return false;
       }
 
-      this.watchLaterCount = Math.max(0, this.watchLaterCount - 1);
+      record.watchLaterCount = Math.max(0, record.watchLaterCount - 1);
       return true;
     }
 
     /**
-     * Removes one archive from the loaded watch-later source.
+     * Removes an archive from visible and retained watch-later items.
      *
      * @param {string} aid
      * @returns {boolean}
      */
     removeWatchLaterItem(aid) {
-      let didRemove = false;
-
-      this.sources = this.sources
-        .map((source) => {
-          if (source.kind !== SourceKind.WATCH_LATER) {
-            return source;
-          }
-
-          const items = source.items.filter(
-            (item) => item.watchLaterAid !== aid
-          );
-
-          if (items.length === source.items.length) {
-            return source;
-          }
-
-          didRemove = true;
-
-          return items.length > 0 ? { ...source, items } : null;
-        })
-        .filter(Boolean);
-
+      const record = this.records.get(SourceKind.WATCH_LATER);
+      const items = record.items.filter((item) => item.watchLaterAid !== aid);
+      const didRemove = items.length !== record.items.length;
+      record.items = items;
       return didRemove;
     }
 
     /**
-     * Starts one account-source refresh for the current UI language.
+     * Loads account sources once per language, or explicitly refreshes them.
      *
      * @param {string} language
      * @param {boolean} [force]
+     * @returns {Promise<void>}
      */
-    refresh(language, force = false) {
+    async refresh(language, force = false) {
       const normalizedLanguage = UiStrings.normalizeLanguage(language);
 
-      if (this.loading) {
-        if (!force) {
-          return;
-        }
-
-        this.abortController?.abort();
+      if (this.language !== normalizedLanguage) {
+        this.stop();
+        this.language = normalizedLanguage;
       }
 
-      if (!force && this.loadedLanguage === normalizedLanguage) {
+      await Promise.all(ACCOUNT_SOURCE_ORDER.map((kind) => {
+        const record = this.records.get(kind);
+        return !force && (record.loaded || record.controller)
+          ? undefined
+          : this.refreshSource(kind);
+      }));
+    }
+
+    /**
+     * Refreshes one source while preserving its visible-item budget.
+     *
+     * @param {string} kind
+     * @returns {Promise<void>}
+     */
+    async refreshSource(kind) {
+      const record = this.records.get(kind);
+      const controller = this.beginRequest(record);
+      const url = kind === SourceKind.WATCH_LATER
+        ? WATCH_LATER_SOURCE_URL
+        : HISTORY_SOURCE_URL;
+
+      try {
+        const result = await AccountSourceStore.fetchSourceRecord(
+          kind, url, controller.signal, this.language
+        );
+
+        if (this.isCurrentRequest(record, controller)) {
+          record.items = result.source?.items ?? [];
+          record.cursor = result.cursor;
+          record.cursorKeys.clear();
+          record.watchLaterCount = result.watchLaterCount;
+        }
+      } catch (_error) {
+        // Account refreshes retain usable items when Bilibili is unavailable.
+      } finally {
+        if (this.isCurrentRequest(record, controller)) {
+          record.loaded = true;
+          record.status = AccountSourceStatus.READY;
+          record.controller = null;
+          this.onChange();
+        }
+      }
+    }
+
+    /**
+     * Reveals retained items or appends one older history page.
+     *
+     * @param {string} kind
+     * @returns {Promise<void>}
+     */
+    async loadMore(kind) {
+      const record = this.records.get(kind);
+      if (!record) {
+        throw new Error("Unknown account source kind");
+      }
+
+      if (record.controller || !AccountSourceStore.hasMore(record)) {
         return;
       }
 
-      if (this.loadedLanguage !== normalizedLanguage) {
-        this.sources = [];
+      if (record.items.length > record.visibleCount) {
+        record.visibleCount += ACCOUNT_MORE_BATCH_SIZE;
+        record.status = AccountSourceStatus.READY;
+        this.onChange();
+        return;
       }
 
-      const sequence = this.sequence + 1;
-      const controller = new AbortController();
-      this.sequence = sequence;
-      this.loading = true;
-      this.abortController = controller;
-      this.loadingLanguage = normalizedLanguage;
+      const cursor = record.cursor;
+      const controller = this.beginRequest(record);
 
-      AccountSourceStore.fetchSources(controller.signal, normalizedLanguage)
-        .then((result) => {
-          if (sequence !== this.sequence) {
-            return;
+      try {
+        const result = await AccountSourceStore.fetchSourceRecord(
+          kind,
+          AccountSourceStore.historyUrlFor(cursor),
+          controller.signal,
+          this.language
+        );
+
+        if (!this.isCurrentRequest(record, controller)) {
+          return;
+        }
+
+        const seen = new Set(record.items.map(AccountSourceAdapter.itemKey));
+        for (const item of result.source?.items ?? []) {
+          const key = AccountSourceAdapter.itemKey(item);
+          if (!seen.has(key)) {
+            seen.add(key);
+            record.items.push(item);
           }
+        }
 
-          this.sources = result.sources;
-          this.watchLaterCount = result.watchLaterCount;
+        record.visibleCount += ACCOUNT_MORE_BATCH_SIZE;
+        record.cursorKeys.add(JSON.stringify(cursor));
+        record.cursor = result.cursor &&
+          !record.cursorKeys.has(JSON.stringify(result.cursor))
+          ? result.cursor
+          : null;
+        record.status = AccountSourceStatus.READY;
+      } catch (_error) {
+        if (this.isCurrentRequest(record, controller)) {
+          record.status = AccountSourceStatus.ERROR;
+        }
+      } finally {
+        if (this.isCurrentRequest(record, controller)) {
+          record.controller = null;
           this.onChange();
-        })
-        .catch((error) => {
-          if (error?.name === "AbortError") {
-            return;
-          }
-
-          if (sequence === this.sequence) {
-            this.sources = [];
-            this.watchLaterCount = null;
-          }
-        })
-        .finally(() => {
-          if (sequence !== this.sequence) {
-            return;
-          }
-
-          this.loading = false;
-          this.abortController = null;
-          this.loadedLanguage = normalizedLanguage;
-          this.loadingLanguage = null;
-        });
+        }
+      }
     }
 
     /**
-     * Cancels pending account fetches and clears loaded sources.
+     * Starts a source request and invalidates its previous request.
+     *
+     * @param {AccountSourceRecord} record
+     * @returns {AbortController}
+     */
+    beginRequest(record) {
+      record.controller?.abort();
+      const controller = new AbortController();
+      record.controller = controller;
+      record.status = AccountSourceStatus.LOADING;
+      this.onChange();
+      return controller;
+    }
+
+    /**
+     * Rejects completions from canceled requests and earlier store sessions.
+     *
+     * @param {AccountSourceRecord} record
+     * @param {AbortController} controller
+     * @returns {boolean}
+     */
+    isCurrentRequest(record, controller) {
+      return this.records.get(record.kind) === record &&
+        record.controller === controller && !controller.signal.aborted;
+    }
+
+    /**
+     * Cancels account work and resets the retained lists and expansion state.
      */
     stop() {
-      this.sequence += 1;
-      this.abortController?.abort();
-      this.abortController = null;
-      this.loading = false;
-      this.sources = [];
-      this.loadedLanguage = null;
-      this.loadingLanguage = null;
-      this.watchLaterCount = null;
+      for (const record of this.records.values()) {
+        record.controller?.abort();
+      }
+
+      this.records = new Map(ACCOUNT_SOURCE_ORDER.map((kind) => [
+        kind,
+        {
+          kind,
+          items: [],
+          visibleCount: kind === SourceKind.WATCH_LATER
+            ? ACCOUNT_WATCH_LATER_INITIAL_SIZE
+            : ACCOUNT_HISTORY_PAGE_SIZE,
+          cursor: null,
+          cursorKeys: new Set(),
+          watchLaterCount: null,
+          loaded: false,
+          status: AccountSourceStatus.READY,
+          controller: null
+        }
+      ]));
+      this.language = null;
     }
 
     /**
-     * Fetches all account-backed video-list sources.
+     * Returns whether retained items or a history continuation remain.
      *
-     * @param {AbortSignal} signal
-     * @param {string} language
-     * @returns {Promise<AccountSourceFetchResult>}
+     * @param {AccountSourceRecord} record
+     * @returns {boolean}
      */
-    static async fetchSources(signal, language) {
-      const requests = [
-        { kind: SourceKind.WATCH_LATER, url: WATCH_LATER_SOURCE_URL },
-        { kind: SourceKind.HISTORY, url: HISTORY_SOURCE_URL }
-      ];
+    static hasMore(record) {
+      return record.items.length > record.visibleCount || Boolean(record.cursor);
+    }
 
-      const records = await Promise.all(
-        requests.map(({ kind, url }) =>
-          AccountSourceStore.fetchSourceRecord(kind, url, signal, language)
-        )
-      );
-
-      return {
-        sources: records.map((record) => record.source).filter(Boolean),
-        watchLaterCount:
-          records.find((record) => record.kind === SourceKind.WATCH_LATER)
-            ?.watchLaterCount ?? null
-      };
+    /**
+     * Builds the next history request from Bilibili's continuation fields.
+     *
+     * @param {HistoryCursor} cursor
+     * @returns {string}
+     */
+    static historyUrlFor(cursor) {
+      const url = new URL(HISTORY_SOURCE_URL);
+      url.searchParams.set("max", String(cursor.max));
+      url.searchParams.set("view_at", String(cursor.viewAt));
+      url.searchParams.set("business", cursor.business);
+      return url.href;
     }
 
     /**
@@ -3352,41 +3523,21 @@
      * @returns {Promise<AccountSourceFetchRecord>}
      */
     static async fetchSourceRecord(kind, url, signal, language) {
-      try {
-        const payload = await AccountSourceStore.fetchApiPayload(url, signal);
+      const payload = await AccountSourceStore.fetchApiPayload(url, signal);
 
-        if (!AccountSourceStore.isSuccessfulPayload(payload)) {
-          return AccountSourceStore.emptySourceRecord(kind);
-        }
-
-        return {
-          kind,
-          source: AccountSourceAdapter.sourceFromPayload(kind, payload, language),
-          watchLaterCount:
-            kind === SourceKind.WATCH_LATER
-              ? AccountSourceAdapter.watchLaterCountFromPayload(payload)
-              : null
-        };
-      } catch (error) {
-        if (error?.name === "AbortError") {
-          throw error;
-        }
-
-        return AccountSourceStore.emptySourceRecord(kind);
+      if (!AccountSourceStore.isSuccessfulPayload(payload)) {
+        throw new Error("Account source request failed");
       }
-    }
 
-    /**
-     * Returns an empty account-source record for a failed source request.
-     *
-     * @param {string} kind
-     * @returns {AccountSourceFetchRecord}
-     */
-    static emptySourceRecord(kind) {
       return {
         kind,
-        source: null,
-        watchLaterCount: null
+        source: AccountSourceAdapter.sourceFromPayload(kind, payload, language),
+        cursor: kind === SourceKind.HISTORY
+          ? AccountSourceAdapter.historyCursorFromPayload(payload)
+          : null,
+        watchLaterCount: kind === SourceKind.WATCH_LATER
+          ? AccountSourceAdapter.watchLaterCountFromPayload(payload)
+          : null
       };
     }
 
@@ -5351,6 +5502,9 @@
       this.onWatchLaterDelete = null;
       this.onVideoCardNavigate = null;
       this.onSourceRouteChange = null;
+      this.onSourceMore = null;
+      /** @type {SourceMoreInteraction | null} */
+      this.pendingSourceMore = null;
       this.pendingWatchLaterAddKeys = new Set();
       this.pendingWatchLaterDeleteAids = new Set();
       this.completedWatchLaterAddKeys = new Set();
@@ -5383,6 +5537,7 @@
      * @param {(sourceKind: string, targetUrl: string) => void} onVideoCardNavigate
      * @param {(state: SourceRouteState) => void} onSourceRouteChange
      * @param {SourceRouteState | null} sourceRouteState
+     * @param {(sourceKind: string) => Promise<void>} onSourceMore
      */
     render(
       regions,
@@ -5396,7 +5551,8 @@
       onWatchLaterDelete,
       onVideoCardNavigate,
       onSourceRouteChange,
-      sourceRouteState
+      sourceRouteState,
+      onSourceMore
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5419,6 +5575,7 @@
       this.onWatchLaterDelete = onWatchLaterDelete;
       this.onVideoCardNavigate = onVideoCardNavigate;
       this.onSourceRouteChange = onSourceRouteChange;
+      this.onSourceMore = onSourceMore;
       this.setSources(
         regions.sources,
         resetSourceRoute,
@@ -6589,6 +6746,7 @@
         this.renderedSourceKind = selectedSource.kind;
       } else {
         this.renderedSourceKind = null;
+        this.pendingSourceMore = null;
         this.videoCardStates = new WeakMap();
         this.rail.replaceChildren();
       }
@@ -8144,6 +8302,13 @@
      * @param {boolean} resetScroll
      */
     renderRail(source, resetScroll) {
+      if (resetScroll) {
+        this.pendingSourceMore = null;
+      }
+
+      const moreInteraction = this.pendingSourceMore?.kind === source.kind
+        ? this.pendingSourceMore
+        : null;
       const preservedScrollLeft = resetScroll ? 0 : this.rail.scrollLeft;
       const { title, row } = this.ensureRailSourceGroup(source, resetScroll);
       title.textContent = UiStrings.sourceLabel(source.kind, this.language);
@@ -8156,6 +8321,7 @@
       const keyCounts = new Map();
       let previous = null;
       let currentCard = null;
+      let firstNewCard = null;
 
       for (let index = 0; index < source.items.length; index += 1) {
         const item = source.items[index];
@@ -8179,6 +8345,10 @@
         }
         usedKeys.add(cardKey);
 
+        if (moreInteraction && !moreInteraction.cardKeys.has(cardKey)) {
+          firstNewCard ??= card;
+        }
+
         if (matchReason && !currentCard) {
           currentCard = card;
         }
@@ -8192,16 +8362,119 @@
       }
 
       this.removeStaleVideoCards(row, usedKeys);
-      const didLocateCurrentCard = this.locateCurrentRailCard(
-        source.kind,
-        currentCard,
-        currentRouteKey,
-        resetScroll
-      );
+      if (moreInteraction && source.pagination?.status !== AccountSourceStatus.LOADING) {
+        if (
+          moreInteraction.keyboard &&
+          this.document.activeElement === moreInteraction.button
+        ) {
+          const focusCard = firstNewCard ??
+            (source.pagination?.hasMore ? null : previous);
+          focusCard?.querySelector(".bibilili-card-link")?.focus({
+            preventScroll: true
+          });
+        }
+        this.pendingSourceMore = null;
+      }
+
+      this.renderSourceMore(source, row);
+
+      let didLocateCurrentCard = false;
+      if (moreInteraction) {
+        if (currentCard && currentRouteKey) {
+          this.locatedCurrentRouteKeys.set(source.kind, currentRouteKey);
+        }
+      } else {
+        didLocateCurrentCard = this.locateCurrentRailCard(
+          source.kind,
+          currentCard,
+          currentRouteKey,
+          resetScroll
+        );
+      }
 
       if (!didLocateCurrentCard && !resetScroll) {
         this.rail.scrollLeft = preservedScrollLeft;
       }
+    }
+
+    /**
+     * Reuses a trailing account-source button while continuation is available.
+     *
+     * @param {VideoListSource} source
+     * @param {HTMLElement} row
+     */
+    renderSourceMore(source, row) {
+      let button = row.querySelector(".bibilili-source-more-button");
+      if (source.root !== null || !source.pagination?.hasMore) {
+        button?.remove();
+        return;
+      }
+
+      if (!button) {
+        button = UiControl.button(
+          this.document,
+          "bibilili-source-more-button",
+          (event) => {
+            void this.handleSourceMoreClick(source.kind, button, event);
+          }
+        );
+        button.setAttribute("aria-controls", LIST_RAIL_ID);
+        row.append(button);
+      }
+
+      this.updateSourceMoreButton(button, source.kind, source.pagination.status);
+    }
+
+    /**
+     * Updates continuation text without dropping focus during a request.
+     *
+     * @param {HTMLButtonElement} button
+     * @param {string} kind
+     * @param {string} status
+     */
+    updateSourceMoreButton(button, kind, status) {
+      const loading = status === AccountSourceStatus.LOADING;
+      const message = loading
+        ? UiMessage.SOURCE_MORE_LOADING_LABEL
+        : status === AccountSourceStatus.ERROR
+          ? UiMessage.SOURCE_MORE_RETRY_LABEL
+          : UiMessage.SOURCE_MORE_LABEL;
+      const label = UiStrings.message(message, this.language);
+      LayoutRoot.setStableText(button, label);
+      UiControl.setLabel(button, UiStrings.message(
+        UiMessage.SOURCE_MORE_BUTTON_LABEL,
+        this.language,
+        [label, UiStrings.sourceLabel(kind, this.language)]
+      ));
+      button.setAttribute("aria-disabled", String(loading));
+      button.setAttribute("aria-busy", String(loading));
+    }
+
+    /**
+     * Loads more cards and records keyboard focus intent for reconciliation.
+     *
+     * @param {string} kind
+     * @param {HTMLButtonElement} button
+     * @param {MouseEvent} event
+     * @returns {Promise<void>}
+     */
+    async handleSourceMoreClick(kind, button, event) {
+      if (
+        !this.onSourceMore ||
+        !button.isConnected ||
+        button.getAttribute("aria-disabled") === "true"
+      ) {
+        return;
+      }
+
+      this.pendingSourceMore = {
+        kind,
+        button,
+        keyboard: event.detail === 0,
+        cardKeys: new Set(this.videoCardsByKey(button.parentElement).keys())
+      };
+      this.updateSourceMoreButton(button, kind, AccountSourceStatus.LOADING);
+      await this.onSourceMore(kind);
     }
 
     /**
@@ -8358,12 +8631,11 @@
      */
     removeStaleVideoCards(row, usedKeys) {
       for (const child of Array.from(row.children)) {
-        const key =
-          child instanceof HTMLElement
-            ? child.dataset.bibililiCardKey
-            : null;
-
-        if (!key || !usedKeys.has(key)) {
+        if (
+          child instanceof HTMLElement &&
+          child.classList.contains("bibilili-video-card") &&
+          !usedKeys.has(child.dataset.bibililiCardKey)
+        ) {
           child.remove();
         }
       }
@@ -9382,7 +9654,8 @@
         (sourceKind, targetUrl) =>
           this.recordVideoCardNavigationSource(sourceKind, targetUrl),
         (state) => this.storeSourceRouteState(state),
-        sourceRouteState
+        sourceRouteState,
+        (sourceKind) => this.loadMoreAccountSource(sourceKind)
       );
       this.nextPageSourceRouteState = null;
     }
@@ -9576,6 +9849,17 @@
     }
 
     /**
+     * Expands an account source and reconciles its current rail.
+     *
+     * @param {string} sourceKind
+     * @returns {Promise<void>}
+     */
+    async loadMoreAccountSource(sourceKind) {
+      await this.accountSources.loadMore(sourceKind);
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
+    }
+
+    /**
      * Adds one card target to watch later without changing the current page.
      *
      * @param {string} targetUrl
@@ -9703,6 +9987,21 @@
    * @property {string} kind Closed source kind.
    * @property {Element | null} root Page-owned source root for DOM sources.
    * @property {VideoItem[]} items Extracted ordered video items.
+   * @property {SourcePagination} [pagination] Account-source continuation state.
+   */
+
+  /**
+   * @typedef {object} SourcePagination
+   * @property {boolean} hasMore Retained items or a history cursor remain.
+   * @property {string} status Closed AccountSourceStatus value.
+   */
+
+  /**
+   * @typedef {object} SourceMoreInteraction
+   * @property {string} kind Account source being expanded.
+   * @property {HTMLButtonElement} button Activated continuation control.
+   * @property {boolean} keyboard Move focus if it remains on this control.
+   * @property {Set<string>} cardKeys Render keys present before activation.
    */
 
   /**
@@ -9720,15 +10019,30 @@
    */
 
   /**
-   * @typedef {object} AccountSourceFetchResult
-   * @property {VideoListSource[]} sources Account-backed source records.
-   * @property {number | null} watchLaterCount Full account watch-later count when available.
+   * @typedef {object} HistoryCursor
+   * @property {number} max Last history record identity.
+   * @property {number} viewAt Last history view timestamp.
+   * @property {string} business Bilibili cursor business value.
+   */
+
+  /**
+   * @typedef {object} AccountSourceRecord
+   * @property {string} kind Closed account source kind.
+   * @property {VideoItem[]} items All retained valid items in API order.
+   * @property {number} visibleCount Maximum number of retained items to render.
+   * @property {HistoryCursor | null} cursor Next older history page.
+   * @property {Set<string>} cursorKeys Successfully consumed history cursors.
+   * @property {number | null} watchLaterCount Full watch-later count when available.
+   * @property {boolean} loaded Initial load completed, including advisory failure.
+   * @property {string} status Closed AccountSourceStatus value.
+   * @property {AbortController | null} controller Current source request.
    */
 
   /**
    * @typedef {object} AccountSourceFetchRecord
    * @property {string} kind Closed source kind.
    * @property {VideoListSource | null} source Account-backed source when the payload has valid items.
+   * @property {HistoryCursor | null} cursor Next older history page when available.
    * @property {number | null} watchLaterCount Full watch-later count for the watch-later source.
    */
 
@@ -9804,6 +10118,7 @@
     window.__bibililiInternals = Object.freeze({
       AccountSourceAdapter,
       AccountSourceStore,
+      AccountSourceStatus,
       LayoutRoot,
       RegionDiscovery,
       SourceAdapter,
