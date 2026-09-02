@@ -1,6 +1,7 @@
 const TEST_WATCH_HREF = "https://www.bilibili.com/video/BV1aa411c7mD";
 
 const TEST_SOURCE_KIND = Object.freeze({
+  PARTS: "parts",
   COLLECTION: "collection",
   RECOMMENDATIONS: "recommendations",
   WATCH_LATER: "watch_later",
@@ -8,6 +9,7 @@ const TEST_SOURCE_KIND = Object.freeze({
 });
 
 const TEST_SOURCE_ORDER = Object.freeze([
+  TEST_SOURCE_KIND.PARTS,
   TEST_SOURCE_KIND.COLLECTION,
   TEST_SOURCE_KIND.RECOMMENDATIONS,
   TEST_SOURCE_KIND.WATCH_LATER,

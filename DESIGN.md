@@ -215,10 +215,10 @@ comment controls.
 
 ## Video List Source
 
-A video list source is a Bilibili list that can produce video items. The source
-kind is a closed set represented by source-kind constants. The initial kinds are
-collection, recommendations, watch later, and history. A source kind is shown
-when page markup or an account list exposes matching content.
+A video list source is a Bilibili list that can produce video items. Source
+kinds form a closed set: parts, collection, recommendations, watch later, and
+history. A source kind is shown when page markup or an account list exposes
+matching content.
 
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items. Source adapters convert page-owned list markup and
@@ -227,6 +227,25 @@ Bilibili account API payloads into video items for the bottom dock renderer.
 The route model converts playable Bilibili URLs into route identities, archive
 preview identities, canonical archive URLs, and route keys. Archive route keys
 include the page number; bangumi route keys use the playable bangumi identity.
+
+Parts and collection sources require at least two valid items. A one-item list
+does not provide navigation and remains absent from the source bar. Other source
+kinds require one valid item.
+
+## Parts and Collection Sources
+
+A parts source is the ordered page list within the current archive. Each item
+targets the current BV or AV with its one-based `p` route. Native part labels
+may be short values such as `1`. Bibilili derives parts from explicit multipage
+links or the nested page rows in Bilibili's video-pod.
+
+A collection source is an ordered list of distinct playable archives. Its items
+target separate BV or AV routes. Nested part rows do not become collection
+items.
+
+Bilibili may render collection archives and the current archive's parts in one
+video-pod. Discovery can derive both sources from that root while keeping their
+items and routes separate.
 
 ## Account Video List Source
 
@@ -277,9 +296,9 @@ source adapters may derive targets from anchors, URL or id data attributes, and
 Bilibili video-pod rows. Derived targets are normalized before the renderer
 receives them.
 
-Recommendation sources omit the current watch video. Collection sources
-preserve Bilibili's ordered list entries so the current item remains
-addressable in the rail.
+Recommendation sources omit the current watch video. Parts sources preserve
+the current archive's page order. Collection sources preserve Bilibili's
+archive order so the current archive remains addressable in the rail.
 
 ## Video Preview Hydration
 
@@ -300,8 +319,8 @@ videos keep the title placeholder for the page session.
 
 The list dock is the bottom container for the selected video-list source. It
 contains the source bar and list rail, and it is the canonical visual placement
-for collections, recommendations, watch-later entries, history entries, and
-later video-list kinds.
+for parts, collections, recommendations, watch-later entries, history entries,
+and later video-list kinds.
 
 The list dock has bounded height and owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
@@ -403,10 +422,10 @@ order can take effect without changing Bilibili behavior.
 ## Source Route
 
 The source route is the selected source kind for the list dock. It defaults to
-the first available source in source-kind order: collection, recommendations,
-watch later, history. Reconciliation preserves the current route while its
-source remains available; when the route disappears, the first available source
-becomes selected.
+the first available source in source-kind order: parts, collection,
+recommendations, watch later, history. Reconciliation preserves the current
+route while its source remains available; when the route disappears, the first
+available source becomes selected.
 
 An origin route is a one-navigation source-route hint created by normal
 same-tab activation of an extension-owned video card. The next watch page
@@ -431,9 +450,9 @@ after their fetch completes.
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
 kind, then contains the watch action group when native watch actions are
-available. The initial source
-buttons represent collection, recommendations, watch later, and history when
-those sources are available. Their labels use the current UI language.
+available. Source buttons represent parts, collection, recommendations, watch
+later, and history when those sources are available. Their labels use the
+current UI language.
 
 The selected source button keeps `aria-current` for the remembered route and
 exposes the rail open state with `aria-expanded`. The selected visual treatment
@@ -463,10 +482,14 @@ When an origin route selects the destination source, the rail opens with that
 source's cards. The behavior applies to extension-owned bottom-rail card links;
 other card controls keep their own behavior.
 
+When the selected source is parts, the rail identifies the card whose archive
+page route matches the current watch route. It scrolls to that card once for the
+current page session and again when the parts route is opened explicitly.
+
 When the selected source is a collection, the rail identifies the card whose
-watch route matches the current page. It scrolls to that card once for the
-current page session, and it does so again when the collection route is opened
-explicitly.
+archive matches the current video. A native current-row marker is equivalent to
+an archive match. The rail scrolls to that card once for the current page
+session and again when the collection route is opened explicitly.
 
 When the selected source is watch later, the rail uses the same current-card
 matching, positioning, and highlight path as collection. If the current watch
@@ -488,9 +511,10 @@ child nodes are reused. Advisory list or thumbnail updates change card content
 and explicit thumbnail state in place so normal link activation is not
 interrupted.
 
-A collection card matching the current watch route exposes `aria-current` and
-uses selected border and title colors. For collection cards, a native
-current-row marker from Bilibili is equivalent to a matching watch route.
+A parts card matching the current archive page route exposes `aria-current` and
+uses selected border and title colors. A collection card for the current
+archive uses the same treatment. For collection cards, a native current-row
+marker from Bilibili is equivalent to an archive match.
 
 Collection and recommendation cards with archive targets include an overlay
 add-to-watch-later button. Watch-later cards with a deletion identity include
@@ -568,8 +592,8 @@ Bibilili mounts only after it discovers a player region.
 If comments are unavailable or only an empty shell is present, the comment pane
 shows the comment retry state.
 
-The video header shows only the parts Bilibili exposes. When no header part
-is available, the comment pane follows its comment state alone.
+The video header shows only the metadata fields Bilibili exposes. When no
+header field is available, the comment pane follows its comment state alone.
 
 If no video-list source yields valid video items, the list dock is shown only
 as the enabled activation surface.

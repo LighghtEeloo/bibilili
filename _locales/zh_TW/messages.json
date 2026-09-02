@@ -107,6 +107,10 @@
     "message": "重新載入評論",
     "description": "Button label for retrying comment hydration."
   },
+  "sourcePartsLabel": {
+    "message": "分P",
+    "description": "Label for a multipart-video page-list source."
+  },
   "sourceCollectionLabel": {
     "message": "合輯",
     "description": "Label for a collection video-list source."

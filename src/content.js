@@ -242,6 +242,22 @@
     "li"
   ].join(",");
 
+  const VIDEO_POD_ARCHIVE_ITEM_SELECTOR = [
+    ".video-pod__item",
+    "[class*='video-pod__item']",
+    ".video-pod-item",
+    "[class*='video-pod-item']",
+    ".pod-item",
+    "[class*='pod-item']"
+  ].join(",");
+
+  const VIDEO_PART_ITEM_SELECTOR = [
+    ".page-item",
+    "[class*='page-item']",
+    ".singlep-list-item-inner",
+    ".multip-list-item"
+  ].join(",");
+
   const CURRENT_SOURCE_ITEM_ATTR_SELECTOR = [
     "[aria-current='page']",
     "[aria-current='true']",
@@ -680,6 +696,7 @@
    * Closed source kinds used by discovery, state, rendering, and DOM markers.
    */
   const SourceKind = Object.freeze({
+    PARTS: "parts",
     COLLECTION: "collection",
     WATCH_LATER: "watch_later",
     HISTORY: "history",
@@ -706,6 +723,7 @@
   });
 
   const SOURCE_LABEL_MESSAGE_NAMES = Object.freeze({
+    [SourceKind.PARTS]: "sourcePartsLabel",
     [SourceKind.COLLECTION]: "sourceCollectionLabel",
     [SourceKind.WATCH_LATER]: "sourceWatchLaterLabel",
     [SourceKind.HISTORY]: "sourceHistoryLabel",
@@ -735,6 +753,7 @@
   });
 
   const SOURCE_ORDER = Object.freeze([
+    SourceKind.PARTS,
     SourceKind.COLLECTION,
     SourceKind.RECOMMENDATIONS,
     SourceKind.WATCH_LATER,
@@ -770,10 +789,18 @@
    */
   const SOURCE_DEFINITIONS = Object.freeze([
     {
-      kind: SourceKind.COLLECTION,
+      kind: SourceKind.PARTS,
       selectors: [
         "#multi_page",
-        // Note: Bilibili renders its visible ordered video list as a video-pod.
+        // Note: Bilibili nests the current archive's part rows in video-pod.
+        VIDEO_POD_SELECTOR
+      ],
+      pattern: /(?:\u5206P|\u5206\u96c6|\u9009\u96c6|parts?)/i
+    },
+    {
+      kind: SourceKind.COLLECTION,
+      selectors: [
+        // Note: Bilibili renders collection archives and their parts together.
         VIDEO_POD_SELECTOR,
         ".player-auxiliary-playlist",
         ".player-auxiliary-playlist-list",
@@ -787,7 +814,7 @@
         "[class*='anthology']"
       ],
       pattern:
-        /(?:\u5408\u96c6|\u5206\u96c6|\u89c6\u9891\u9009\u96c6|\u961f\u5217|collection|section|anthology|queue|playlist)/i
+        /(?:\u5408\u96c6|\u89c6\u9891\u9009\u96c6|\u961f\u5217|collection|section|anthology|queue|playlist)/i
     },
     {
       kind: SourceKind.WATCH_LATER,
@@ -1521,14 +1548,18 @@
      */
     extractItems() {
       const itemLimit =
-        this.kind === SourceKind.COLLECTION
+        this.kind === SourceKind.PARTS || this.kind === SourceKind.COLLECTION
           ? Number.POSITIVE_INFINITY
           : MAX_ITEMS_PER_SOURCE;
+      const keyForItem =
+        this.kind === SourceKind.PARTS
+          ? SourceAdapter.videoPartItemKey
+          : SourceAdapter.itemKey;
 
       return VideoItemCollector.collect(
         this.videoTargets(),
         (target, index) => this.itemFromTarget(target, index),
-        SourceAdapter.itemKey,
+        keyForItem,
         itemLimit
       );
     }
@@ -1539,7 +1570,128 @@
      * @returns {Element[]}
      */
     videoTargets() {
+      if (this.kind === SourceKind.PARTS) {
+        return SourceAdapter.videoPartTargetsIn(this.root);
+      }
+
+      if (this.kind === SourceKind.COLLECTION) {
+        const videoPod = this.root.matches(VIDEO_POD_SELECTOR)
+          ? this.root
+          : this.root.querySelector(VIDEO_POD_SELECTOR);
+
+        if (videoPod) {
+          // Note: Broad right-column candidates can contain both video-pod and
+          // recommendations. Only the nested pod supplies collection archives.
+          return SourceAdapter.videoPodArchiveTargetsIn(videoPod);
+        }
+      }
+
       return SourceAdapter.videoTargetsIn(this.root);
+    }
+
+    /**
+     * Finds archive-level entries in Bilibili's combined collection and parts
+     * surface.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static videoPodArchiveTargetsIn(root) {
+      const archiveItems = DomProbe.queryAll(
+        root,
+        VIDEO_POD_ARCHIVE_ITEM_SELECTOR
+      ).filter(
+        (element) =>
+          !element.parentElement?.closest(VIDEO_POD_ARCHIVE_ITEM_SELECTOR)
+      );
+      const fallbackTargets = [
+        ...SourceAdapter.dataTargetsIn(root),
+        ...SourceAdapter.anchorTargetsIn(root).filter(
+          (anchor) => !anchor.closest(VIDEO_PART_ITEM_SELECTOR)
+        )
+      ];
+      const targets = archiveItems.length > 0 ? archiveItems : fallbackTargets;
+
+      return DomProbe.unique(targets)
+        .filter((target) => !DomProbe.isOwned(target))
+        .filter((target) => Boolean(SourceAdapter.explicitTargetUrlFor(target)));
+    }
+
+    /**
+     * Finds part rows for the current multipart archive.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static videoPartTargetsIn(root) {
+      if (root.matches(VIDEO_POD_SELECTOR)) {
+        return SourceAdapter.videoPodPartTargetsIn(root);
+      }
+
+      const currentIdentity = SourceAdapter.playableIdentityForUrl(
+        window.location.href
+      );
+
+      return SourceAdapter.videoTargetsIn(root).filter((target, index) => {
+        const targetUrl = SourceAdapter.targetUrlFor(target, index);
+
+        return Boolean(
+          currentIdentity &&
+            targetUrl &&
+            SourceAdapter.playableIdentityForUrl(targetUrl) === currentIdentity
+        );
+      });
+    }
+
+    /**
+     * Finds the current archive's nested page rows in a video-pod.
+     *
+     * Note: Bilibili places every page row below one archive element carrying
+     * the BV id. Those rows remain distinct part targets even though the archive
+     * ancestor is itself a playable data target.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static videoPodPartTargetsIn(root) {
+      const archive = SourceAdapter.currentVideoPodArchiveTarget(root);
+
+      if (!archive) {
+        return [];
+      }
+
+      return DomProbe.queryAll(archive, VIDEO_PART_ITEM_SELECTOR)
+        .filter((target) => !DomProbe.isOwned(target))
+        .filter((target) => !target.querySelector(VIDEO_PART_ITEM_SELECTOR))
+        .filter((target) => Boolean(DomProbe.compactText(target)));
+    }
+
+    /**
+     * Finds the video-pod archive entry representing the current BV or AV.
+     *
+     * @param {Element} root
+     * @returns {Element | null}
+     */
+    static currentVideoPodArchiveTarget(root) {
+      const archives = SourceAdapter.videoPodArchiveTargetsIn(root);
+      const currentIdentity = SourceAdapter.playableIdentityForUrl(
+        window.location.href
+      );
+      const matchingArchive = archives.find((archive) => {
+        const targetUrl = SourceAdapter.explicitTargetUrlFor(archive);
+
+        return Boolean(
+          currentIdentity &&
+            targetUrl &&
+            SourceAdapter.playableIdentityForUrl(targetUrl) === currentIdentity
+        );
+      });
+
+      if (matchingArchive) {
+        return matchingArchive;
+      }
+
+      return archives.length === 1 ? archives[0] : null;
     }
 
     /**
@@ -1665,7 +1817,10 @@
       }
 
       const card = SourceAdapter.cardForTarget(target);
-      const title = SourceAdapter.titleFor(target, card);
+      const title =
+        this.kind === SourceKind.PARTS
+          ? SourceAdapter.videoPartTitleFor(target, card)
+          : SourceAdapter.titleFor(target, card);
 
       if (!title) {
         return null;
@@ -1678,7 +1833,8 @@
         sourceKind: this.kind,
         isCurrent:
           this.kind === SourceKind.COLLECTION &&
-          SourceAdapter.isCurrentSourceTarget(target, card),
+          (SourceAdapter.isCurrentSourceTarget(target, card) ||
+            SourceAdapter.isCurrentWatchUrl(targetUrl)),
         duration: SourceAdapter.durationFor(card),
         author: SourceAdapter.metadataFor(card, "author"),
         viewCount: SourceAdapter.metadataFor(card, "viewCount"),
@@ -1711,6 +1867,20 @@
      * @returns {string | null}
      */
     static targetUrlFor(target, index = 0) {
+      return (
+        SourceAdapter.explicitTargetUrlFor(target) ??
+        SourceAdapter.videoPodPageUrl(target, index)
+      );
+    }
+
+    /**
+     * Returns an explicit playable URL from anchors or data without deriving a
+     * click-only video-pod page route.
+     *
+     * @param {Element} target
+     * @returns {string | null}
+     */
+    static explicitTargetUrlFor(target) {
       for (const anchor of SourceAdapter.anchorsForTarget(target)) {
         const url = SourceAdapter.normalizedUrl(anchor);
 
@@ -1751,7 +1921,7 @@
         }
       }
 
-      return SourceAdapter.videoPodPageUrl(target, index);
+      return null;
     }
 
     /**
@@ -2060,6 +2230,20 @@
     }
 
     /**
+     * Builds a part key that preserves distinct page routes even when their
+     * displayed titles repeat.
+     *
+     * @param {VideoItem} item
+     * @returns {string}
+     */
+    static videoPartItemKey(item) {
+      return (
+        SourceAdapter.watchRouteKeyForUrl(item.targetUrl) ??
+        `${item.targetUrl}\n${item.title}`
+      );
+    }
+
+    /**
      * Extracts a required video title.
      *
      * @param {Element} target
@@ -2078,6 +2262,42 @@
 
       for (const candidate of candidates) {
         const title = SourceAdapter.cleanTitle(candidate);
+
+        if (title) {
+          return title;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Extracts a part label while allowing short native labels such as `1`.
+     *
+     * @param {Element} target
+     * @param {Element} card
+     * @returns {string | null}
+     */
+    static videoPartTitleFor(target, card) {
+      const candidates = [
+        target.getAttribute("title"),
+        target.getAttribute("aria-label"),
+        ...SourceAdapter.textsFromSelectors(target, TITLE_SELECTORS),
+        ...SourceAdapter.textsFromSelectors(card, TITLE_SELECTORS),
+        DomProbe.compactText(target)
+      ];
+
+      for (const candidate of candidates) {
+        const text = SourceAdapter.cleanMetadata(candidate);
+
+        if (!text) {
+          continue;
+        }
+
+        const duration = SourceAdapter.durationToken(text);
+        const title = SourceAdapter.cleanMetadata(
+          duration ? text.replace(duration, "") : text
+        );
 
         if (title) {
           return title;
@@ -4744,7 +4964,10 @@
           const adapter = new SourceAdapter(definition.kind, root);
           const items = adapter.extractItems();
 
-          if (items.length === 0) {
+          if (
+            items.length <
+            RegionDiscovery.minimumSourceItemCount(definition.kind)
+          ) {
             continue;
           }
 
@@ -4758,6 +4981,16 @@
       }
 
       return this.chooseSources(candidates);
+    }
+
+    /**
+     * Returns the item count required for a source to provide navigation value.
+     *
+     * @param {string} kind
+     * @returns {number}
+     */
+    static minimumSourceItemCount(kind) {
+      return kind === SourceKind.PARTS || kind === SourceKind.COLLECTION ? 2 : 1;
     }
 
     /**
@@ -4997,11 +5230,12 @@
       }
 
       if (
-        definition.kind === SourceKind.COLLECTION &&
+        (definition.kind === SourceKind.PARTS ||
+          definition.kind === SourceKind.COLLECTION) &&
         root.matches(VIDEO_POD_SELECTOR)
       ) {
-        // Note: Bilibili's video-pod is the visible ordered video list and
-        // should beat broader collection-looking roots with more links.
+        // Note: Bilibili's video-pod is the visible ordered archive-and-parts
+        // surface and should beat broader list-looking roots with more links.
         score += 120;
       }
 
@@ -7978,6 +8212,7 @@
      */
     static sourceLocatesCurrentCard(sourceKind) {
       return (
+        sourceKind === SourceKind.PARTS ||
         sourceKind === SourceKind.COLLECTION ||
         sourceKind === SourceKind.WATCH_LATER
       );
@@ -8750,48 +8985,52 @@
         return this.selectedSourceKind;
       }
 
-      const currentCollection = this.currentCollectionSource(sources);
+      const currentPageSource = this.currentPageSource(sources);
 
-      if (currentCollection && !this.hasUserInteractedWithSources) {
-        return currentCollection.kind;
+      if (currentPageSource && !this.hasUserInteractedWithSources) {
+        return currentPageSource.kind;
       }
 
       return sources[0]?.kind ?? null;
     }
 
     /**
-     * Returns the collection source containing the current watch route.
+     * Returns the first page-owned contextual source containing the current
+     * watch route.
      *
      * @param {VideoListSource[]} sources
      * @returns {VideoListSource | null}
      */
-    currentCollectionSource(sources) {
-      const collection = sources.find(
-        (source) => source.kind === SourceKind.COLLECTION
-      );
-
-      if (!collection) {
-        return null;
-      }
-
+    currentPageSource(sources) {
       const currentRouteKey = SourceAdapter.currentWatchRouteKey();
       if (!currentRouteKey) {
         return null;
       }
 
-      const hasCurrentItem = collection.items.some((item) => {
-        const itemRouteKey = SourceAdapter.watchRouteKeyForUrl(item.targetUrl);
-        const matchReason = this.currentRailItemMatchReason(
-          collection.kind,
-          item,
-          currentRouteKey,
-          itemRouteKey
-        );
+      return (
+        sources.find((source) => {
+          if (
+            source.kind !== SourceKind.PARTS &&
+            source.kind !== SourceKind.COLLECTION
+          ) {
+            return false;
+          }
 
-        return Boolean(matchReason);
-      });
+          return source.items.some((item) => {
+            const itemRouteKey = SourceAdapter.watchRouteKeyForUrl(
+              item.targetUrl
+            );
+            const matchReason = this.currentRailItemMatchReason(
+              source.kind,
+              item,
+              currentRouteKey,
+              itemRouteKey
+            );
 
-      return hasCurrentItem ? collection : null;
+            return Boolean(matchReason);
+          });
+        }) ?? null
+      );
     }
 
     /**

@@ -107,6 +107,10 @@
     "message": "Reload comments",
     "description": "Button label for retrying comment hydration."
   },
+  "sourcePartsLabel": {
+    "message": "Parts",
+    "description": "Label for a multipart-video page-list source."
+  },
   "sourceCollectionLabel": {
     "message": "Collection",
     "description": "Label for a collection video-list source."

@@ -10,6 +10,7 @@ const { LanguageResolver, UiLanguage, UiStrings } = globalThis.__bibililiI18n;
 
 UiStrings.configure({
   sourceLabelMessageNames: {
+    parts: "sourcePartsLabel",
     history: "sourceHistoryLabel"
   },
   watchActionLabelMessageNames: {
@@ -36,6 +37,7 @@ test("loads catalog messages and formats known labels", async () => {
     return {
       ok: true,
       json: async () => ({
+        sourcePartsLabel: { message: "Parts" },
         sourceHistoryLabel: { message: "History" },
         watchActionCopyLinkLabel: { message: "Copy link" },
         watchActionCountLabel: {
@@ -54,6 +56,10 @@ test("loads catalog messages and formats known labels", async () => {
     await UiStrings.load(UiLanguage.ENGLISH);
 
     assert.deepEqual(requestedUrls, ["_locales/en/messages.json"]);
+    assert.equal(
+      UiStrings.sourceLabel("parts", UiLanguage.ENGLISH),
+      "Parts"
+    );
     assert.equal(
       UiStrings.sourceLabel("history", UiLanguage.ENGLISH),
       "History"
