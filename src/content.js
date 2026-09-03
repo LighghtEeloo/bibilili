@@ -40,6 +40,7 @@
   const ACCOUNT_WATCH_LATER_INITIAL_SIZE = 80;
   const ACCOUNT_MORE_BATCH_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
+  const RAIL_WINDOW_BUFFER = 3;
   const COMMENT_PANE_WIDTH_PROPERTY = "--bibilili-comment-pane-width";
   const COMMENT_PANE_MIN_WIDTH = 240;
   const COMMENT_PANE_MAX_WIDTH = 640;
@@ -3717,7 +3718,7 @@
   }
 
   /**
-   * Fetches missing archive preview images without blocking layout rendering.
+   * Fetches missing previews for the rail window and caches page-session results.
    */
   class VideoPreviewStore {
     /**
@@ -3731,67 +3732,50 @@
       this.records = new Map();
       this.queue = [];
       this.controllers = new Map();
-      this.activeCount = 0;
-      this.sequence = 0;
     }
 
     /**
-     * Returns sources with cached fetched thumbnails applied.
+     * Replaces preview demand with visible cards followed by nearby cards.
      *
-     * @param {VideoListSource[]} sources
-     * @returns {VideoListSource[]}
-     */
-    hydrateSources(sources) {
-      this.warmCurrentCollectionPreviews(sources);
-
-      return sources.map((source) => {
-        let changed = false;
-        const items = source.items.map((item) => {
-          const hydrated = this.hydrateItem(item);
-
-          if (hydrated !== item) {
-            changed = true;
-          }
-
-          return hydrated;
-        });
-
-        return changed ? { ...source, items } : source;
-      });
-    }
-
-    /**
-     * Queues collection previews near the current item before normal hydration.
+     * Off-window requests are canceled; completed results remain cached.
      *
-     * @param {VideoListSource[]} sources
+     * @param {VideoItem[]} items
      */
-    warmCurrentCollectionPreviews(sources) {
-      const source = sources.find(
-        (candidate) => candidate.kind === SourceKind.COLLECTION
-      );
-
-      if (!source) {
-        return;
-      }
-
-      const indexes = VideoPreviewStore.hydrationOrderForSource(source);
-
-      if (!indexes.length) {
-        return;
-      }
-
-      for (const index of indexes) {
-        const item = source.items[index];
+    setDemand(items) {
+      const wanted = new Map();
+      for (const item of items) {
         const identity = this.previewIdentityForItem(item);
-
-        if (identity && !this.records.has(identity.key)) {
-          this.enqueue(identity);
+        if (identity) {
+          wanted.set(identity.key, identity);
         }
       }
+
+      for (const identity of this.queue) {
+        this.records.delete(identity.key);
+      }
+      this.queue = [];
+
+      for (const [key, controller] of this.controllers) {
+        if (!wanted.has(key)) {
+          this.controllers.delete(key);
+          if (this.records.get(key)?.state === "loading") {
+            this.records.delete(key);
+          }
+          controller.abort();
+        }
+      }
+
+      for (const identity of wanted.values()) {
+        if (!this.records.has(identity.key)) {
+          this.records.set(identity.key, { state: "queued", identity });
+          this.queue.push(identity);
+        }
+      }
+      this.pump();
     }
 
     /**
-     * Applies a cached fetched thumbnail or queues one archive preview request.
+     * Applies a cached thumbnail without starting a request.
      *
      * @param {VideoItem} item
      * @returns {VideoItem}
@@ -3814,10 +3798,6 @@
         };
       }
 
-      if (!record) {
-        this.enqueue(identity);
-      }
-
       return item;
     }
 
@@ -3834,25 +3814,11 @@
     }
 
     /**
-     * Queues one preview request.
-     *
-     * @param {ArchiveVideoIdentity} identity
-     */
-    enqueue(identity) {
-      this.records.set(identity.key, {
-        state: "queued",
-        identity
-      });
-      this.queue.push(identity);
-      this.pump();
-    }
-
-    /**
      * Starts queued preview requests up to the concurrency limit.
      */
     pump() {
       while (
-        this.activeCount < MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES &&
+        this.controllers.size < MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES &&
         this.queue.length > 0
       ) {
         const identity = this.queue.shift();
@@ -3872,10 +3838,8 @@
      * @param {ArchiveVideoIdentity} identity
      */
     startFetch(identity) {
-      const sequence = this.sequence;
       const controller = new AbortController();
 
-      this.activeCount += 1;
       this.controllers.set(identity.key, controller);
       this.records.set(identity.key, {
         state: "loading",
@@ -3884,7 +3848,7 @@
 
       VideoPreviewStore.fetchPreview(identity, controller.signal)
         .then((thumbnailUrl) => {
-          if (sequence !== this.sequence) {
+          if (this.controllers.get(identity.key) !== controller) {
             return;
           }
 
@@ -3899,19 +3863,18 @@
 
           this.records.set(identity.key, { state: "unavailable" });
         })
-        .catch((error) => {
-          if (sequence !== this.sequence || error?.name === "AbortError") {
+        .catch(() => {
+          if (this.controllers.get(identity.key) !== controller) {
             return;
           }
 
           this.records.set(identity.key, { state: "unavailable" });
         })
         .finally(() => {
-          if (sequence !== this.sequence) {
+          if (this.controllers.get(identity.key) !== controller) {
             return;
           }
 
-          this.activeCount -= 1;
           this.controllers.delete(identity.key);
           this.pump();
         });
@@ -3921,16 +3884,8 @@
      * Cancels pending preview requests and clears the page-session cache.
      */
     stop() {
-      this.sequence += 1;
-
-      for (const controller of this.controllers.values()) {
-        controller.abort();
-      }
-
+      this.setDemand([]);
       this.records.clear();
-      this.queue = [];
-      this.controllers.clear();
-      this.activeCount = 0;
     }
 
     /**
@@ -3954,77 +3909,6 @@
       }
 
       return SourceAdapter.usableThumbnailUrl(payload?.data?.pic);
-    }
-
-    /**
-     * Returns item indexes in the order preview requests should be started.
-     *
-     * @param {VideoListSource} source
-     * @returns {number[]}
-     */
-    static hydrationOrderForSource(source) {
-      const indexes = source.items.map((_item, index) => index);
-
-      if (source.kind !== SourceKind.COLLECTION) {
-        return indexes;
-      }
-
-      const currentIndex = VideoPreviewStore.currentCollectionItemIndex(source);
-
-      return currentIndex === -1
-        ? indexes
-        : VideoPreviewStore.indexesAround(currentIndex, source.items.length);
-    }
-
-    /**
-     * Finds the collection item matching the current watch route.
-     *
-     * @param {VideoListSource} source
-     * @returns {number}
-     */
-    static currentCollectionItemIndex(source) {
-      const nativeIndex = source.items.findIndex((item) => item.isCurrent);
-
-      if (nativeIndex !== -1) {
-        return nativeIndex;
-      }
-
-      const currentRouteKey = SourceAdapter.currentWatchRouteKey();
-
-      if (!currentRouteKey) {
-        return -1;
-      }
-
-      return source.items.findIndex(
-        (item) =>
-          SourceAdapter.watchRouteKeyForUrl(item.targetUrl) === currentRouteKey
-      );
-    }
-
-    /**
-     * Returns indexes from the center outward without changing rendered order.
-     *
-     * @param {number} centerIndex
-     * @param {number} length
-     * @returns {number[]}
-     */
-    static indexesAround(centerIndex, length) {
-      const indexes = [centerIndex];
-
-      for (let distance = 1; indexes.length < length; distance += 1) {
-        const previous = centerIndex - distance;
-        const next = centerIndex + distance;
-
-        if (previous >= 0) {
-          indexes.push(previous);
-        }
-
-        if (next < length) {
-          indexes.push(next);
-        }
-      }
-
-      return indexes;
     }
 
     /**
@@ -5426,6 +5310,103 @@
   }
 
   /**
+   * Maps a fixed-width rail to a bounded window of logical card indexes.
+   */
+  class RailWindow {
+    /**
+     * @param {number} count Number of revealed video items.
+     * @param {number} cardWidth Card border-box width from the stylesheet.
+     * @param {number} gap Space between cards from the stylesheet.
+     */
+    constructor(count, cardWidth, gap) {
+      this.count = count;
+      this.cardWidth = cardWidth;
+      this.gap = gap;
+      this.stride = cardWidth + gap;
+    }
+
+    /**
+     * Returns the full row width, including a continuation slot when present.
+     *
+     * @param {boolean} hasMore
+     * @returns {number}
+     */
+    width(hasMore) {
+      const slots = this.count + Number(hasMore);
+      return Math.max(0, slots * this.stride - this.gap);
+    }
+
+    /**
+     * Returns a half-open range intersecting the viewport and its buffer.
+     *
+     * @param {number} left Scroll offset relative to the row start.
+     * @param {number} width Viewport width.
+     * @param {number} [buffer]
+     * @returns {{ start: number, end: number }}
+     */
+    range(left, width, buffer = 0) {
+      if (width <= 0) {
+        return { start: 0, end: 0 };
+      }
+      const first = Math.floor(Math.max(0, left) / this.stride);
+      const end = Math.ceil(Math.max(0, left + width) / this.stride);
+      return {
+        start: Math.min(this.count, Math.max(0, first - buffer)),
+        end: Math.min(this.count, Math.max(first, end) + buffer)
+      };
+    }
+
+    /**
+     * Returns visible indexes first, followed by buffered neighbors.
+     *
+     * @param {number} left
+     * @param {number} width
+     * @returns {number[]}
+     */
+    previewIndexes(left, width) {
+      const visible = this.range(left, width);
+      const buffered = this.range(left, width, RAIL_WINDOW_BUFFER);
+      const indexes = [];
+      for (let index = visible.start; index < visible.end; index += 1) {
+        indexes.push(index);
+      }
+      for (let distance = 1; distance <= RAIL_WINDOW_BUFFER; distance += 1) {
+        if (visible.start - distance >= buffered.start) {
+          indexes.push(visible.start - distance);
+        }
+        if (visible.end + distance - 1 < buffered.end) {
+          indexes.push(visible.end + distance - 1);
+        }
+      }
+      return indexes;
+    }
+
+    /**
+     * Returns the row-relative offset that centers an item.
+     *
+     * @param {number} index
+     * @param {number} width Viewport width.
+     * @returns {number}
+     */
+    centeredOffset(index, width) {
+      return index * this.stride + (this.cardWidth - width) / 2;
+    }
+
+    /**
+     * Returns the smallest scroll adjustment needed to reveal an item.
+     *
+     * @param {number} index
+     * @param {number} left Current row-relative offset.
+     * @param {number} width Viewport width.
+     * @returns {number}
+     */
+    revealedOffset(index, left, width) {
+      const start = index * this.stride;
+      return Math.min(start, Math.max(left, start + this.cardWidth - width));
+    }
+  }
+
+  /**
    * Owns the transformed watch layout and re-homes page-owned player/comment
    * nodes into extension panes.
    */
@@ -5434,9 +5415,11 @@
      * Creates the extension-owned layout root.
      *
      * @param {Document} document
+     * @param {VideoPreviewStore} videoPreviews
      */
-    constructor(document) {
+    constructor(document, videoPreviews) {
       this.document = document;
+      this.videoPreviews = videoPreviews;
       this.movedPageNodes = new MovedPageNodeStore(this.document);
       this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
       this.resetLayoutState();
@@ -5473,6 +5456,15 @@
       this.sourceBar = null;
       this.actionGroup = null;
       this.rail = null;
+      this.railSource = null;
+      /** @type {RailCardEntry[]} */
+      this.railEntries = [];
+      this.railEntryIndexes = new Map();
+      this.railStride = 0;
+      this.railRenderFrame = null;
+      this.railResizeObserver = null;
+      this.railPointerCard = null;
+      this.railPointerEndHandler = null;
       this.playerNode = null;
       this.commentNode = null;
       this.selectedSourceKind = null;
@@ -5615,6 +5607,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
+      this.stopRailWindow();
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
       this.unmarkSourceRoots();
@@ -5633,6 +5626,10 @@
     ensure() {
       if (this.root?.isConnected) {
         return;
+      }
+
+      if (this.railResizeObserver) {
+        this.stopRailWindow();
       }
 
       const existing = this.document.getElementById(OWNED_ROOT_ID);
@@ -5705,6 +5702,7 @@
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
       this.rail.className = "bibilili-list-rail";
+      this.observeRailWindow();
 
       this.stage.append(
         this.playerPane,
@@ -6747,6 +6745,11 @@
       } else {
         this.renderedSourceKind = null;
         this.pendingSourceMore = null;
+        this.railSource = null;
+        this.railEntries = [];
+        this.railEntryIndexes.clear();
+        this.railPointerCard = null;
+        this.videoPreviews.setDemand([]);
         this.videoCardStates = new WeakMap();
         this.rail.replaceChildren();
       }
@@ -8296,7 +8299,68 @@
     }
 
     /**
-     * Renders the selected source group in the horizontal rail.
+     * Observes viewport changes and protects cards during pointer activation.
+     */
+    observeRailWindow() {
+      const schedule = () => this.scheduleRailRender();
+      this.rail.addEventListener("scroll", schedule, { passive: true });
+      this.rail.addEventListener("focusin", schedule);
+      this.rail.addEventListener("focusout", schedule);
+      this.rail.addEventListener("keydown", (event) => {
+        this.handleRailKeydown(event);
+      });
+      this.rail.addEventListener("pointerdown", (event) => {
+        this.railPointerCard = event.target.closest?.(".bibilili-video-card") ?? null;
+      });
+      this.railPointerEndHandler = () => {
+        if (this.railPointerCard) {
+          this.railPointerCard = null;
+          this.scheduleRailRender();
+        }
+      };
+      this.document.addEventListener("pointerup", this.railPointerEndHandler, true);
+      this.document.addEventListener("pointercancel", this.railPointerEndHandler, true);
+      this.railResizeObserver = new ResizeObserver(schedule);
+      this.railResizeObserver.observe(this.rail);
+    }
+
+    /**
+     * Coalesces scrolling and preview updates without rediscovering page DOM.
+     */
+    scheduleRailRender() {
+      if (this.railRenderFrame !== null || !this.railSource || !this.rail?.isConnected) {
+        return;
+      }
+      this.railRenderFrame = requestAnimationFrame(() => {
+        this.railRenderFrame = null;
+        this.renderRailWindow();
+      });
+    }
+
+    /**
+     * Releases viewport observers and pending demand when layout ownership ends.
+     */
+    stopRailWindow() {
+      if (this.railRenderFrame !== null) {
+        cancelAnimationFrame(this.railRenderFrame);
+        this.railRenderFrame = null;
+      }
+      this.railResizeObserver?.disconnect();
+      this.railResizeObserver = null;
+      this.document.removeEventListener("pointerup", this.railPointerEndHandler, true);
+      this.document.removeEventListener("pointercancel", this.railPointerEndHandler, true);
+      this.railPointerEndHandler = null;
+      this.railPointerCard = null;
+      this.railSource = null;
+      this.railEntries = [];
+      this.railEntryIndexes.clear();
+      this.railStride = 0;
+      this.renderedSourceKind = null;
+      this.videoPreviews.setDemand([]);
+    }
+
+    /**
+     * Records the selected source and positions its window for reconciliation.
      *
      * @param {VideoListSource} source
      * @param {boolean} resetScroll
@@ -8309,92 +8373,210 @@
       const moreInteraction = this.pendingSourceMore?.kind === source.kind
         ? this.pendingSourceMore
         : null;
-      const preservedScrollLeft = resetScroll ? 0 : this.rail.scrollLeft;
-      const { title, row } = this.ensureRailSourceGroup(source, resetScroll);
+      const { title } = this.ensureRailSourceGroup(source, resetScroll);
       title.textContent = UiStrings.sourceLabel(source.kind, this.language);
-
       const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
         ? SourceAdapter.currentWatchRouteKey()
         : null;
-      const existingCards = this.videoCardsByKey(row);
-      const usedKeys = new Set();
       const keyCounts = new Map();
-      let previous = null;
-      let currentCard = null;
-      let firstNewCard = null;
-
-      for (let index = 0; index < source.items.length; index += 1) {
-        const item = source.items[index];
-        const cardKey = this.videoCardRenderKey(item, keyCounts);
+      this.railSource = source;
+      this.railEntryIndexes.clear();
+      this.railEntries = source.items.map((item, index) => {
+        const key = this.videoCardRenderKey(item, keyCounts);
         const itemRouteKey = currentRouteKey
           ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
           : null;
-        const matchReason = this.currentRailItemMatchReason(
+        const isCurrent = Boolean(this.currentRailItemMatchReason(
           source.kind,
           item,
           currentRouteKey,
           itemRouteKey
-        );
-        const isCurrent = Boolean(matchReason);
-        let card = existingCards.get(cardKey);
+        ));
+        this.railEntryIndexes.set(key, index);
+        return { item, key, isCurrent };
+      });
 
-        if (card) {
-          this.updateVideoCard(card, item, isCurrent, cardKey, source.kind);
-        } else {
-          card = this.videoCard(item, isCurrent, cardKey, source.kind);
-        }
-        usedKeys.add(cardKey);
-
-        if (moreInteraction && !moreInteraction.cardKeys.has(cardKey)) {
-          firstNewCard ??= card;
-        }
-
-        if (matchReason && !currentCard) {
-          currentCard = card;
-        }
-
-        const reference = previous ? previous.nextSibling : row.firstChild;
-        if (reference !== card) {
-          row.insertBefore(card, reference);
-        }
-
-        previous = card;
-      }
-
-      this.removeStaleVideoCards(row, usedKeys);
+      let focusIndex = -1;
       if (moreInteraction && source.pagination?.status !== AccountSourceStatus.LOADING) {
         if (
           moreInteraction.keyboard &&
           this.document.activeElement === moreInteraction.button
         ) {
-          const focusCard = firstNewCard ??
-            (source.pagination?.hasMore ? null : previous);
-          focusCard?.querySelector(".bibilili-card-link")?.focus({
-            preventScroll: true
-          });
+          focusIndex = this.railEntries.findIndex(
+            (entry) => !moreInteraction.cardKeys.has(entry.key)
+          );
+          if (focusIndex === -1 && !source.pagination?.hasMore) {
+            focusIndex = this.railEntries.length - 1;
+          }
         }
         this.pendingSourceMore = null;
       }
 
-      this.renderSourceMore(source, row);
-
-      let didLocateCurrentCard = false;
-      if (moreInteraction) {
-        if (currentCard && currentRouteKey) {
-          this.locatedCurrentRouteKeys.set(source.kind, currentRouteKey);
+      const currentIndex = this.railEntries.findIndex((entry) => entry.isCurrent);
+      let centerIndex = -1;
+      if (currentIndex !== -1 && currentRouteKey) {
+        if (!moreInteraction && (
+          resetScroll || this.locatedCurrentRouteKeys.get(source.kind) !== currentRouteKey
+        )) {
+          centerIndex = currentIndex;
         }
-      } else {
-        didLocateCurrentCard = this.locateCurrentRailCard(
-          source.kind,
-          currentCard,
-          currentRouteKey,
-          resetScroll
+        this.locatedCurrentRouteKeys.set(source.kind, currentRouteKey);
+      }
+      this.renderRailWindow({ resetScroll, centerIndex, focusIndex });
+    }
+
+    /**
+     * Renders visible cards, a small buffer, and any active interaction targets.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.resetScroll]
+     * @param {number} [options.centerIndex] Current item to center before rendering.
+     * @param {number} [options.focusIndex] Logical card receiving keyboard focus.
+     * @param {boolean} [options.revealFocus] Scroll a keyboard target into view.
+     * @param {boolean} [options.focusLastControl] Focus the target's last control.
+     */
+    renderRailWindow({
+      resetScroll = false,
+      centerIndex = -1,
+      focusIndex = -1,
+      revealFocus = false,
+      focusLastControl = false
+    } = {}) {
+      const source = this.railSource;
+      const row = this.rail?.querySelector(".bibilili-card-row");
+      if (!source || !row || !this.rail.isConnected) {
+        return;
+      }
+
+      const preservedScrollLeft = this.rail.scrollLeft;
+      const style = getComputedStyle(row);
+      const geometry = new RailWindow(
+        this.railEntries.length,
+        Number.parseFloat(style.getPropertyValue("--bibilili-card-width")),
+        Number.parseFloat(style.getPropertyValue("--bibilili-card-gap"))
+      );
+      const hasMore = source.root === null && Boolean(source.pagination?.hasMore);
+      row.style.width = `${geometry.width(hasMore)}px`;
+      const rowStart = row.getBoundingClientRect().left -
+        this.rail.getBoundingClientRect().left + this.rail.scrollLeft;
+      const viewportWidth = this.rail.clientWidth;
+      let scrollLeft = resetScroll ? 0 : preservedScrollLeft;
+
+      if (!resetScroll && this.railStride && this.railStride !== geometry.stride) {
+        scrollLeft = rowStart +
+          (scrollLeft - rowStart) / this.railStride * geometry.stride;
+      }
+      if (centerIndex !== -1) {
+        scrollLeft = rowStart + geometry.centeredOffset(centerIndex, viewportWidth);
+      } else if (revealFocus && focusIndex !== -1) {
+        scrollLeft = rowStart + geometry.revealedOffset(
+          focusIndex, scrollLeft - rowStart, viewportWidth
         );
       }
-
-      if (!didLocateCurrentCard && !resetScroll) {
-        this.rail.scrollLeft = preservedScrollLeft;
+      if (this.rail.scrollLeft !== scrollLeft) {
+        this.rail.scrollLeft = scrollLeft;
       }
+      this.railStride = geometry.stride;
+
+      const previewIndexes = geometry.previewIndexes(
+        this.rail.scrollLeft - rowStart, viewportWidth
+      );
+      this.videoPreviews.setDemand(previewIndexes.map(
+        (index) => this.railEntries[index].item
+      ));
+      const indexes = new Set(previewIndexes);
+      const activeElement = this.document.activeElement;
+      const activeCard = activeElement?.closest?.(".bibilili-video-card");
+      for (const card of [activeCard, this.railPointerCard]) {
+        if (card?.parentElement === row) {
+          const index = this.railEntryIndexes.get(card.dataset.bibililiCardKey);
+          if (index !== undefined) {
+            indexes.add(index);
+          }
+        }
+      }
+      if (focusIndex !== -1) {
+        indexes.add(focusIndex);
+      }
+
+      const existingCards = this.videoCardsByKey(row);
+      const usedKeys = new Set([...indexes].map((index) => this.railEntries[index].key));
+      this.removeStaleVideoCards(row, usedKeys);
+      let previous = null;
+      let focusCard = null;
+      for (const index of [...indexes].sort((left, right) => left - right)) {
+        const entry = this.railEntries[index];
+        const item = this.videoPreviews.hydrateItem(entry.item);
+        let card = existingCards.get(entry.key);
+        if (card) {
+          this.updateVideoCard(card, item, entry.isCurrent, entry.key, source.kind);
+        } else {
+          card = this.videoCard(item, entry.isCurrent, entry.key, source.kind);
+        }
+        card.dataset.bibililiCardIndex = String(index);
+        card.style.left = `${index * geometry.stride}px`;
+        const reference = previous ? previous.nextSibling : row.firstChild;
+        if (reference !== card) {
+          row.insertBefore(card, reference);
+        }
+        previous = card;
+        if (index === focusIndex) {
+          focusCard = card;
+        }
+      }
+
+      if (focusCard) {
+        const controls = LayoutRoot.railCardControls(focusCard);
+        controls[focusLastControl ? controls.length - 1 : 0]?.focus({ preventScroll: true });
+      } else if (activeCard && activeElement.isConnected && this.document.activeElement !== activeElement) {
+        activeElement.focus({ preventScroll: true });
+      }
+      this.renderSourceMore(source, row);
+      const moreButton = row.querySelector(".bibilili-source-more-button");
+      if (moreButton) {
+        moreButton.style.left = `${this.railEntries.length * geometry.stride}px`;
+      }
+    }
+
+    /**
+     * Preserves sequential Tab navigation across unrendered card boundaries.
+     *
+     * @param {KeyboardEvent} event
+     */
+    handleRailKeydown(event) {
+      if (event.key !== "Tab" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      const card = event.target.closest?.(".bibilili-video-card");
+      let focusIndex;
+      if (card) {
+        const controls = LayoutRoot.railCardControls(card);
+        const boundary = controls[event.shiftKey ? 0 : controls.length - 1];
+        if (event.target !== boundary) {
+          return;
+        }
+        focusIndex = Number(card.dataset.bibililiCardIndex) + (event.shiftKey ? -1 : 1);
+      } else if (event.shiftKey && event.target.matches?.(".bibilili-source-more-button")) {
+        focusIndex = this.railEntries.length - 1;
+      } else {
+        return;
+      }
+      if (focusIndex < 0 || focusIndex >= this.railEntries.length) {
+        return;
+      }
+      event.preventDefault();
+      this.renderRailWindow({ focusIndex, revealFocus: true, focusLastControl: event.shiftKey });
+    }
+
+    /**
+     * Returns enabled card controls in their native tab order.
+     *
+     * @param {HTMLElement} card
+     * @returns {HTMLElement[]}
+     */
+    static railCardControls(card) {
+      return [...card.querySelectorAll(".bibilili-card-link, .bibilili-card-watch-later-button")]
+        .filter((control) => !control.hidden && !control.disabled);
     }
 
     /**
@@ -8471,7 +8653,7 @@
         kind,
         button,
         keyboard: event.detail === 0,
-        cardKeys: new Set(this.videoCardsByKey(button.parentElement).keys())
+        cardKeys: new Set(this.railEntries.map((entry) => entry.key))
       };
       this.updateSourceMoreButton(button, kind, AccountSourceStatus.LOADING);
       await this.onSourceMore(kind);
@@ -8552,6 +8734,8 @@
       }
 
       this.videoCardStates = new WeakMap();
+      this.railPointerCard = null;
+      this.railStride = 0;
 
       const group = this.document.createElement("section");
       group.className = "bibilili-source-group";
@@ -8669,44 +8853,6 @@
       }
 
       return null;
-    }
-
-    /**
-     * Positions the rail on the current card for sources that support it.
-     *
-     * @param {string} sourceKind
-     * @param {HTMLElement | null} currentCard
-     * @param {string | null} currentRouteKey
-     * @param {boolean} resetScroll
-     * @returns {boolean}
-     */
-    locateCurrentRailCard(
-      sourceKind,
-      currentCard,
-      currentRouteKey,
-      resetScroll
-    ) {
-      if (
-        !LayoutRoot.sourceLocatesCurrentCard(sourceKind) ||
-        !currentCard ||
-        !currentRouteKey
-      ) {
-        if (resetScroll) {
-          this.rail.scrollLeft = 0;
-        }
-        return resetScroll;
-      }
-
-      if (
-        resetScroll ||
-        this.locatedCurrentRouteKeys.get(sourceKind) !== currentRouteKey
-      ) {
-        currentCard.scrollIntoView({ block: "nearest", inline: "center" });
-        this.locatedCurrentRouteKeys.set(sourceKind, currentRouteKey);
-        return true;
-      }
-
-      return false;
     }
 
     /**
@@ -9410,12 +9556,12 @@
     constructor(document) {
       this.document = document;
       this.discovery = new RegionDiscovery(document);
-      this.layout = new LayoutRoot(document);
+      this.videoPreviews = new VideoPreviewStore(() => {
+        this.layout.scheduleRailRender();
+      });
+      this.layout = new LayoutRoot(document, this.videoPreviews);
       this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
-        this.scheduleReconcile(false, ReconcilePriority.LAZY);
-      });
-      this.videoPreviews = new VideoPreviewStore(() => {
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       });
       this.enabled = ActivationPreference.readEnabled();
@@ -9624,7 +9770,7 @@
         return;
       }
 
-      regions.sources = this.videoPreviews.hydrateSources(sources);
+      regions.sources = sources;
       const sourceRouteState = this.nextPageSourceRouteState;
 
       if (
@@ -9997,11 +10143,18 @@
    */
 
   /**
+   * @typedef {object} RailCardEntry
+   * @property {VideoItem} item Source metadata, independent of rendered DOM.
+   * @property {string} key Stable key including duplicate-route occurrence.
+   * @property {boolean} isCurrent Whether this item matches the watch route.
+   */
+
+  /**
    * @typedef {object} SourceMoreInteraction
    * @property {string} kind Account source being expanded.
    * @property {HTMLButtonElement} button Activated continuation control.
    * @property {boolean} keyboard Move focus if it remains on this control.
-   * @property {Set<string>} cardKeys Render keys present before activation.
+   * @property {Set<string>} cardKeys All revealed item keys before activation.
    */
 
   /**
@@ -10120,11 +10273,13 @@
       AccountSourceStore,
       AccountSourceStatus,
       LayoutRoot,
+      RailWindow,
       RegionDiscovery,
       SourceAdapter,
       WatchActionKind,
       SourceKind,
-      SourceMerger
+      SourceMerger,
+      VideoPreviewStore
     });
   }
 

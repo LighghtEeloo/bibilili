@@ -35,7 +35,8 @@
   --bibilili-shadow: rgba(var(--Ba0_rgb, 0, 0, 0), 0.22);
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
-  --bibilili-card-width: 188px;
+  --bibilili-card-width: 190px;
+  --bibilili-card-gap: 10px;
   --bibilili-comment-pane-width: clamp(280px, 25vw, 430px);
   --bibilili-comment-resize-width: 8px;
 
@@ -686,6 +687,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding: 10px 12px 14px;
+  overflow-anchor: none;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
@@ -708,16 +710,21 @@
 }
 
 .bibilili-card-row {
-  display: flex;
+  position: relative;
   min-width: 0;
-  min-height: 0;
-  gap: 10px;
+  height: 126px;
+}
+
+.bibilili-card-row > .bibilili-video-card,
+.bibilili-card-row > .bibilili-source-more-button {
+  position: absolute;
+  top: 0;
 }
 
 .bibilili-source-more-button {
-  box-sizing: content-box;
-  flex: 0 0 var(--bibilili-card-width);
-  height: 124px;
+  box-sizing: border-box;
+  width: var(--bibilili-card-width);
+  height: 126px;
   padding: 0;
   border: 1px solid var(--bibilili-button-border);
   border-radius: 6px;
@@ -744,12 +751,12 @@
 }
 
 .bibilili-video-card {
-  box-sizing: content-box;
+  box-sizing: border-box;
   position: relative;
   display: block;
   width: var(--bibilili-card-width);
   min-width: var(--bibilili-card-width);
-  height: 124px;
+  height: 126px;
   overflow: hidden;
   border: 1px solid var(--bibilili-card-border);
   border-radius: 6px;
@@ -963,6 +970,6 @@
 @media (max-width: 920px) {
   #bibilili-layout-root {
     --bibilili-comment-pane-width: clamp(240px, 34vw, 320px);
-    --bibilili-card-width: 166px;
+    --bibilili-card-width: 168px;
   }
 }

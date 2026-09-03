@@ -273,7 +273,7 @@ the UI language resets the account source session.
 
 Watch later also reads the full list count from to-view response metadata when
 Bilibili exposes it. The count is account-state metadata. It is independent of
-the rendered rail item count, which follows the current expansion depth and
+the revealed rail item count, which follows the current expansion depth and
 valid-item rules.
 
 Account source fetches are advisory and never block the first transformed
@@ -323,11 +323,16 @@ Bibilili may fetch archive metadata from Bilibili's video-info API using a BV
 or AV id derived from the item's target URL. It uses the returned archive cover
 as the thumbnail. Page-owned thumbnails have precedence over fetched covers.
 Placeholder, loading, and static page assets are not page-owned thumbnails.
-They fall through to fetched covers when an archive id is available. Preview
-fetches do not block rendering. Collection preview requests start at the
-current watch item and then proceed outward through neighboring items, without
-changing rail order. Failed, unsupported, private, deleted, or unavailable
-videos keep the title placeholder for the page session.
+They fall through to fetched covers when an archive id is available.
+
+Preview demand contains visible items from the open rail and up to three
+adjacent items on each side. Visible items have request priority. The preview
+store allows four active metadata requests and cancels queued or active work
+when an item leaves demand. Closing the rail clears demand. Completed results
+remain cached for the page session.
+
+Preview fetches do not block rendering. Failed, unsupported, private, deleted,
+or unavailable videos keep the title placeholder for the page session.
 
 ## List Dock
 
@@ -492,6 +497,16 @@ bottom presentation.
 The rail scrolls horizontally across the selected source's cards. Route changes
 replace the group in place and reopen the rail.
 
+A rail window contains the visible cards and up to three neighbors on each
+side. The row retains the width of all revealed items while only window cards
+have DOM nodes. A focused card and a card with an active pointer press remain
+mounted until the interaction ends. Scrolling and resizing update the window
+once per animation frame, independently of page discovery.
+
+Cards retain their logical order and fixed positions within the full row.
+Keyboard navigation reveals adjacent items across window boundaries. Resizing
+preserves the logical scroll position when card dimensions change.
+
 Account-backed history and watch-later groups end with a Show more button while
 additional items are available. The button uses the video card dimensions and
 stays at the end as cards are appended. It keeps its DOM identity during
@@ -519,6 +534,8 @@ session and again when the collection route is opened explicitly.
 When the selected source is watch later, the rail uses the same current-card
 matching, positioning, and highlight path as collection. If the current watch
 video is present, opening the watch-later route scrolls directly to that card.
+Current-card positioning uses the item's logical index and renders the
+destination window directly.
 
 ## Video Card
 
@@ -531,10 +548,11 @@ navigation unless the browser or Bilibili intercepts the link. When a thumbnail
 is unavailable, the thumbnail area presents the video title and clamps it within
 the fixed preview height.
 
-During same-route reconciliation, existing card roots, link anchors, and stable
+During same-route reconciliation, retained card roots, link anchors, and stable
 child nodes are reused. Advisory list or thumbnail updates change card content
 and explicit thumbnail state in place so normal link activation is not
-interrupted.
+interrupted. Thumbnail elements are created with window cards and use browser
+lazy loading.
 
 A parts card matching the current archive page route exposes `aria-current` and
 uses selected border and title colors. A collection card for the current
