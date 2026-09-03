@@ -104,7 +104,7 @@ dark marker when needed, and swaps Bilibili's CSS-map stylesheet between its
 light and dark variants when the page exposes that link. Appearance state stays
 in Bilibili's native theme system.
 
-Extension-owned surfaces consume Bilibili CSS variables for backgrounds,
+Extension-owned layout surfaces consume Bilibili CSS variables for backgrounds,
 borders, text, and controls. Static fallbacks cover missing native variables.
 
 ## UI Language
@@ -147,18 +147,21 @@ storage is available.
 
 ## Startup
 
-The loading cover is an extension-owned white surface above the entire watch
-viewport. It mounts from document start on enabled pages and during activation
-or same-document video navigation. It shows the current title and uploader as
-native metadata becomes available, with a localized loading title as fallback.
-It reads existing page data without requesting video metadata or images.
+The loading cover is an extension-owned surface above the entire watch viewport.
+It follows the browser color-scheme preference from its first paint, using white
+in light mode and charcoal in dark mode. It mounts from document start on enabled
+pages and during activation or same-document video navigation. It shows the
+current title and uploader as native metadata becomes available, with a localized
+loading title as fallback. It reads existing page data without requesting video
+metadata or images.
 
-The cover leaves native geometry intact beneath it. It fades out over 240 ms
-after the layout mounts, the native lazy-primer pass ends, and two animation
-frames allow the layout to paint. Optional comments, account lists, and
-thumbnails continue loading independently. Reduced motion disables the fade
-and indicator animation. Disabling Bibilili or leaving the watch page removes
-the cover immediately; a five-second deadline also removes it if startup stalls.
+The cover background appears immediately and leaves native geometry intact
+beneath it. Its title, uploader, and indicator fade in over 180 ms. The cover
+fades out over 240 ms after the layout mounts, the native lazy-primer pass ends,
+and two animation frames allow the layout to paint. Optional comments, account
+lists, and thumbnails continue loading independently. Reduced motion disables
+animation. Disabling Bibilili or leaving the watch page removes the cover
+immediately; a five-second deadline also removes it if startup stalls.
 
 Player discovery is enough to mount the transformed layout. Lazy comments and
 page-owned source data may settle afterward.

@@ -1,5 +1,11 @@
 #bibilili-loading-cover {
   all: initial;
+  --bibilili-loading-bg: #ffffff;
+  --bibilili-loading-text: #282a2d;
+  --bibilili-loading-brand: #97999d;
+  --bibilili-loading-muted: #73767b;
+  --bibilili-loading-track: #f0f0f1;
+  --bibilili-loading-stroke: #a5a7ab;
   position: fixed;
   inset: 0;
   z-index: 2147483647;
@@ -8,8 +14,8 @@
   box-sizing: border-box;
   padding: 32px;
   overflow: hidden;
-  background: #ffffff;
-  color: #282a2d;
+  background: var(--bibilili-loading-bg);
+  color: var(--bibilili-loading-text);
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   text-align: center;
@@ -25,11 +31,12 @@
 #bibilili-loading-cover .bibilili-loading-content {
   width: min(640px, 100%);
   margin-block-end: 8vh;
+  animation: bibilili-loading-enter 180ms ease-out both;
 }
 
 #bibilili-loading-cover .bibilili-loading-brand {
   margin-block-end: 28px;
-  color: #97999d;
+  color: var(--bibilili-loading-brand);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.16em;
@@ -52,7 +59,7 @@
   min-height: 22px;
   margin-block-start: 14px;
   overflow: hidden;
-  color: #73767b;
+  color: var(--bibilili-loading-muted);
   font-size: 13px;
   line-height: 22px;
   text-overflow: ellipsis;
@@ -65,14 +72,14 @@
   margin: 32px auto 0;
   overflow: hidden;
   border-radius: 1px;
-  background: #f0f0f1;
+  background: var(--bibilili-loading-track);
 }
 
 #bibilili-loading-cover .bibilili-loading-indicator::after {
   display: block;
   width: 16px;
   height: 100%;
-  background: #a5a7ab;
+  background: var(--bibilili-loading-stroke);
   animation: bibilili-loading 1.4s ease-in-out infinite;
   content: "";
 }
@@ -82,13 +89,34 @@
   to { transform: translateX(48px); }
 }
 
+@keyframes bibilili-loading-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-color-scheme: dark) {
+  #bibilili-loading-cover {
+    --bibilili-loading-bg: #18191c;
+    --bibilili-loading-text: #eff0f2;
+    --bibilili-loading-brand: #878b92;
+    --bibilili-loading-muted: #a0a4ab;
+    --bibilili-loading-track: #2a2c30;
+    --bibilili-loading-stroke: #787d85;
+    color-scheme: dark;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #bibilili-loading-cover {
     transition: none;
   }
 
+  #bibilili-loading-cover .bibilili-loading-content,
   #bibilili-loading-cover .bibilili-loading-indicator::after {
     animation: none;
+  }
+
+  #bibilili-loading-cover .bibilili-loading-indicator::after {
     transform: translateX(16px);
   }
 }
