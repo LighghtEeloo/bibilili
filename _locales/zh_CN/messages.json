@@ -11,6 +11,10 @@
     "message": "Bibilili 观看布局",
     "description": "Accessible name for the transformed watch layout."
   },
+  "layoutLoadingLabel": {
+    "message": "正在载入视频",
+    "description": "Loading cover status and fallback title before video metadata arrives."
+  },
   "playerLabel": {
     "message": "播放器",
     "description": "Accessible name for the player pane."

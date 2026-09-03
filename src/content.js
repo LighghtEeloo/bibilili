@@ -25,14 +25,15 @@
 
   const OWNED_ROOT_ID = "bibilili-layout-root";
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
+  const LOADING_COVER_ID = "bibilili-loading-cover";
   const LIST_RAIL_ID = "bibilili-list-rail";
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const NATIVE_OVERLAY_ATTR = "data-bibilili-native-overlay";
   const NATIVE_OVERLAY_POSITION_ATTR =
     "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
-  const HTML_PLAYER_PENDING_CLASS = "bibilili-player-pending";
-  const PLAYER_MOUNT_TIMEOUT_MS = 5000;
+  const LOADING_COVER_TIMEOUT_MS = 5000;
+  const LOADING_COVER_FADE_MS = 240;
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
@@ -1098,61 +1099,195 @@
   }
 
   /**
-   * Conceals the native player while its extension pane is being prepared.
+   * Covers the viewport until the transformed layout is ready to paint.
    *
-   * Note: Bilibili can paint or float its native player before DOMContentLoaded.
-   * Opacity keeps its geometry available to discovery and native hydration.
-   * The deadline restores visibility if the layout cannot mount.
+   * Note: The cover mounts under the document root because Bilibili can paint
+   * before DOMContentLoaded and replace or scroll its body during hydration.
+   * Native geometry stays available beneath it. Metadata reads are coalesced
+   * per frame and stop with the cover; loading never issues metadata requests.
    */
-  class PlayerMountGuard {
-    /** @param {Document} document */
-    constructor(document) {
+  class LoadingCover {
+    /**
+     * @param {Document} document
+     * @param {RegionDiscovery} discovery
+     */
+    constructor(document, discovery) {
       this.document = document;
+      this.discovery = discovery;
+      this.root = null;
+      this.title = null;
+      this.uploader = null;
       this.timer = null;
-      this.rootObserver = null;
+      this.fadeTimer = null;
+      this.updateFrame = null;
+      this.revealFrame = null;
+      this.observer = null;
+      this.pageKey = null;
+      this.lastTitle = null;
+      this.previousTitle = null;
     }
 
-    /** Starts a bounded handoff without extending an active deadline. */
-    start() {
-      if (this.timer !== null) {
+    /**
+     * Covers one page handoff without extending an active page's deadline.
+     *
+     * @param {string} pageKey
+     */
+    start(pageKey) {
+      if (this.timer !== null && this.pageKey === pageKey) {
         return;
       }
 
-      this.timer = window.setTimeout(() => this.stop(), PLAYER_MOUNT_TIMEOUT_MS);
+      // Note: Same-document navigation can leave the previous video's title
+      // in native markup until hydration catches up with the URL.
+      this.previousTitle = this.pageKey && this.pageKey !== pageKey
+        ? this.lastTitle : null;
+      this.stop();
+      this.pageKey = pageKey;
+      this.timer = window.setTimeout(() => this.stop(), LOADING_COVER_TIMEOUT_MS);
+      this.observer = new MutationObserver((mutations) => {
+        if (mutations.some((mutation) => !DomProbe.isOwned(mutation.target))) {
+          this.scheduleUpdate();
+        }
+      });
+      this.observer.observe(this.document, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["content", "title", "lang"]
+      });
+      this.update();
+    }
 
-      if (!this.apply()) {
-        this.rootObserver = new MutationObserver(() => this.apply());
-        this.rootObserver.observe(this.document, { childList: true });
+    /**
+     * Creates the cover as soon as the document root exists.
+     *
+     * @returns {boolean}
+     */
+    ensure() {
+      const documentRoot = this.document.documentElement;
+      if (!documentRoot) {
+        return false;
+      }
+
+      if (!this.root) {
+        this.root = this.document.createElement("div");
+        this.root.id = LOADING_COVER_ID;
+        this.root.setAttribute("role", "status");
+        this.root.setAttribute("aria-live", "polite");
+        this.root.setAttribute("aria-atomic", "true");
+        this.root.style.setProperty(
+          "--bibilili-loading-fade-duration", `${LOADING_COVER_FADE_MS}ms`
+        );
+
+        const content = this.document.createElement("div");
+        content.className = "bibilili-loading-content";
+        const brand = this.document.createElement("div");
+        brand.className = "bibilili-loading-brand";
+        brand.textContent = "bibilili";
+        brand.setAttribute("aria-hidden", "true");
+        this.title = this.document.createElement("div");
+        this.title.className = "bibilili-loading-title";
+        this.uploader = this.document.createElement("div");
+        this.uploader.className = "bibilili-loading-uploader";
+        const indicator = this.document.createElement("div");
+        indicator.className = "bibilili-loading-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        content.append(brand, this.title, this.uploader, indicator);
+        this.root.append(content);
+      }
+
+      if (this.root.parentElement !== documentRoot) {
+        documentRoot.append(this.root);
+      }
+      return true;
+    }
+
+    /** Coalesces native metadata mutations into one update per frame. */
+    scheduleUpdate() {
+      if (this.updateFrame !== null) {
+        return;
+      }
+      this.updateFrame = window.requestAnimationFrame(() => {
+        this.updateFrame = null;
+        this.update();
+      });
+    }
+
+    /** Updates the title and uploader from metadata already in the page. */
+    update() {
+      if (this.timer === null || this.fadeTimer !== null || !this.ensure()) {
+        return;
+      }
+
+      const language = LanguageResolver.resolve(this.document);
+      const loadingLabel = UiStrings.message(UiMessage.LAYOUT_LOADING_LABEL, language);
+      const candidate = this.discovery.findWatchTitle();
+      const title = candidate !== this.previousTitle ? candidate : null;
+      const uploader = title ? this.discovery.findUploaderInfo()?.name ?? "" : "";
+      if (title) {
+        this.lastTitle = title;
+      }
+      this.root.lang = language;
+      this.root.setAttribute("aria-label", loadingLabel);
+      if (this.title.textContent !== (title || loadingLabel)) {
+        this.title.textContent = title || loadingLabel;
+      }
+      if (this.uploader.textContent !== uploader) {
+        this.uploader.textContent = uploader;
       }
     }
 
     /**
-     * Marks the document as soon as its root exists.
+     * Fades after two animation frames if the rendered layout is still ready.
      *
-     * @returns {boolean}
+     * @param {() => boolean} isReady Checks mounted nodes and native priming.
      */
-    apply() {
-      const root = this.document.documentElement;
-      if (!root) {
-        return false;
+    finish(isReady) {
+      if (this.timer === null || this.revealFrame !== null || this.fadeTimer !== null) {
+        return;
       }
 
-      root.classList.add(HTML_PLAYER_PENDING_CLASS);
-      this.rootObserver?.disconnect();
-      this.rootObserver = null;
-      return true;
+      this.revealFrame = window.requestAnimationFrame(() => {
+        this.revealFrame = window.requestAnimationFrame(() => {
+          this.revealFrame = null;
+          if (!isReady()) {
+            return;
+          }
+          this.update();
+          this.stopObserving();
+          this.root.dataset.bibililiLoadingState = "leaving";
+          this.root.setAttribute("aria-hidden", "true");
+          this.fadeTimer = window.setTimeout(() => this.stop(), LOADING_COVER_FADE_MS);
+        });
+      });
     }
 
-    /** Reveals the player and cancels pending document-root work. */
+    /** Releases metadata observation and its pending frame. */
+    stopObserving() {
+      this.observer?.disconnect();
+      this.observer = null;
+      if (this.updateFrame !== null) {
+        window.cancelAnimationFrame(this.updateFrame);
+      }
+      this.updateFrame = null;
+    }
+
+    /** Removes the cover immediately and cancels every pending callback. */
     stop() {
       window.clearTimeout(this.timer);
+      window.clearTimeout(this.fadeTimer);
       this.timer = null;
-      this.rootObserver?.disconnect();
-      this.rootObserver = null;
-      const classes = this.document.documentElement?.classList;
-      if (classes?.contains(HTML_PLAYER_PENDING_CLASS)) {
-        classes.remove(HTML_PLAYER_PENDING_CLASS);
+      this.fadeTimer = null;
+      if (this.revealFrame !== null) {
+        window.cancelAnimationFrame(this.revealFrame);
       }
+      this.revealFrame = null;
+      this.stopObserving();
+      this.root?.remove();
+      this.root = null;
+      this.title = null;
+      this.uploader = null;
     }
   }
 
@@ -9680,7 +9815,7 @@
     constructor(document) {
       this.document = document;
       this.discovery = new RegionDiscovery(document);
-      this.playerMountGuard = new PlayerMountGuard(document);
+      this.loadingCover = new LoadingCover(document, this.discovery);
       this.videoPreviews = new VideoPreviewStore(() => {
         this.layout.scheduleRailRender();
       });
@@ -9711,12 +9846,12 @@
       this.settlingTimers = [];
     }
 
-    /** Conceals the player during an enabled watch-page layout handoff. */
+    /** Covers the viewport during an enabled watch-page layout handoff. */
     prepareMount() {
       if (this.enabled && this.isWatchPage()) {
-        this.playerMountGuard.start();
+        this.loadingCover.start(this.currentPageKey());
       } else {
-        this.playerMountGuard.stop();
+        this.loadingCover.stop();
       }
     }
 
@@ -9780,7 +9915,7 @@
      * Clears rendered page state without changing observers or activation.
      */
     clearRenderedPageState() {
-      this.playerMountGuard.stop();
+      this.loadingCover.stop();
       this.videoPreviews.stop();
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
@@ -9900,6 +10035,7 @@
 
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
+      this.loadingCover.update();
       const sources = SourceMerger.merge(
         regions.sources,
         this.accountSources.currentSources()
@@ -9946,7 +10082,12 @@
         () => this.accountSources.revealWatchLaterItem(window.location.href)
       );
       this.nextPageSourceRouteState = null;
-      this.playerMountGuard.stop();
+      if (this.lazyPrimer.timer === null) {
+        this.loadingCover.finish(() => Boolean(
+          this.layout.root?.isConnected && this.layout.playerNode?.isConnected &&
+          this.lazyPrimer.timer === null
+        ));
+      }
     }
 
     /**

@@ -52,7 +52,7 @@ into the bottom dock.
 
 ## DOM Ownership
 
-Bibilili owns the layout root, stage, panes, video header, list dock,
+Bibilili owns the loading cover, layout root, stage, panes, video header, list dock,
 source bar, video description presentation, watch action group,
 current-video watch-later control, list rail, video cards,
 watch-later mutation controls, extension classes, and bookkeeping attributes.
@@ -138,8 +138,8 @@ locations, removes the layout root, and leaves the floating activation control
 mounted. Enabling Bibilili starts or retries a transformed page session.
 
 Activation applies through an urgent reconciliation request after the current
-input task when the player region is available. Lazy reconciliation and page
-priming do not gate the first visible transformed layout.
+input task when the player region is available. The layout mounts independently
+of lazy reconciliation and page priming.
 
 The activation state is a Bilibili-page preference recording the requested
 state. It persists across same-tab navigation and page reloads when browser
@@ -147,11 +147,18 @@ storage is available.
 
 ## Startup
 
-An enabled watch page conceals the native player from document start until the
-first transformed render completes. The player keeps its native geometry during
-this handoff. Disabling Bibilili or leaving the watch page restores visibility;
-a five-second deadline also restores it if mounting cannot complete. The same
-guard covers activation and same-document video navigation.
+The loading cover is an extension-owned white surface above the entire watch
+viewport. It mounts from document start on enabled pages and during activation
+or same-document video navigation. It shows the current title and uploader as
+native metadata becomes available, with a localized loading title as fallback.
+It reads existing page data without requesting video metadata or images.
+
+The cover leaves native geometry intact beneath it. It fades out over 240 ms
+after the layout mounts, the native lazy-primer pass ends, and two animation
+frames allow the layout to paint. Optional comments, account lists, and
+thumbnails continue loading independently. Reduced motion disables the fade
+and indicator animation. Disabling Bibilili or leaving the watch page removes
+the cover immediately; a five-second deadline also removes it if startup stalls.
 
 Player discovery is enough to mount the transformed layout. Lazy comments and
 page-owned source data may settle afterward.

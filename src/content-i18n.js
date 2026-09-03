@@ -19,6 +19,7 @@
    */
   const UiMessage = Object.freeze({
     LAYOUT_LABEL: "layoutLabel",
+    LAYOUT_LOADING_LABEL: "layoutLoadingLabel",
     PLAYER_LABEL: "playerLabel",
     COMMENTS_LABEL: "commentsLabel",
     VIDEO_DESCRIPTION_LABEL: "videoDescriptionLabel",

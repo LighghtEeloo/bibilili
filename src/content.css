@@ -1,13 +1,96 @@
-:root.bibilili-player-pending :is(
-  #bilibili-player,
-  #playerWrap,
-  .player-wrap,
-  .bpx-player-container,
-  .bpx-player-primary-area,
-  [class*="player-wrap"]
-) {
-  opacity: 0 !important;
-  pointer-events: none !important;
+#bibilili-loading-cover {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 32px;
+  overflow: hidden;
+  background: #ffffff;
+  color: #282a2d;
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: center;
+  opacity: 1;
+  transition: opacity var(--bibilili-loading-fade-duration) ease-out;
+}
+
+#bibilili-loading-cover[data-bibilili-loading-state="leaving"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#bibilili-loading-cover .bibilili-loading-content {
+  width: min(640px, 100%);
+  margin-block-end: 8vh;
+}
+
+#bibilili-loading-cover .bibilili-loading-brand {
+  margin-block-end: 28px;
+  color: #97999d;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+
+#bibilili-loading-cover .bibilili-loading-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: clamp(22px, 2.3vw, 30px);
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+#bibilili-loading-cover .bibilili-loading-uploader {
+  min-height: 22px;
+  margin-block-start: 14px;
+  overflow: hidden;
+  color: #73767b;
+  font-size: 13px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#bibilili-loading-cover .bibilili-loading-indicator {
+  width: 48px;
+  height: 2px;
+  margin: 32px auto 0;
+  overflow: hidden;
+  border-radius: 1px;
+  background: #f0f0f1;
+}
+
+#bibilili-loading-cover .bibilili-loading-indicator::after {
+  display: block;
+  width: 16px;
+  height: 100%;
+  background: #a5a7ab;
+  animation: bibilili-loading 1.4s ease-in-out infinite;
+  content: "";
+}
+
+@keyframes bibilili-loading {
+  from { transform: translateX(-16px); }
+  to { transform: translateX(48px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bibilili-loading-cover {
+    transition: none;
+  }
+
+  #bibilili-loading-cover .bibilili-loading-indicator::after {
+    animation: none;
+    transform: translateX(16px);
+  }
 }
 
 :root.bibilili-mounted,

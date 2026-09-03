@@ -2,7 +2,7 @@
   "use strict";
 
   const OWNED_SURFACE_SELECTOR =
-    "#bibilili-layout-root, #bibilili-toggle-root";
+    "#bibilili-layout-root, #bibilili-toggle-root, #bibilili-loading-cover";
 
   /**
    * Utility methods for querying page-owned DOM while avoiding extension-owned

@@ -11,6 +11,10 @@
     "message": "Bibilili watch layout",
     "description": "Accessible name for the transformed watch layout."
   },
+  "layoutLoadingLabel": {
+    "message": "Loading video",
+    "description": "Loading cover status and fallback title before video metadata arrives."
+  },
   "playerLabel": {
     "message": "Player",
     "description": "Accessible name for the player pane."
