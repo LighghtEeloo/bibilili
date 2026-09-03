@@ -99,6 +99,52 @@ test("uses valid retained items rather than account totals to offer more", async
   assert.equal(store.currentWatchLaterCount(), 150);
 });
 
+test("reveals a cached watch-later target in batches without another request", async (t) => {
+  const requests = mockApi(t, entries(1, 240), [payload(entries(1001, 30), cursor(1030))]);
+  let changes = 0;
+  const store = new AccountSourceStore(() => { changes += 1; });
+  await store.refresh("en");
+  const history = source(store);
+  const changesBeforeReveal = changes;
+
+  const revealed = store.revealWatchLaterItem(
+    "https://www.bilibili.com/video/av191/?p=1&from=watch_later#player"
+  );
+  assert.equal(revealed.items.length, 200);
+  assert.equal(revealed.items[190].watchLaterAid, "191");
+  assert.equal(revealed.pagination.hasMore, true);
+  assert.equal(changes, changesBeforeReveal + 1);
+  assert.equal(store.currentWatchLaterCount(), 240);
+  assert.deepEqual(source(store), history);
+  assert.equal(requests.length, 2);
+
+  store.revealWatchLaterItem("https://www.bilibili.com/video/av191");
+  assert.equal(changes, changesBeforeReveal + 1);
+  await store.loadMore(SourceKind.WATCH_LATER);
+  assert.equal(store.revealWatchLaterItem("https://www.bilibili.com/video/av5").items.length, 230);
+  assert.equal(requests.length, 2);
+});
+
+test("watch-later reveal leaves unloaded, absent, and different-part targets alone", async (t) => {
+  const requests = mockApi(t, entries(1, 131), [payload([])]);
+  const store = new AccountSourceStore(() => {});
+  assert.equal(store.revealWatchLaterItem("https://www.bilibili.com/video/av100"), null);
+  assert.equal(requests.length, 0);
+  await store.refresh("en");
+
+  for (const targetUrl of [
+    "https://www.bilibili.com/video/av999",
+    "https://www.bilibili.com/video/av100?p=2",
+    "https://example.com/video/av100",
+    "invalid"
+  ]) {
+    assert.equal(store.revealWatchLaterItem(targetUrl), null);
+  }
+  assert.equal(source(store, SourceKind.WATCH_LATER).items.length, 80);
+  assert.equal(store.currentWatchLaterCount(), 131);
+  assert.equal(requests.length, 2);
+});
+
 test("follows history cursors, merges overlapping routes, and grows beyond 80", async (t) => {
   const requests = mockApi(t, [], [
     payload(entries(1, 30), cursor(30, 900)),

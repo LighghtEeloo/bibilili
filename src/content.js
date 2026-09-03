@@ -3170,27 +3170,68 @@
     }
 
     /**
-     * Returns visible account items and their pagination state in source order.
+     * Returns revealed account items and their pagination state in source order.
      *
      * @returns {VideoListSource[]}
      */
     currentSources() {
-      return ACCOUNT_SOURCE_ORDER.flatMap((kind) => {
-        const record = this.records.get(kind);
-        const items = record.items.slice(0, record.visibleCount);
+      return ACCOUNT_SOURCE_ORDER.map((kind) => this.currentSource(kind))
+        .filter(Boolean);
+    }
 
-        return items.length > 0
-          ? [{
-              kind,
-              root: null,
-              items,
-              pagination: {
-                hasMore: AccountSourceStore.hasMore(record),
-                status: record.status
-              }
-            }]
-          : [];
-      });
+    /**
+     * Returns one account source at its current expansion depth.
+     *
+     * @param {string} kind
+     * @returns {VideoListSource | null}
+     */
+    currentSource(kind) {
+      const record = this.records.get(kind);
+      if (!record) {
+        throw new Error("Unknown account source kind");
+      }
+      const items = record.items.slice(0, record.visibleCount);
+      return items.length > 0
+        ? {
+            kind,
+            root: null,
+            items,
+            pagination: {
+              hasMore: AccountSourceStore.hasMore(record),
+              status: record.status
+            }
+          }
+        : null;
+    }
+
+    /**
+     * Reveals the cached watch-later batch containing a target without fetching.
+     *
+     * Existing expansion is retained. An absent target leaves the source alone.
+     *
+     * @param {string} targetUrl
+     * @returns {VideoListSource | null} Revealed source, or null for no match.
+     */
+    revealWatchLaterItem(targetUrl) {
+      const routeKey = SourceAdapter.watchRouteKeyForUrl(targetUrl);
+      if (!routeKey) {
+        return null;
+      }
+      const record = this.records.get(SourceKind.WATCH_LATER);
+      const index = record.items.findIndex(
+        (item) => AccountSourceAdapter.itemKey(item) === routeKey
+      );
+      if (index === -1) {
+        return null;
+      }
+
+      const missingCount = index + 1 - record.visibleCount;
+      if (missingCount > 0) {
+        record.visibleCount += Math.ceil(missingCount / ACCOUNT_MORE_BATCH_SIZE) *
+          ACCOUNT_MORE_BATCH_SIZE;
+        this.onChange();
+      }
+      return this.currentSource(SourceKind.WATCH_LATER);
     }
 
     /**
@@ -5495,6 +5536,7 @@
       this.onVideoCardNavigate = null;
       this.onSourceRouteChange = null;
       this.onSourceMore = null;
+      this.onWatchLaterReveal = null;
       /** @type {SourceMoreInteraction | null} */
       this.pendingSourceMore = null;
       this.pendingWatchLaterAddKeys = new Set();
@@ -5530,6 +5572,7 @@
      * @param {(state: SourceRouteState) => void} onSourceRouteChange
      * @param {SourceRouteState | null} sourceRouteState
      * @param {(sourceKind: string) => Promise<void>} onSourceMore
+     * @param {() => VideoListSource | null} onWatchLaterReveal
      */
     render(
       regions,
@@ -5544,7 +5587,8 @@
       onVideoCardNavigate,
       onSourceRouteChange,
       sourceRouteState,
-      onSourceMore
+      onSourceMore,
+      onWatchLaterReveal
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5568,6 +5612,7 @@
       this.onVideoCardNavigate = onVideoCardNavigate;
       this.onSourceRouteChange = onSourceRouteChange;
       this.onSourceMore = onSourceMore;
+      this.onWatchLaterReveal = onWatchLaterReveal;
       this.setSources(
         regions.sources,
         resetSourceRoute,
@@ -6721,6 +6766,10 @@
     /**
      * Renders the list dock from the current source route and rail open state.
      *
+     * Opening watch later reveals the cached batch containing the current video.
+     * Note: Account data can replace a page-owned watch-later source after mount;
+     * that transition also reveals the cached target.
+     *
      * @param {VideoListSource[]} sources
      * @param {ActivationControl} activationControl
      */
@@ -6729,18 +6778,32 @@
         return;
       }
 
-      const selectedSource = this.selectedSource(sources);
+      let selectedSource = this.selectedSource(sources);
       const hasOpenRail = Boolean(selectedSource && this.isRailOpen);
+      const resetScroll = selectedSource?.kind !== this.renderedSourceKind;
+
+      if (
+        hasOpenRail &&
+        selectedSource.kind === SourceKind.WATCH_LATER &&
+        selectedSource.root === null &&
+        (resetScroll || this.railSource?.root !== null)
+      ) {
+        const revealedSource = this.onWatchLaterReveal?.();
+        if (revealedSource) {
+          selectedSource = revealedSource;
+          sources = sources.map((source) => source.kind === SourceKind.WATCH_LATER
+            ? revealedSource : source);
+          this.currentSources = sources;
+          this.watchLaterArchiveKeys = LayoutRoot.watchLaterArchiveKeysFor(sources);
+        }
+      }
 
       this.root.classList.toggle("bibilili-has-dock", hasOpenRail);
       this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
 
       if (hasOpenRail) {
-        this.renderRail(
-          selectedSource,
-          selectedSource.kind !== this.renderedSourceKind
-        );
+        this.renderRail(selectedSource, resetScroll);
         this.renderedSourceKind = selectedSource.kind;
       } else {
         this.renderedSourceKind = null;
@@ -9801,7 +9864,8 @@
           this.recordVideoCardNavigationSource(sourceKind, targetUrl),
         (state) => this.storeSourceRouteState(state),
         sourceRouteState,
-        (sourceKind) => this.loadMoreAccountSource(sourceKind)
+        (sourceKind) => this.loadMoreAccountSource(sourceKind),
+        () => this.accountSources.revealWatchLaterItem(window.location.href)
       );
       this.nextPageSourceRouteState = null;
     }
@@ -10182,7 +10246,7 @@
    * @typedef {object} AccountSourceRecord
    * @property {string} kind Closed account source kind.
    * @property {VideoItem[]} items All retained valid items in API order.
-   * @property {number} visibleCount Maximum number of retained items to render.
+   * @property {number} visibleCount Maximum number of retained items revealed in the rail.
    * @property {HistoryCursor | null} cursor Next older history page.
    * @property {Set<string>} cursorKeys Successfully consumed history cursors.
    * @property {number | null} watchLaterCount Full watch-later count when available.

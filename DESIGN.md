@@ -267,6 +267,9 @@ items, fetching one older page when history has no retained items left to show.
 History pages merge by playable route identity in API order. Empty pages,
 missing cursors, and repeated cursors end history continuation.
 
+Watch-later expansion can advance directly to the batch containing a cached
+target. It retains any deeper expansion and leaves an absent target unchanged.
+
 Expansion survives source switches, ordinary reconciliation, and same-document
 video navigation. Disabling the extension, replacing the document, or changing
 the UI language resets the account source session.
@@ -532,8 +535,11 @@ an archive match. The rail scrolls to that card once for the current page
 session and again when the collection route is opened explicitly.
 
 When the selected source is watch later, the rail uses the same current-card
-matching, positioning, and highlight path as collection. If the current watch
-video is present, opening the watch-later route scrolls directly to that card.
+matching, positioning, and highlight path as collection. Selecting or reopening
+the route searches all retained account items and reveals the batch containing
+the current watch route before rendering. The rail scrolls to that card when
+present. Subsequent reconciliation preserves manual scrolling.
+
 Current-card positioning uses the item's logical index and renders the
 destination window directly.
 

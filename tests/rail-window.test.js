@@ -2,13 +2,41 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 const { RailElement, railFixture } = require("./helpers/rail-dom.js");
-const { LayoutRoot, RailWindow, SourceKind } = loadContentRuntime();
+const { AccountSourceStore, LayoutRoot, RailWindow, SourceKind } = loadContentRuntime();
 
 global.HTMLElement = RailElement;
 global.getComputedStyle = (element) => ({
   getPropertyValue: (name) => name === "--bibilili-card-width"
     ? `${element.ownerDocument.cardWidth}px` : "10px"
 });
+
+async function watchLaterRailFixture(t, targetIndex = 190) {
+  const fixture = railFixture(LayoutRoot, 240, SourceKind.WATCH_LATER);
+  if (targetIndex !== -1) {
+    fixture.source.items[targetIndex].targetUrl = global.location.href;
+  }
+  const requests = [];
+  t.mock.method(AccountSourceStore, "fetchApiPayload", async (url) => {
+    requests.push(url);
+    const list = new URL(url).pathname === "/x/v2/history/toview"
+      ? fixture.source.items.map((item, index) => ({
+          url: item.targetUrl, title: item.title, aid: index + 1
+        }))
+      : [{ aid: 50001, title: "History item" }];
+    return { code: 0, data: { list, count: list.length } };
+  });
+  const store = new AccountSourceStore(() => {});
+  await store.refresh("en");
+  let reveals = 0;
+  fixture.layout.onWatchLaterReveal = () => {
+    reveals += 1;
+    return store.revealWatchLaterItem(global.location.href);
+  };
+  fixture.layout.currentActivationControl = {};
+  fixture.layout.currentSources = store.currentSources();
+  fixture.layout.selectedSourceKind = SourceKind.HISTORY;
+  return { ...fixture, store, requests, reveals: () => reveals };
+}
 
 test("rail geometry bounds the window independently of list length", () => {
   const geometry = new RailWindow(10000, 190, 10);
@@ -60,6 +88,82 @@ test("current-video positioning renders the destination without intermediate car
   fixture.rail.scrollLeft = 0;
   fixture.layout.renderRail(fixture.source, false);
   assert.equal(fixture.rail.scrollLeft, 0);
+});
+
+test("opening and reopening watch later reveals the cached current batch before rendering", async (t) => {
+  const fixture = await watchLaterRailFixture(t);
+  const { layout, store, rail, card, cards, created, demands, requests, reveals } = fixture;
+  layout.renderSourceDock(layout.currentSources, {});
+  assert.equal(reveals(), 0);
+  assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 80);
+  created.length = 0;
+  demands.length = 0;
+
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 200);
+  assert.equal(layout.railSource.items.length, 200);
+  assert.equal(card(190).isCurrent, true);
+  const centeredScrollLeft = rail.scrollLeft;
+  assert.ok(centeredScrollLeft > 37000);
+  assert.ok(cards().length <= 12);
+  assert.ok(created.every((card) => Number(card.dataset.bibililiCardIndex) > 180));
+  assert.ok(demands.flat().every((item) => Number(item.watchLaterAid) > 180));
+  assert.equal(reveals(), 1);
+  assert.equal(requests.length, 2);
+
+  rail.scrollLeft = 2012;
+  layout.renderRailWindow();
+  const retainedCard = card(10);
+  layout.setSources(store.currentSources(), false, {}, null);
+  assert.equal(rail.scrollLeft, 2012);
+  assert.equal(card(10), retainedCard);
+  assert.equal(reveals(), 1);
+
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  assert.equal(layout.isRailOpen, false);
+  assert.deepEqual(demands.at(-1), []);
+  assert.equal(reveals(), 1);
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  assert.equal(rail.scrollLeft, centeredScrollLeft);
+  assert.equal(card(190).isCurrent, true);
+  assert.equal(reveals(), 2);
+  assert.equal(requests.length, 2);
+});
+
+test("opening watch later with no cached match keeps its initial batch", async (t) => {
+  const { layout, store, rail, cards, requests } = await watchLaterRailFixture(t, -1);
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 80);
+  assert.equal(rail.scrollLeft, 0);
+  assert.ok(cards().every((card) => !card.isCurrent));
+  assert.equal(requests.length, 2);
+});
+
+test("account-source arrival reveals the target while preserving earlier manual scrolling", async (t) => {
+  const fixture = await watchLaterRailFixture(t);
+  const { layout, store, document, rail, card, requests, reveals } = fixture;
+  const nativeSource = {
+    ...fixture.source,
+    root: document.createElement("section"),
+    items: [fixture.source.items[190], ...fixture.source.items.slice(0, 79)]
+  };
+  layout.currentSources = [nativeSource];
+  layout.selectedSourceKind = SourceKind.WATCH_LATER;
+  layout.renderSourceDock(layout.currentSources, {});
+  assert.equal(reveals(), 0);
+  rail.scrollLeft = 2012;
+  layout.renderRailWindow();
+
+  layout.setSources(store.currentSources(), false, {}, null);
+  assert.equal(layout.railSource.root, null);
+  assert.equal(layout.railSource.items.length, 200);
+  assert.equal(rail.scrollLeft, 2012);
+  assert.equal(reveals(), 1);
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
+  assert.equal(card(190).isCurrent, true);
+  assert.ok(rail.scrollLeft > 37000);
+  assert.equal(requests.length, 2);
 });
 
 test("focused and pressed cards stay mounted without retaining the intervening list", () => {
