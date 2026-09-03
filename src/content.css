@@ -1,3 +1,15 @@
+:root.bibilili-player-pending :is(
+  #bilibili-player,
+  #playerWrap,
+  .player-wrap,
+  .bpx-player-container,
+  .bpx-player-primary-area,
+  [class*="player-wrap"]
+) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 :root.bibilili-mounted,
 :root.bibilili-mounted body {
   height: 100%;
@@ -132,6 +144,12 @@
   max-width: none !important;
   height: 100% !important;
   max-height: none !important;
+}
+
+/* Note: Native lazy priming can switch the moved player into floating mini mode. */
+.bibilili-player-pane .bpx-player-container[data-screen="mini"] {
+  position: relative !important;
+  inset: auto !important;
 }
 
 .bibilili-comment-pane {

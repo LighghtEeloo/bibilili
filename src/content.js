@@ -31,6 +31,8 @@
   const NATIVE_OVERLAY_POSITION_ATTR =
     "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
+  const HTML_PLAYER_PENDING_CLASS = "bibilili-player-pending";
+  const PLAYER_MOUNT_TIMEOUT_MS = 5000;
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
@@ -1091,6 +1093,65 @@
 
         button.remove();
         buttons.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Conceals the native player while its extension pane is being prepared.
+   *
+   * Note: Bilibili can paint or float its native player before DOMContentLoaded.
+   * Opacity keeps its geometry available to discovery and native hydration.
+   * The deadline restores visibility if the layout cannot mount.
+   */
+  class PlayerMountGuard {
+    /** @param {Document} document */
+    constructor(document) {
+      this.document = document;
+      this.timer = null;
+      this.rootObserver = null;
+    }
+
+    /** Starts a bounded handoff without extending an active deadline. */
+    start() {
+      if (this.timer !== null) {
+        return;
+      }
+
+      this.timer = window.setTimeout(() => this.stop(), PLAYER_MOUNT_TIMEOUT_MS);
+
+      if (!this.apply()) {
+        this.rootObserver = new MutationObserver(() => this.apply());
+        this.rootObserver.observe(this.document, { childList: true });
+      }
+    }
+
+    /**
+     * Marks the document as soon as its root exists.
+     *
+     * @returns {boolean}
+     */
+    apply() {
+      const root = this.document.documentElement;
+      if (!root) {
+        return false;
+      }
+
+      root.classList.add(HTML_PLAYER_PENDING_CLASS);
+      this.rootObserver?.disconnect();
+      this.rootObserver = null;
+      return true;
+    }
+
+    /** Reveals the player and cancels pending document-root work. */
+    stop() {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+      this.rootObserver?.disconnect();
+      this.rootObserver = null;
+      const classes = this.document.documentElement?.classList;
+      if (classes?.contains(HTML_PLAYER_PENDING_CLASS)) {
+        classes.remove(HTML_PLAYER_PENDING_CLASS);
       }
     }
   }
@@ -5632,7 +5693,7 @@
     destroy() {
       this.releasePageOwnership();
       this.resetLayoutState();
-      this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+      this.document.documentElement?.classList.remove(HTML_MOUNTED_CLASS);
     }
 
     /**
@@ -6409,7 +6470,7 @@
       const shouldPersist = Boolean(this.commentResizeDrag);
       const pointerId = event?.pointerId ?? this.commentResizeDrag?.pointerId;
       this.commentResizeDrag = null;
-      this.document.documentElement.classList.remove(
+      this.document.documentElement?.classList.remove(
         COMMENT_PANE_RESIZING_CLASS
       );
 
@@ -9619,6 +9680,7 @@
     constructor(document) {
       this.document = document;
       this.discovery = new RegionDiscovery(document);
+      this.playerMountGuard = new PlayerMountGuard(document);
       this.videoPreviews = new VideoPreviewStore(() => {
         this.layout.scheduleRailRender();
       });
@@ -9631,6 +9693,7 @@
       this.activationControl = new ActivationControl(document, (enabled) => {
         this.setEnabled(enabled);
       });
+      this.readyHandler = null;
       this.observer = null;
       this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute) => {
         this.reconcile(resetSourceRoute);
@@ -9640,7 +9703,7 @@
       this.themeChangeHandler = null;
       this.popstateHandler = null;
       this.hashchangeHandler = null;
-      this.uiLanguage = LanguageResolver.resolve(document);
+      this.uiLanguage = DEFAULT_UI_LANGUAGE;
       this.pageKey = "";
       /** @type {CardNavigationOriginRecord | null} */
       this.pendingVideoCardNavigationOrigin = null;
@@ -9648,10 +9711,20 @@
       this.settlingTimers = [];
     }
 
+    /** Conceals the player during an enabled watch-page layout handoff. */
+    prepareMount() {
+      if (this.enabled && this.isWatchPage()) {
+        this.playerMountGuard.start();
+      } else {
+        this.playerMountGuard.stop();
+      }
+    }
+
     /**
      * Starts observers, account loading, and the first reconciliation pass.
      */
     start() {
+      this.uiLanguage = LanguageResolver.resolve(this.document);
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       BilibiliThemeSync.sync(this.document);
@@ -9666,6 +9739,10 @@
      * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
+      if (this.readyHandler) {
+        this.document.removeEventListener("DOMContentLoaded", this.readyHandler);
+        this.readyHandler = null;
+      }
       this.observer?.disconnect();
       this.observer = null;
 
@@ -9703,6 +9780,7 @@
      * Clears rendered page state without changing observers or activation.
      */
     clearRenderedPageState() {
+      this.playerMountGuard.stop();
       this.videoPreviews.stop();
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
@@ -9868,18 +9946,24 @@
         () => this.accountSources.revealWatchLaterItem(window.location.href)
       );
       this.nextPageSourceRouteState = null;
+      this.playerMountGuard.stop();
     }
 
     /**
-     * Observes lazy page updates and schedules reconciliation when page-owned
-     * DOM changes.
+     * Reconciles player arrival urgently and other page mutations lazily.
      */
     observeMutations() {
       this.observer = new MutationObserver((mutations) => {
         const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwned(mutation.target));
 
         if (hasPageMutation) {
-          this.scheduleReconcile(false, ReconcilePriority.LAZY);
+          const playerArrived = this.enabled && this.isWatchPage() &&
+            !this.layout.playerNode?.isConnected &&
+            this.discovery.findPlayerRegion();
+          this.scheduleReconcile(
+            false,
+            playerArrived ? ReconcilePriority.URGENT : ReconcilePriority.LAZY
+          );
         }
       });
 
@@ -9941,6 +10025,7 @@
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       this.layout.destroy();
+      this.prepareMount();
       this.startPageReconciliation(true);
     }
 
@@ -10044,6 +10129,7 @@
         return;
       }
 
+      this.prepareMount();
       this.startPageReconciliation(true);
     }
 
@@ -10336,6 +10422,7 @@
       AccountSourceAdapter,
       AccountSourceStore,
       AccountSourceStatus,
+      BibililiController,
       LayoutRoot,
       RailWindow,
       RegionDiscovery,
@@ -10354,14 +10441,16 @@
 
   const startToken = Symbol("bibilili-start");
   window.__bibililiStartToken = startToken;
+  const controller = new BibililiController(document);
+  window.__bibililiController = controller;
+  controller.prepareMount();
 
   const start = () => {
     if (window.__bibililiStartToken !== startToken) {
       return;
     }
 
-    const controller = new BibililiController(document);
-    window.__bibililiController = controller;
+    controller.readyHandler = null;
     controller.start();
 
     const refreshAfterCatalogLoad = () => {
@@ -10382,6 +10471,7 @@
   };
 
   if (document.readyState === "loading") {
+    controller.readyHandler = start;
     document.addEventListener("DOMContentLoaded", start, { once: true });
   } else {
     start();

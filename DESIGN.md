@@ -145,11 +145,16 @@ The activation state is a Bilibili-page preference recording the requested
 state. It persists across same-tab navigation and page reloads when browser
 storage is available.
 
-## Startup Lazy Readiness
+## Startup
 
-Startup lazy readiness is the state between player discovery and Bilibili's
-lazy comment and list hydration. Player discovery is enough to mount the
-transformed layout; comments and page-owned source data may settle afterward.
+An enabled watch page conceals the native player from document start until the
+first transformed render completes. The player keeps its native geometry during
+this handoff. Disabling Bibilili or leaving the watch page restores visibility;
+a five-second deadline also restores it if mounting cannot complete. The same
+guard covers activation and same-document video navigation.
+
+Player discovery is enough to mount the transformed layout. Lazy comments and
+page-owned source data may settle afterward.
 
 On a new watch page, the controller may run one native lazy-primer pass before
 moving comments. The pass briefly scrolls the page-owned document toward
@@ -171,6 +176,11 @@ The player pane contains the Bilibili player region and occupies the main
 column of the stage. The comment pane determines its width reduction; the list
 dock determines its height reduction. Bibilili leaves player controls, player
 events, and playback state under Bilibili ownership.
+
+The pane keeps the native mini-player container in normal flow and clears its
+floating offsets. Native lazy priming can activate that mode while the player
+is already mounted. Web fullscreen and browser fullscreen retain their native
+positioning.
 
 ## Comment Pane
 
@@ -592,8 +602,9 @@ page. Requests carry a priority and a source-reset flag. The reset flag clears
 the page-session source route when the visible video session changes.
 
 Reconciliation has two priorities. Urgent requests come from activation,
-initial startup, and same-tab navigation. Lazy requests come from page
-mutations, theme changes, page priming, and startup settling.
+initial startup, same-tab navigation, and player arrival while awaiting a
+mount. Lazy requests come from other page mutations, theme changes, page
+priming, and startup settling.
 
 Urgent requests run asynchronously after the current browser task. They cancel
 pending lazy scheduling, keep the reset flag if any pending request set it, and
