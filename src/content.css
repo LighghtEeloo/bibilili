@@ -1102,3 +1102,36 @@
     --bibilili-card-width: 168px;
   }
 }
+
+.bibilili-rail-search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.bibilili-rail-search[hidden],
+.bibilili-rail-search > [hidden] {
+  display: none;
+}
+
+.bibilili-rail-search > button {
+  width: 32px;
+}
+
+.bibilili-rail-search > input {
+  box-sizing: border-box;
+  width: 200px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 6px;
+  color: var(--bibilili-text);
+  background: var(--bibilili-control-bg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.bibilili-rail-search > input:focus-visible {
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: -2px;
+}

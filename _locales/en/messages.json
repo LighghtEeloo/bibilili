@@ -180,5 +180,13 @@
         "example": "12:34"
       }
     }
+  },
+  "railSearchLabel": {
+    "message": "Search this list",
+    "description": "Label and placeholder for searching the selected video rail."
+  },
+  "railSearchEmpty": {
+    "message": "No matching videos",
+    "description": "Rail heading when the search has no matches."
   }
 }

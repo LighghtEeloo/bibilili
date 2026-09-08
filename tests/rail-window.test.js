@@ -272,3 +272,53 @@ test("closing the rail releases its cards and preview demand", () => {
   assert.deepEqual(demands.at(-1), []);
   assert.equal(layout.railSource, null);
 });
+
+test("watch-later search finds unrevealed videos and restores the visible budget", async (t) => {
+  const { layout, store, requests, cards } = await watchLaterRailFixture(t, -1);
+  const kind = SourceKind.WATCH_LATER;
+  const source = store.currentSource(kind);
+  const target = store.currentSource(kind, true).items[200];
+  layout.onWatchLaterSearchSource = () => store.currentSource(kind, true);
+  layout.railSearchQuery = target.title;
+  const results = layout.searchRailSource(source);
+  assert.ok(results.items.some((item) => item.targetUrl === target.targetUrl));
+  assert.equal(results.pagination.hasMore, false);
+  layout.renderRail(results, true);
+  assert.ok(cards().length > 0);
+  assert.equal(store.currentSource(kind).items.length, 80);
+  layout.railSearchQuery = "";
+  assert.equal(layout.searchRailSource(source), source);
+  assert.equal(requests.length, 2);
+});
+
+test("search normalizes titles and authors and safely renders empty results", () => {
+  const { layout, source, cards, demands } = railFixture(LayoutRoot, 3, SourceKind.HISTORY);
+  source.items[0].title = "ＦＯＯ tutorial";
+  source.items[1].author = "Foo Studio";
+  layout.railSearchQuery = "  fOo  ";
+  const results = layout.searchRailSource(source);
+  assert.deepEqual(results.items, source.items.slice(0, 2));
+  assert.equal(results.pagination, source.pagination);
+  layout.renderRail(results, true);
+  layout.railSearchQuery = "no matching title";
+  layout.renderRail(layout.searchRailSource(source), true);
+  assert.equal(cards().length, 0);
+  assert.deepEqual(demands.at(-1), []);
+  assert.equal(source.items.length, 3);
+});
+
+test("ordinary dock reconciliation preserves search and changing source clears it", () => {
+  const { layout, source } = railFixture(LayoutRoot, 10, SourceKind.HISTORY);
+  layout.currentSources = [source];
+  layout.selectedSourceKind = source.kind;
+  layout.railSearchKind = source.kind;
+  layout.railSearchQuery = "no matching title";
+  layout.renderSourceDock([source], {});
+  assert.equal(layout.railSearchQuery, "no matching title");
+  assert.equal(layout.railEntries.length, 0);
+  const other = { ...source, kind: SourceKind.RECOMMENDATIONS };
+  layout.selectedSourceKind = other.kind;
+  layout.renderSourceDock([source, other], {});
+  assert.equal(layout.railSearchQuery, "");
+  assert.equal(layout.railEntries.length, 10);
+});

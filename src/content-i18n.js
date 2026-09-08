@@ -24,6 +24,8 @@
     COMMENTS_LABEL: "commentsLabel",
     VIDEO_DESCRIPTION_LABEL: "videoDescriptionLabel",
     VIDEO_LISTS_LABEL: "videoListsLabel",
+    RAIL_SEARCH_LABEL: "railSearchLabel",
+    RAIL_SEARCH_EMPTY: "railSearchEmpty",
     SOURCE_MORE_LABEL: "sourceMoreLabel",
     SOURCE_MORE_LOADING_LABEL: "sourceMoreLoadingLabel",
     SOURCE_MORE_RETRY_LABEL: "sourceMoreRetryLabel",

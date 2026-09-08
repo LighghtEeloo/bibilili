@@ -3376,24 +3376,25 @@
     }
 
     /**
-     * Returns one account source at its current expansion depth.
+     * Returns one account source at its expansion depth or with all retained items.
      *
      * @param {string} kind
+     * @param {boolean} [includeAll] Includes retained items beyond the visible budget.
      * @returns {VideoListSource | null}
      */
-    currentSource(kind) {
+    currentSource(kind, includeAll = false) {
       const record = this.records.get(kind);
       if (!record) {
         throw new Error("Unknown account source kind");
       }
-      const items = record.items.slice(0, record.visibleCount);
+      const items = record.items.slice(0, includeAll ? undefined : record.visibleCount);
       return items.length > 0
         ? {
             kind,
             root: null,
             items,
             pagination: {
-              hasMore: AccountSourceStore.hasMore(record),
+              hasMore: !includeAll && AccountSourceStore.hasMore(record),
               status: record.status
             }
           }
@@ -5691,6 +5692,12 @@
       this.videoTagsList = null;
       this.dock = null;
       this.sourceBar = null;
+      this.railSearch = null;
+      this.railSearchButton = null;
+      this.railSearchInput = null;
+      this.railSearchQuery = "";
+      this.railSearchKind = null;
+      this.onWatchLaterSearchSource = null;
       this.actionGroup = null;
       this.rail = null;
       this.railSource = null;
@@ -5769,6 +5776,7 @@
      * @param {SourceRouteState | null} sourceRouteState
      * @param {(sourceKind: string) => Promise<void>} onSourceMore
      * @param {() => VideoListSource | null} onWatchLaterReveal
+     * @param {() => VideoListSource | null} onWatchLaterSearchSource
      */
     render(
       regions,
@@ -5784,7 +5792,8 @@
       onSourceRouteChange,
       sourceRouteState,
       onSourceMore,
-      onWatchLaterReveal
+      onWatchLaterReveal,
+      onWatchLaterSearchSource
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5808,6 +5817,7 @@
       this.onVideoCardNavigate = onVideoCardNavigate;
       this.onSourceRouteChange = onSourceRouteChange;
       this.onSourceMore = onSourceMore;
+      this.onWatchLaterSearchSource = onWatchLaterSearchSource;
       this.onWatchLaterReveal = onWatchLaterReveal;
       this.setSources(
         regions.sources,
@@ -5963,6 +5973,7 @@
 
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
+      this.createRailSearch();
       this.rail.className = "bibilili-list-rail";
       this.observeRailWindow();
 
@@ -7010,6 +7021,12 @@
       let selectedSource = this.selectedSource(sources);
       const hasOpenRail = Boolean(selectedSource && this.isRailOpen);
       const resetScroll = selectedSource?.kind !== this.renderedSourceKind;
+      if (this.railSearchKind !== selectedSource?.kind) {
+        this.railSearchQuery = "";
+        if (this.railSearchInput) this.railSearchInput.value = "";
+        this.setRailSearchExpanded(false);
+        this.railSearchKind = selectedSource?.kind;
+      }
 
       if (
         hasOpenRail &&
@@ -7030,9 +7047,10 @@
       this.root.classList.toggle("bibilili-has-dock", hasOpenRail);
       this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
+      this.renderRailSearch(hasOpenRail);
 
       if (hasOpenRail) {
-        this.renderRail(selectedSource, resetScroll);
+        this.renderRail(this.searchRailSource(selectedSource), resetScroll);
         this.renderedSourceKind = selectedSource.kind;
       } else {
         this.renderedSourceKind = null;
@@ -7045,6 +7063,95 @@
         this.videoCardStates = new WeakMap();
         this.rail.replaceChildren();
       }
+    }
+
+    /** Creates stable search controls adjacent to the watch action group. */
+    createRailSearch() {
+      this.railSearch = this.document.createElement("div");
+      this.railSearch.className = "bibilili-rail-search";
+      this.railSearchButton = this.document.createElement("button");
+      this.railSearchButton.type = "button";
+      this.railSearchButton.className = "bibilili-action-button";
+      this.railSearchButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>';
+      this.railSearchButton.setAttribute("aria-controls", "bibilili-rail-search-input");
+      this.railSearchInput = this.document.createElement("input");
+      this.railSearchInput.id = "bibilili-rail-search-input";
+      this.railSearchInput.type = "search";
+      this.railSearchInput.autocomplete = "off";
+      this.railSearchInput.setAttribute("aria-controls", LIST_RAIL_ID);
+      this.railSearchInput.value = this.railSearchQuery;
+      this.railSearchButton.addEventListener("click", () => {
+        this.setRailSearchExpanded(true);
+        this.railSearchInput.focus();
+      });
+      this.railSearchInput.addEventListener("input", () => {
+        this.railSearchQuery = this.railSearchInput.value;
+        this.refreshRailSearch();
+      });
+      this.railSearchInput.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Escape" && !event.isComposing) {
+          event.preventDefault();
+          this.railSearchQuery = "";
+          this.railSearchInput.value = "";
+          this.refreshRailSearch();
+          this.setRailSearchExpanded(false);
+          this.railSearchButton.focus();
+        }
+      });
+      this.railSearchInput.addEventListener("blur", () => {
+        if (!this.railSearchQuery.trim()) this.setRailSearchExpanded(false);
+      });
+      this.railSearch.append(this.railSearchButton, this.railSearchInput);
+      this.setRailSearchExpanded(Boolean(this.railSearchQuery));
+    }
+
+    /** @param {boolean} expanded Whether the button presents an editable field. */
+    setRailSearchExpanded(expanded) {
+      if (!this.railSearchInput) return;
+      this.railSearchInput.hidden = !expanded;
+      this.railSearchButton.hidden = expanded;
+      this.railSearchButton.setAttribute("aria-expanded", String(expanded));
+    }
+
+    /** @param {boolean} available Whether a rail is open for searching. */
+    renderRailSearch(available) {
+      if (!this.railSearch) return;
+      if (this.sourceBar.lastChild !== this.railSearch) this.sourceBar.append(this.railSearch);
+      this.railSearch.hidden = !available;
+      const label = UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language);
+      this.railSearchButton.setAttribute("aria-label", label);
+      this.railSearchButton.title = label;
+      this.railSearchInput.setAttribute("aria-label", label);
+      this.railSearchInput.placeholder = label;
+    }
+
+    /** Renders the current query from the start without changing expansion budgets. */
+    refreshRailSearch() {
+      const source = this.selectedSource(this.currentSources);
+      if (source && this.isRailOpen) {
+        this.pendingSourceMore = null;
+        this.renderRail(this.searchRailSource(source), true);
+      }
+    }
+
+    /**
+     * Filters titles and authors, using the complete retained Watch Later list.
+     * @param {VideoListSource} source
+     * @returns {VideoListSource}
+     */
+    searchRailSource(source) {
+      const query = this.railSearchQuery.trim().normalize("NFKC").toLowerCase();
+      if (!query) return source;
+      const searchable = source.kind === SourceKind.WATCH_LATER
+        ? this.onWatchLaterSearchSource?.() ?? source
+        : source;
+      return {
+        ...searchable,
+        items: searchable.items.filter((item) =>
+          [item.title, item.author].some((text) =>
+            (text ?? "").normalize("NFKC").toLowerCase().includes(query)))
+      };
     }
 
     /**
@@ -8666,7 +8773,9 @@
         ? this.pendingSourceMore
         : null;
       const { title } = this.ensureRailSourceGroup(source, resetScroll);
-      title.textContent = UiStrings.sourceLabel(source.kind, this.language);
+      title.textContent = this.railSearchQuery.trim() && source.items.length === 0
+        ? UiStrings.message(UiMessage.RAIL_SEARCH_EMPTY, this.language)
+        : UiStrings.sourceLabel(source.kind, this.language);
       const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
         ? SourceAdapter.currentWatchRouteKey()
         : null;
@@ -8706,7 +8815,7 @@
 
       const currentIndex = this.railEntries.findIndex((entry) => entry.isCurrent);
       let centerIndex = -1;
-      if (currentIndex !== -1 && currentRouteKey) {
+      if (currentIndex !== -1 && currentRouteKey && !this.railSearchQuery.trim()) {
         if (!moreInteraction && (
           resetScroll || this.locatedCurrentRouteKeys.get(source.kind) !== currentRouteKey
         )) {
@@ -10121,7 +10230,8 @@
         (state) => this.storeSourceRouteState(state),
         sourceRouteState,
         (sourceKind) => this.loadMoreAccountSource(sourceKind),
-        () => this.accountSources.revealWatchLaterItem(window.location.href)
+        () => this.accountSources.revealWatchLaterItem(window.location.href),
+        () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true)
       );
       this.nextPageSourceRouteState = null;
       if (this.lazyPrimer.timer === null) {

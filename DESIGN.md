@@ -513,6 +513,21 @@ orders them after the activation control and before the watch action group, and
 removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
+## Rail Search
+
+The search control follows the watch action group, next to the current-video
+watch-later action. It is available while a rail is open. Activation replaces
+the icon button with a focused search input. Escape clears the query and returns
+focus to the button. An empty input collapses when focus leaves it.
+
+Search filters the selected source by title or author using a case-insensitive,
+Unicode-normalized substring. Watch later searches the full retained account
+list, including items beyond the revealed batches. Other sources search their
+currently exposed items. History continuation remains available during search.
+Clearing the query restores the source's expansion depth. Source changes clear
+the query; ordinary reconciliation preserves it. An empty result keeps the rail
+open and displays a localized no-matches heading.
+
 ## List Rail
 
 The list rail is the horizontal scroll surface inside the list dock. It renders

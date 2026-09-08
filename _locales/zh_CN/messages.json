@@ -180,5 +180,13 @@
         "example": "12:34"
       }
     }
+  },
+  "railSearchLabel": {
+    "message": "搜索当前列表",
+    "description": "Label and placeholder for searching the selected video rail."
+  },
+  "railSearchEmpty": {
+    "message": "没有匹配的视频",
+    "description": "Rail heading when the search has no matches."
   }
 }
