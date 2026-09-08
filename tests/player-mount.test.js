@@ -10,9 +10,45 @@ const { DomProbe } = global.__bibililiDom;
 
 /** Adds owned-root matching to the existing minimal DOM fixture. */
 class CoverElement extends RailElement {
+  get parentNode() { return this.parentElement; }
+
+  get classList() {
+    const tokens = new Set(this.className.split(" ").filter(Boolean));
+    return {
+      contains: (name) => tokens.has(name),
+      add: (name) => { tokens.add(name); this.className = [...tokens].join(" "); },
+      remove: (name) => { tokens.delete(name); this.className = [...tokens].join(" "); },
+      toggle: (name, force) => {
+        const enabled = force ?? !tokens.has(name);
+        if (enabled) tokens.add(name); else tokens.delete(name);
+        this.className = [...tokens].join(" ");
+        return enabled;
+      }
+    };
+  }
+
+  insertBefore(node, reference) {
+    super.insertBefore(node, reference);
+    if (node.isConnected) node.connectedCallback?.();
+  }
+
   matches(selector) {
     return selector.split(",").some((part) => part.trim().startsWith("#")
       ? this.id === part.trim().slice(1) : super.matches(part));
+  }
+}
+
+/** Models Bilibili reconnecting comments from an unchanged initial attribute. */
+class NativeComments extends CoverElement {
+  constructor(document, archiveId) {
+    super(document, "div");
+    this.setAttribute("data-params", `1,${archiveId}`);
+    this.connections = 0;
+  }
+
+  connectedCallback() {
+    this.archiveId = this.getAttribute("data-params").split(",")[1];
+    this.connections += 1;
   }
 }
 
@@ -87,6 +123,132 @@ function mountFixture(t) {
   };
   return { controller, cover, document, regions, timers, frames, paintFrame };
 }
+
+/** Exercises real layout moves while stubbing unrelated metadata and dock UI. */
+function commentNavigationFixture(t) {
+  const fixture = mountFixture(t);
+  const { controller, document, regions } = fixture;
+  document.removeEventListener = () => {};
+  document.createComment = () => document.createElement("#comment");
+  const nativeRoot = document.createElement("div");
+  const player = document.createElement("div");
+  const comments = new NativeComments(document, "111");
+  document.body.append(nativeRoot);
+  nativeRoot.append(player, comments);
+
+  const layout = controller.layout;
+  const root = document.createElement("section");
+  root.id = "bibilili-layout-root";
+  layout.root = root;
+  layout.playerPane = document.createElement("section");
+  layout.commentPane = document.createElement("aside");
+  root.append(layout.playerPane, layout.commentPane);
+  document.body.append(root);
+  Object.assign(regions, { player, comments, commentState: "loaded", tags: [] });
+  layout.destroy = LayoutRoot.prototype.destroy;
+  layout.render = LayoutRoot.prototype.render;
+  t.mock.method(layout, "ensure", () => {});
+  t.mock.method(layout, "setLanguage", () => {});
+  t.mock.method(layout, "renderVideoHeader", () => {});
+  t.mock.method(layout, "renderVideoDescription", () => {});
+  t.mock.method(layout, "setSources", () => {});
+  t.mock.method(controller, "startPageReconciliation", () => {});
+  controller.pageKey = controller.currentPageKey();
+  controller.prepareMount();
+  controller.reconcile(false);
+  return { ...fixture, layout, root, nativeRoot, player, comments };
+}
+
+test("same-document navigation preserves the comment reload and native restore points", (t) => {
+  const { controller, layout, root, comments, player } = commentNavigationFixture(t);
+  const connections = comments.connections;
+  const restorePoints = [...layout.movedPageNodes.placeholders];
+  layout.commentPane.scrollTop = 500;
+  layout.renderedSourceKind = "recommendations";
+  layout.locatedCurrentRouteKeys.set("recommendations", controller.pageKey);
+  // Bilibili reloads the live component without changing its initial attribute.
+  comments.archiveId = "222";
+  global.location = new URL("https://www.bilibili.com/video/av222");
+  t.mock.method(controller.lazyPrimer, "prime", () => true);
+
+  controller.handlePotentialNavigation();
+  controller.reconcile(true);
+
+  assert.equal(layout.root, root);
+  assert.equal(player.parentElement, layout.playerPane);
+  assert.equal(comments.parentElement, layout.commentPane);
+  assert.equal(comments.archiveId, "222");
+  assert.equal(comments.connections, connections);
+  assert.deepEqual([...layout.movedPageNodes.placeholders], restorePoints);
+  assert.equal(controller.lazyPrimer.prime.mock.callCount(), 0);
+  assert.equal(layout.commentPane.scrollTop, 0);
+  assert.equal(layout.renderedSourceKind, null);
+  assert.equal(layout.locatedCurrentRouteKeys.size, 0);
+  assert.equal(layout.setSources.mock.calls.at(-1).arguments[1], true);
+  controller.stop();
+});
+
+test("temporarily empty attached comments survive hydration and settling passes", (t) => {
+  const { controller, layout, regions, comments } = commentNavigationFixture(t);
+  const connections = comments.connections;
+  comments.archiveId = "222";
+  regions.comments = null;
+  regions.commentState = "retry";
+  controller.reconcile(false);
+  assert.equal(layout.commentNode, comments);
+  assert.equal(comments.parentElement, layout.commentPane);
+  assert.equal(comments.archiveId, "222");
+  assert.equal(comments.connections, connections);
+  assert.ok(!layout.root.classList.contains("bibilili-has-comment-retry"));
+
+  regions.comments = comments;
+  regions.commentState = "loaded";
+  controller.reconcile(false);
+  assert.equal(comments.connections, connections);
+  controller.stop();
+});
+
+test("a replacement comment region is adopted after the previous tree is removed", (t) => {
+  const { controller, layout, document, nativeRoot, regions, comments } = commentNavigationFixture(t);
+  comments.remove();
+  const replacement = new NativeComments(document, "222");
+  nativeRoot.append(replacement);
+  regions.comments = replacement;
+  controller.reconcile(false);
+  assert.equal(layout.commentNode, replacement);
+  assert.equal(replacement.parentElement, layout.commentPane);
+  assert.equal(replacement.archiveId, "222");
+  controller.stop();
+});
+
+test("leaving the watch page releases the preserved native regions", (t) => {
+  const { controller, root, nativeRoot, comments, player } = commentNavigationFixture(t);
+  global.location = new URL("https://www.bilibili.com/");
+  controller.handlePotentialNavigation();
+  assert.ok(!root.isConnected);
+  assert.equal(comments.parentElement, nativeRoot);
+  assert.equal(player.parentElement, nativeRoot);
+  controller.stop();
+});
+
+test("initial comments stay native until the active primer finishes", (t) => {
+  const { controller, regions } = mountFixture(t);
+  controller.prepareMount();
+  const comments = { isConnected: true };
+  regions.player = { isConnected: true };
+  controller.lazyPrimer.timer = 123;
+  for (let pass = 0; pass < 2; pass += 1) {
+    Object.assign(regions, { comments, commentState: "loaded" });
+    controller.reconcile(false);
+    assert.equal(regions.comments, null);
+    assert.equal(regions.commentState, "retry");
+  }
+  controller.lazyPrimer.timer = null;
+  Object.assign(regions, { comments, commentState: "loaded" });
+  controller.reconcile(false);
+  assert.equal(regions.comments, comments);
+  controller.stop();
+});
 
 test("loading covers a missing player and fades after the mounted layout can paint", (t) => {
   const { controller, cover, regions, timers, paintFrame } = mountFixture(t);

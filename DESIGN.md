@@ -166,10 +166,12 @@ immediately; a five-second deadline also removes it if startup stalls.
 Player discovery is enough to mount the transformed layout. Lazy comments and
 page-owned source data may settle afterward.
 
-On a new watch page, the controller may run one native lazy-primer pass before
-moving comments. The pass briefly scrolls the page-owned document toward
-comment and source regions, restores the previous scroll position, and
-reconciles after Bilibili has had a chance to create lazy nodes and attributes.
+When no comments are attached to the pane, the controller may run one native
+lazy-primer pass per watch route before moving comments. The pass briefly
+scrolls the page-owned document toward comment and source regions, restores the
+previous scroll position, and reconciles after Bilibili has had a chance to
+create lazy nodes and attributes. Comments remain in the native page until the
+pass finishes. Attached comments load within their pane and skip native priming.
 
 Manual comment reload uses the same behavior after mount. The forced pass
 temporarily releases the transformed layout, restores page-owned nodes to their
@@ -227,7 +229,8 @@ reload control.
 A usable comment region has page-owned comment controls, comment rows, a
 page-owned empty-state marker, or a visibly laid out Bilibili comment host.
 Empty comment shells remain in their native page position so Bilibili can keep
-hydrating them.
+hydrating them. An already attached comment region stays in its pane while
+Bilibili temporarily empties it to load another video.
 
 Activating comment reload runs a forced lazy-primer pass and then reconciles the
 current watch page. It does not reload the browser page or replace Bilibili
@@ -600,8 +603,15 @@ The runtime controller coordinates discovery, activation, layout updates,
 mutation observation, account source loading, and same-tab navigation
 detection. It observes same-tab navigation, lazy region insertion, list
 updates, account source completion, and page theme marker changes. When the
-watched video changes, it starts a new page session and rebuilds discovered
-regions.
+watched video changes, it starts a new page session and reconciles discovered
+regions in the mounted layout. The comment scroll position and source-route
+interaction state reset for the destination video.
+
+Same-document navigation preserves attached player and comment regions.
+Bilibili updates its comment component's video identity in place. Reconnecting
+that component initializes it from an original attribute that can identify a
+previous video. The layout moves a replacement region when Bilibili supplies
+one and restores native regions when disabled or leaving the watch page.
 
 The page session key is the stable watch route when the URL identifies a
 playable video. Tracking query changes on the same video do not start a new

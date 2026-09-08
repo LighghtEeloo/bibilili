@@ -67,7 +67,7 @@ manual-checklist:
 	@printf '%s\n' '  5. Verify the player remains playable and comments scroll on the right when available.'
 	@printf '%s\n' '  6. Verify valid video lists render in the bottom dock.'
 	@printf '%s\n' '  7. Toggle each visible source button and confirm DOM mutations do not reset disabled sources.'
-	@printf '%s\n' '  8. Navigate to another Bilibili video in the same tab and confirm the layout rebuilds.'
+	@printf '%s\n' '  8. Click an end-of-video player recommendation and confirm comments and metadata update.'
 
 $(DIST_DIR):
 	mkdir -p $(DIST_DIR)

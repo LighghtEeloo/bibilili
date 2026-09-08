@@ -103,12 +103,13 @@ checks, runs Node tests, parses manifest and locale JSON, and verifies required
 package assets.
 
 Manual browser testing is required for behavior changes because the extension depends on live Bilibili DOM:
+- Ask the user to reload the unpacked extension after code changes before running live browser checks.
 - Load `/Users/arctic/Arc/bibilili` as an unpacked extension in `chrome://extensions`.
 - Load `/Users/arctic/Arc/bibilili/manifest.json` as a temporary add-on in `about:debugging`.
 - Refresh a `https://www.bilibili.com/video/*` page after reloading the extension.
 - Verify that the player remains playable, comments scroll on the right when available, and valid video lists render in the bottom dock.
 - Toggle each visible source button and confirm ordinary DOM mutations do not reset disabled sources.
-- Navigate to another Bilibili video in the same tab and confirm the layout rebuilds for the new page.
+- Navigate through an end-of-video player recommendation in the same tab and confirm the comments and metadata update for the new video.
 
 If browser testing cannot be performed, state that clearly in the final response.
 

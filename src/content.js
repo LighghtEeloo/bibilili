@@ -5818,12 +5818,33 @@
     }
 
     /**
+     * Clears per-video interaction state while keeping page-owned nodes attached.
+     *
+     * Note: Bilibili reloads its comment component in place during navigation.
+     * Reconnecting that component initializes it from its original data-params
+     * attribute, which can still identify the previous video.
+     */
+    resetPageSession() {
+      LayoutRoot.clearNativeOverlayLift(this.document);
+      this.endCommentPaneResize();
+      this.railPointerCard = null;
+      this.pendingSourceMore = null;
+      this.renderedSourceKind = null;
+      this.locatedCurrentRouteKeys.clear();
+      this.completedWatchLaterAddKeys.clear();
+
+      if (this.commentPane) {
+        this.commentPane.scrollTop = 0;
+      }
+    }
+
+    /**
      * Restores all moved page-owned nodes and removes extension-owned markup.
      *
      * Destroy is the normal exit path for disabling Bibilili, leaving a watch
-     * page, or rebuilding after same-tab navigation. It clears extension-owned
-     * state after page nodes have been restored so later reconciliation starts
-     * from native page ownership.
+     * page, or losing the player. It clears extension-owned state after page
+     * nodes have been restored so later reconciliation starts from native page
+     * ownership.
      */
     destroy() {
       this.releasePageOwnership();
@@ -6215,6 +6236,18 @@
       icon.append(path);
 
       return icon;
+    }
+
+    /**
+     * Returns the comment region still attached to its mounted pane.
+     *
+     * @returns {Element | null}
+     */
+    currentMountedComments() {
+      return this.commentNode?.isConnected &&
+        this.commentNode.parentElement === this.commentPane
+        ? this.commentNode
+        : null;
     }
 
     /**
@@ -10049,11 +10082,20 @@
 
       regions.sources = sources;
       const sourceRouteState = this.nextPageSourceRouteState;
+      const mountedComments = this.layout.currentMountedComments();
+
+      if (mountedComments && !regions.comments) {
+        // Note: Bilibili can briefly empty the attached tree while reloading it.
+        regions.comments = mountedComments;
+        regions.commentState = CommentPaneState.LOADED;
+      }
 
       if (
-        this.lazyPrimer.prime(this.pageKey, () => {
-          this.scheduleReconcile(false, ReconcilePriority.LAZY);
-        })
+        !mountedComments &&
+        (this.lazyPrimer.timer !== null ||
+          this.lazyPrimer.prime(this.pageKey, () => {
+            this.scheduleReconcile(false, ReconcilePriority.LAZY);
+          }))
       ) {
         /*
          * Note: Bilibili lazy priming needs the comment tree to stay in the
@@ -10150,8 +10192,9 @@
      * Resets per-page state when the visible watch page changes.
      *
      * Same-tab navigation reuses the content-script instance, so page-scoped
-     * lazy-prime, preview, and source-route state are cleared before the new
-     * page's urgent reconciliation.
+     * lazy-prime, preview, and source-route state are reset before the new
+     * page's urgent reconciliation. The mounted layout retains native nodes
+     * while Bilibili updates them for the destination video.
      */
     handlePotentialNavigation() {
       const nextPageKey = this.currentPageKey();
@@ -10165,7 +10208,11 @@
       this.videoPreviews.stop();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
-      this.layout.destroy();
+      if (this.isWatchPage()) {
+        this.layout.resetPageSession();
+      } else {
+        this.layout.destroy();
+      }
       this.prepareMount();
       this.startPageReconciliation(true);
     }
