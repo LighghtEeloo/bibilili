@@ -19,6 +19,7 @@ help:
 	@printf '%s\n' '  make bump-major        Increment major and reset minor and patch in manifest.json.'
 	@printf '%s\n' '  make bump-minor        Increment minor and reset patch in manifest.json.'
 	@printf '%s\n' '  make bump-patch        Increment patch in manifest.json.'
+	@printf '%s\n' '                         Bumps require a clean Git tree and commit as repo: publish.'
 	@printf '%s\n' '  make validate          Run all local validation checks.'
 	@printf '%s\n' '  make validate-js       Check manifest content-script JavaScript syntax.'
 	@printf '%s\n' '  make validate-tests    Run Node tests.'
@@ -33,6 +34,11 @@ help:
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
 
 bump-major bump-minor bump-patch:
+	@state=$$(git status --porcelain --untracked-files=all) || exit $$?; \
+		if [ -n "$$state" ]; then \
+			printf '%s\n' 'Version bump requires a clean Git working tree and index.' >&2; \
+			exit 1; \
+		fi
 	@node -e 'const fs = require("node:fs"); \
 		const path = "manifest.json"; \
 		const text = fs.readFileSync(path, "utf8"); \
@@ -46,6 +52,8 @@ bump-major bump-minor bump-patch:
 		const next = parts.join("."); \
 		fs.writeFileSync(path, text.replace(/("version"\s*:\s*")[^"]+(")/, (_match, prefix, suffix) => prefix + next + suffix)); \
 		console.log(version + " -> " + next);' $(patsubst bump-%,%,$@)
+	git add -- manifest.json
+	git commit -m 'repo: publish'
 
 validate: validate-js validate-tests validate-json validate-assets
 
