@@ -12,10 +12,13 @@ FIREFOX_MANIFEST := $(FIREFOX_MANIFEST_DIR)/manifest.json
 COMMON_PACKAGE_FILES := README.md src assets _locales
 CONTENT_SCRIPT_FILES := $(shell node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); process.stdout.write(manifest.content_scripts.flatMap((script)=>script.js ?? []).join(' '));")
 
-.PHONY: help validate validate-js validate-tests validate-json validate-assets manual-checklist package package-chrome package-firefox inspect-package test-package clean
+.PHONY: help bump-major bump-minor bump-patch validate validate-js validate-tests validate-json validate-assets manual-checklist package package-chrome package-firefox inspect-package test-package clean
 
 help:
 	@printf '%s\n' 'Targets:'
+	@printf '%s\n' '  make bump-major        Increment major and reset minor and patch in manifest.json.'
+	@printf '%s\n' '  make bump-minor        Increment minor and reset patch in manifest.json.'
+	@printf '%s\n' '  make bump-patch        Increment patch in manifest.json.'
 	@printf '%s\n' '  make validate          Run all local validation checks.'
 	@printf '%s\n' '  make validate-js       Check manifest content-script JavaScript syntax.'
 	@printf '%s\n' '  make validate-tests    Run Node tests.'
@@ -28,6 +31,21 @@ help:
 	@printf '%s\n' '  make inspect-package   List both package contents.'
 	@printf '%s\n' '  make test-package      Verify both package zips can be read.'
 	@printf '%s\n' '  make clean             Remove local package artifacts.'
+
+bump-major bump-minor bump-patch:
+	@node -e 'const fs = require("node:fs"); \
+		const path = "manifest.json"; \
+		const text = fs.readFileSync(path, "utf8"); \
+		const version = JSON.parse(text).version; \
+		if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$/.test(version)) throw new Error("Expected a major.minor.patch manifest version"); \
+		const parts = version.split(".").map(Number); \
+		const index = ["major", "minor", "patch"].indexOf(process.argv[1]); \
+		parts[index] += 1; \
+		parts.fill(0, index + 1); \
+		if (!parts.every(Number.isSafeInteger)) throw new Error("Version exceeds the safe integer range"); \
+		const next = parts.join("."); \
+		fs.writeFileSync(path, text.replace(/("version"\s*:\s*")[^"]+(")/, (_match, prefix, suffix) => prefix + next + suffix)); \
+		console.log(version + " -> " + next);' $(patsubst bump-%,%,$@)
 
 validate: validate-js validate-tests validate-json validate-assets
 

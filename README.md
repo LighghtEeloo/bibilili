@@ -12,6 +12,10 @@ The extension keeps Bilibili in charge of playback, comments, links, and network
 
 ## Packaging
 
+Update the version in `manifest.json` with `make bump-major`, `make bump-minor`,
+or `make bump-patch`. Major bumps reset minor and patch to zero; minor bumps
+reset patch to zero. Run the selected bump command before packaging.
+
 Bibilili ships from one source tree with browser-specific release packages:
 
 ```sh
