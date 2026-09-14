@@ -395,6 +395,15 @@
     ".watchlater-list"
   ].join(",");
 
+  const SOURCE_HEADING_SELECTOR = [
+    "h1", "h2", "h3", "h4", "h5", "h6", "[role='heading']",
+    ".title", ".head", ".header"
+  ].join(",");
+
+  const SOURCE_HEADING_ITEM_SELECTOR = [
+    "a", ...CARD_SELECTORS, VIDEO_POD_ITEM_SELECTOR, VIDEO_TARGET_DATA_SELECTOR
+  ].join(",");
+
   const SIDEBAR_BOUNDARY_SELECTOR = [
     ".right-container",
     "#right-container",
@@ -5456,7 +5465,7 @@
         }
 
         for (const child of Array.from(container.children).filter(DomProbe.isElement)) {
-          const text = DomProbe.compactText(child).slice(0, 500);
+          const text = this.sourceHeadingText(child);
 
           if (definition.pattern.test(text)) {
             roots.push(child);
@@ -5465,6 +5474,22 @@
       }
 
       return roots;
+    }
+
+    /**
+     * Reads a list's own heading without including its video titles.
+     * Note: Recommended video titles can contain source labels such as 合集.
+     * Only a root heading or its direct header children identify the list kind.
+     *
+     * @param {Element} root
+     * @returns {string}
+     */
+    sourceHeadingText(root) {
+      const headings = [root, ...Array.from(root.children)]
+        .filter((element) => element.matches(SOURCE_HEADING_SELECTOR))
+        .filter((element) => !element.closest(SOURCE_HEADING_ITEM_SELECTOR))
+        .filter((element) => SourceAdapter.videoTargetsIn(element).length === 0);
+      return headings.map((element) => DomProbe.compactText(element)).join(" ").slice(0, 500);
     }
 
     /**
@@ -5496,7 +5521,7 @@
      */
     scoreSourceRoot(root, definition, itemCount) {
       let score = itemCount;
-      const text = DomProbe.compactText(root).slice(0, 600);
+      const text = this.sourceHeadingText(root);
 
       if (definition.pattern.test(text)) {
         score += 12;

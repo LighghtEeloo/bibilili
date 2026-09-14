@@ -247,6 +247,10 @@ Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items. Source adapters convert page-owned list markup and
 Bilibili account API payloads into video items for the bottom dock renderer.
 
+Discovery identifies source kinds through named containers and list headings.
+Heading fallbacks read a root heading or its direct header children; video-card
+titles do not identify the containing list's kind.
+
 The route model converts playable Bilibili URLs into route identities, archive
 preview identities, canonical archive URLs, and route keys. Archive route keys
 include the page number; bangumi route keys use the playable bangumi identity.
