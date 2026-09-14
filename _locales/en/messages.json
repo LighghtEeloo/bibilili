@@ -181,6 +181,18 @@
       }
     }
   },
+  "railActionsLabel": {
+    "message": "Rail actions",
+    "description": "Accessible name for the rail action control group."
+  },
+  "railLocateLabel": {
+    "message": "Locate",
+    "description": "Button label for centering the current video in the displayed rail."
+  },
+  "railRefreshLabel": {
+    "message": "Refresh rail",
+    "description": "Accessible name and tooltip for refreshing the selected rail source."
+  },
   "railSearchLabel": {
     "message": "Search this list",
     "description": "Label and placeholder for searching the selected video rail."

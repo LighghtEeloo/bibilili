@@ -5717,6 +5717,13 @@
       this.videoTagsList = null;
       this.dock = null;
       this.sourceBar = null;
+      this.railActionGroup = null;
+      this.railLocateButton = null;
+      /** Logical current-video index in the displayed rail, or -1 when absent. */
+      this.railLocateIndex = -1;
+      this.railRefreshButton = null;
+      this.isRailRefreshing = false;
+      this.onRailRefresh = null;
       this.railSearch = null;
       this.railSearchButton = null;
       this.railSearchInput = null;
@@ -5802,6 +5809,7 @@
      * @param {(sourceKind: string) => Promise<void>} onSourceMore
      * @param {() => VideoListSource | null} onWatchLaterReveal
      * @param {() => VideoListSource | null} onWatchLaterSearchSource
+     * @param {(source: VideoListSource) => Promise<void>} onRailRefresh
      */
     render(
       regions,
@@ -5818,7 +5826,8 @@
       sourceRouteState,
       onSourceMore,
       onWatchLaterReveal,
-      onWatchLaterSearchSource
+      onWatchLaterSearchSource,
+      onRailRefresh
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
@@ -5844,6 +5853,7 @@
       this.onSourceMore = onSourceMore;
       this.onWatchLaterSearchSource = onWatchLaterSearchSource;
       this.onWatchLaterReveal = onWatchLaterReveal;
+      this.onRailRefresh = onRailRefresh;
       this.setSources(
         regions.sources,
         resetSourceRoute,
@@ -5998,7 +6008,7 @@
 
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
-      this.createRailSearch();
+      this.createRailControls();
       this.rail.className = "bibilili-list-rail";
       this.observeRailWindow();
 
@@ -7082,6 +7092,8 @@
         this.pendingSourceMore = null;
         this.railSource = null;
         this.railEntries = [];
+        this.railLocateIndex = -1;
+        this.renderRailLocate();
         this.railEntryIndexes.clear();
         this.railPointerCard = null;
         this.videoPreviews.setDemand([]);
@@ -7090,7 +7102,82 @@
       }
     }
 
-    /** Creates stable search controls adjacent to the watch action group. */
+    /** Groups rail actions in their stable Locate, Refresh, Search order. */
+    createRailControls() {
+      this.createRailLocate();
+      this.createRailRefresh();
+      this.createRailSearch();
+      this.railActionGroup = this.document.createElement("div");
+      this.railActionGroup.className = "bibilili-rail-action-group";
+      this.railActionGroup.setAttribute("role", "group");
+      this.railActionGroup.append(
+        this.railLocateButton, this.railRefreshButton, this.railSearch
+      );
+    }
+
+    /** Creates the first control in the rail action group. */
+    createRailLocate() {
+      this.railLocateButton = this.document.createElement("button");
+      this.railLocateButton.type = "button";
+      this.railLocateButton.className = "bibilili-action-button bibilili-rail-locate";
+      this.railLocateButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>';
+      this.railLocateButton.setAttribute("aria-controls", LIST_RAIL_ID);
+      this.railLocateButton.disabled = true;
+      this.railLocateButton.addEventListener("click", () => this.locateCurrentRailItem());
+    }
+
+    /** Updates the stable Locate control from the cached displayed-item index. */
+    renderRailLocate() {
+      if (!this.railLocateButton) return;
+      const label = UiStrings.message(UiMessage.RAIL_LOCATE_LABEL, this.language);
+      UiControl.setLabel(this.railLocateButton, label);
+      this.railLocateButton.disabled = !this.isRailOpen || this.railLocateIndex === -1;
+    }
+
+    /** Centers the cached target and renders only its destination rail window. */
+    locateCurrentRailItem() {
+      if (!this.isRailOpen || !this.railSource || this.railLocateIndex === -1) return;
+      this.renderRailWindow({ centerIndex: this.railLocateIndex });
+    }
+
+    /** Creates the selected-source refresh control between Locate and Search. */
+    createRailRefresh() {
+      this.railRefreshButton = this.document.createElement("button");
+      this.railRefreshButton.type = "button";
+      this.railRefreshButton.className = "bibilili-action-button bibilili-rail-refresh";
+      this.railRefreshButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4v6h-6M20 10a8 8 0 1 0-1.1 6"/></svg>';
+      this.railRefreshButton.setAttribute("aria-controls", LIST_RAIL_ID);
+      this.railRefreshButton.disabled = true;
+      this.railRefreshButton.addEventListener("click", () => this.refreshCurrentRail());
+    }
+
+    /** Updates refresh availability and exposes an in-flight source reload. */
+    renderRailRefresh() {
+      if (!this.railRefreshButton) return;
+      const label = UiStrings.message(UiMessage.RAIL_REFRESH_LABEL, this.language);
+      UiControl.setLabel(this.railRefreshButton, label);
+      this.railRefreshButton.disabled = !this.isRailOpen ||
+        !this.selectedSource(this.currentSources) || !this.onRailRefresh ||
+        this.isRailRefreshing;
+      this.railRefreshButton.setAttribute("aria-busy", String(this.isRailRefreshing));
+    }
+
+    /** Reloads the selected source once, preserving the current rail controls. */
+    async refreshCurrentRail() {
+      const source = this.selectedSource(this.currentSources);
+      if (!source || !this.isRailOpen || !this.onRailRefresh || this.isRailRefreshing) return;
+      this.isRailRefreshing = true;
+      this.pendingSourceMore = null;
+      this.renderRailRefresh();
+      try {
+        await this.onRailRefresh(source);
+      } finally {
+        this.isRailRefreshing = false;
+        this.renderRailRefresh();
+      }
+    }
+
+    /** Creates stable search controls following Refresh. */
     createRailSearch() {
       this.railSearch = this.document.createElement("div");
       this.railSearch.className = "bibilili-rail-search";
@@ -7141,8 +7228,14 @@
 
     /** @param {boolean} available Whether a rail is open for searching. */
     renderRailSearch(available) {
-      if (!this.railSearch) return;
-      if (this.sourceBar.lastChild !== this.railSearch) this.sourceBar.append(this.railSearch);
+      if (!this.railActionGroup) return;
+      if (this.sourceBar.lastChild !== this.railActionGroup) {
+        this.sourceBar.append(this.railActionGroup);
+      }
+      this.railActionGroup.setAttribute("aria-label",
+        UiStrings.message(UiMessage.RAIL_ACTIONS_LABEL, this.language));
+      this.renderRailLocate();
+      this.renderRailRefresh();
       this.railSearch.hidden = !available;
       const label = UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language);
       this.railSearchButton.setAttribute("aria-label", label);
@@ -8777,6 +8870,8 @@
       this.railPointerCard = null;
       this.railSource = null;
       this.railEntries = [];
+      this.railLocateIndex = -1;
+      this.renderRailLocate();
       this.railEntryIndexes.clear();
       this.railStride = 0;
       this.renderedSourceKind = null;
@@ -8801,12 +8896,15 @@
       title.textContent = this.railSearchQuery.trim() && source.items.length === 0
         ? UiStrings.message(UiMessage.RAIL_SEARCH_EMPTY, this.language)
         : UiStrings.sourceLabel(source.kind, this.language);
+      const watchRouteKey = SourceAdapter.currentWatchRouteKey();
+      const locateKey = watchRouteKey ? `route:${watchRouteKey}` : null;
       const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
-        ? SourceAdapter.currentWatchRouteKey()
+        ? watchRouteKey
         : null;
       const keyCounts = new Map();
       this.railSource = source;
       this.railEntryIndexes.clear();
+      this.railLocateIndex = -1;
       this.railEntries = source.items.map((item, index) => {
         const key = this.videoCardRenderKey(item, keyCounts);
         const itemRouteKey = currentRouteKey
@@ -8818,9 +8916,13 @@
           currentRouteKey,
           itemRouteKey
         ));
+        if (this.railLocateIndex === -1 && (isCurrent || key === locateKey)) {
+          this.railLocateIndex = index;
+        }
         this.railEntryIndexes.set(key, index);
         return { item, key, isCurrent };
       });
+      this.renderRailLocate();
 
       let focusIndex = -1;
       if (moreInteraction && source.pagination?.status !== AccountSourceStatus.LOADING) {
@@ -10256,7 +10358,8 @@
         sourceRouteState,
         (sourceKind) => this.loadMoreAccountSource(sourceKind),
         () => this.accountSources.revealWatchLaterItem(window.location.href),
-        () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true)
+        () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
+        (source) => this.refreshRail(source)
       );
       this.nextPageSourceRouteState = null;
       if (this.lazyPrimer.timer === null) {
@@ -10465,6 +10568,29 @@
       }
 
       this.accountSources.refresh(this.resolveUiLanguage());
+    }
+
+    /**
+     * Refreshes the selected rail source without remounting page-owned regions.
+     * Account sources use one request; page sources are re-extracted from DOM.
+     * History resumes from the newest page and its new continuation cursor.
+     *
+     * @param {VideoListSource} source
+     * @returns {Promise<void>}
+     */
+    async refreshRail(source) {
+      if (!this.enabled || !this.isWatchPage()) return;
+      const pageKey = this.currentPageKey();
+      if (source.root === null && ACCOUNT_SOURCE_ORDER.includes(source.kind)) {
+        await this.accountSources.refreshSource(source.kind);
+      }
+      if (!this.enabled || !this.isWatchPage() || this.currentPageKey() !== pageKey) return;
+      const sources = SourceMerger.merge(
+        this.discovery.findSources(),
+        this.accountSources.currentSources()
+      );
+      this.layout.watchLaterAccountCount = this.accountSources.currentWatchLaterCount();
+      this.layout.setSources(sources, false, this.activationControl, null);
     }
 
     /**

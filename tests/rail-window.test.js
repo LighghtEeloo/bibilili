@@ -90,6 +90,76 @@ test("current-video positioning renders the destination without intermediate car
   assert.equal(fixture.rail.scrollLeft, 0);
 });
 
+test("Locate jumps to a cached current item in a large rail without rebuilding entries", () => {
+  for (const kind of [SourceKind.PARTS, SourceKind.COLLECTION, SourceKind.WATCH_LATER, SourceKind.HISTORY]) {
+    const { layout, source, rail, created, card } = railFixture(LayoutRoot, 10000, kind);
+    layout.createRailLocate();
+    source.items[9000].targetUrl = global.location.href;
+    layout.renderRail(source, true);
+    if (kind === SourceKind.HISTORY) assert.equal(rail.scrollLeft, 0);
+    rail.scrollLeft = 0;
+    layout.renderRailWindow();
+    const entries = layout.railEntries;
+    created.length = 0;
+
+    assert.equal(layout.railLocateButton.disabled, false);
+    layout.locateCurrentRailItem();
+    assert.equal(layout.railEntries, entries);
+    assert.equal(rail.scrollLeft, 1799607);
+    assert.ok(card(9000));
+    assert.ok(created.length <= 12);
+    assert.ok(created.every((node) => Number(node.dataset.bibililiCardIndex) > 8990));
+  }
+});
+
+test("Locate follows search results and disables for absent videos and closed rails", () => {
+  const { layout, source, rail } = railFixture(LayoutRoot, 100, SourceKind.HISTORY);
+  layout.createRailLocate();
+  source.items[90].targetUrl = global.location.href;
+  layout.renderRail(source, true);
+  assert.equal(layout.railLocateButton.disabled, false);
+
+  layout.railSearchQuery = "Video 1";
+  layout.refreshRailSearch();
+  assert.equal(layout.railLocateButton.disabled, true);
+  layout.locateCurrentRailItem();
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(layout.railSearchQuery, "Video 1");
+
+  layout.railSearchQuery = "";
+  layout.refreshRailSearch();
+  assert.equal(layout.railLocateButton.disabled, false);
+  layout.isRailOpen = false;
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.railLocateButton.disabled, true);
+  assert.equal(layout.railLocateIndex, -1);
+
+  layout.isRailOpen = true;
+  layout.renderRail({ ...source, items: source.items.slice(0, 80) }, true);
+  assert.equal(layout.railLocateButton.disabled, true);
+});
+
+test("Locate accepts a collection current marker and preserves control placement", () => {
+  const { layout, source, document } = railFixture(LayoutRoot, 100, SourceKind.COLLECTION);
+  const actions = document.createElement("div");
+  layout.sourceBar.append(actions);
+  layout.createRailControls();
+  source.items[90].isCurrent = true;
+  layout.renderSourceDock([source], null);
+  const button = layout.railLocateButton;
+  assert.equal(button.disabled, false);
+  assert.equal(layout.railLocateIndex, 90);
+  assert.equal(actions.nextSibling, layout.railActionGroup);
+  assert.equal(layout.railActionGroup.firstChild, button);
+  assert.equal(button.nextSibling, layout.railRefreshButton);
+  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.railLocateButton, button);
+  assert.equal(actions.nextSibling, layout.railActionGroup);
+  assert.equal(button.nextSibling, layout.railRefreshButton);
+  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
+});
+
 test("opening and reopening watch later reveals the cached current batch before rendering", async (t) => {
   const fixture = await watchLaterRailFixture(t);
   const { layout, store, rail, card, cards, created, demands, requests, reveals } = fixture;

@@ -517,12 +517,46 @@ orders them after the activation control and before the watch action group, and
 removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
+The rail action group follows the watch action group, separated by a vertical
+border. It contains Locate, Refresh, and Search in that order and has a
+localized accessible name.
+
+## Rail Locate
+
+The Locate button starts the rail action group. It presents a crosshair icon
+with a localized tooltip and accessible name. It centers the current video in
+the displayed rail. It is disabled when the rail is closed or the displayed
+items contain no current video,
+including when a search query excludes it. Locate preserves the selected
+source, search query, and account expansion depth.
+
+Locate matches the current watch route or the collection's native current-row
+marker. Reconciliation records the first matching item's logical index while
+building rail entries. Activation uses that index to render the destination
+window through the existing rail positioning path.
+
+## Rail Refresh
+
+The Refresh button sits between Locate and Search and reloads the selected rail
+source. It presents a circular-arrow icon with a localized tooltip and
+accessible name. It is disabled while the rail is closed or a refresh is
+pending. Refresh preserves the search query and selected route while that
+source remains available. Scroll position is retained within the updated
+rail's bounds.
+
+Account sources refresh through one request to their existing list endpoint.
+Watch later retains its expansion budget. History restarts from the latest
+page and uses Show more for older entries. Failed requests retain usable items.
+Page-owned sources are re-extracted from Bilibili's current list markup.
+Refresh updates the dock without reloading the page or remounting the player
+and comments.
+
 ## Rail Search
 
-The search control follows the watch action group, next to the current-video
-watch-later action. It is available while a rail is open. Activation replaces
-the icon button with a focused search input. Escape clears the query and returns
-focus to the button. An empty input collapses when focus leaves it.
+The search control follows Refresh. It is available while a rail is open.
+Activation replaces the icon button with a focused search input. Escape clears
+the query and returns focus to the button. An empty input collapses when focus
+leaves it.
 
 Search filters the selected source by title or author using a case-insensitive,
 Unicode-normalized substring. Watch later searches the full retained account

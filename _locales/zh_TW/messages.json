@@ -181,6 +181,18 @@
       }
     }
   },
+  "railActionsLabel": {
+    "message": "列表操作",
+    "description": "Accessible name for the rail action control group."
+  },
+  "railLocateLabel": {
+    "message": "定位",
+    "description": "Button label for centering the current video in the displayed rail."
+  },
+  "railRefreshLabel": {
+    "message": "重新整理列表",
+    "description": "Accessible name and tooltip for refreshing the selected rail source."
+  },
   "railSearchLabel": {
     "message": "搜尋目前清單",
     "description": "Label and placeholder for searching the selected video rail."

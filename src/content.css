@@ -610,7 +610,8 @@
   background: var(--bibilili-selected-bg);
 }
 
-.bibilili-action-group {
+.bibilili-action-group,
+.bibilili-rail-action-group {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1101,6 +1102,19 @@
     --bibilili-comment-pane-width: clamp(240px, 34vw, 320px);
     --bibilili-card-width: 168px;
   }
+}
+
+.bibilili-rail-locate,
+.bibilili-rail-refresh {
+  width: 32px;
+}
+
+.bibilili-rail-locate:disabled,
+.bibilili-rail-refresh:disabled {
+  cursor: default;
+  border-color: transparent;
+  color: var(--bibilili-muted);
+  background: transparent;
 }
 
 .bibilili-rail-search {
