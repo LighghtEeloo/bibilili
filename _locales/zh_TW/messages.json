@@ -133,6 +133,10 @@
     "message": "評論未載入。",
     "description": "Message shown in the comment pane when comments are missing or empty."
   },
+  "commentLoadingLabel": {
+    "message": "正在更新評論…",
+    "description": "Status shown over dimmed comments while switching videos."
+  },
   "commentReloadLabel": {
     "message": "重新載入評論",
     "description": "Button label for retrying comment hydration."

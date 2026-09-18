@@ -3,22 +3,63 @@
 
   const REQUEST_EVENT = "bibilili:video-navigation-request";
   const RESULT_EVENT = "bibilili:video-navigation-result";
+  const COMMENTS_READY_EVENT = "bibilili:comments-ready-check";
   const WATCH_PATH_PATTERN = /^\/video\/(BV[0-9A-Za-z]+|av\d+)\/?$/u;
 
   /**
    * Invokes the page-owned player's archive reload API in the page world.
-   * This bridge exposes no extension APIs and accepts only playback identifiers.
+   * Also reads native comment readiness without changing the comment lifecycle.
+   * This bridge exposes no extension APIs.
    */
   class PageVideoNavigation {
-    /** Registers the page-side request listener. */
+    /** Registers playback requests and read-only comment readiness probes. */
     constructor() {
       this.handler = (event) => this.handleRequest(event);
+      this.commentsHandler = (event) => this.handleCommentsCheck(event);
       document.addEventListener(REQUEST_EVENT, this.handler);
+      document.addEventListener(COMMENTS_READY_EVENT, this.commentsHandler, true);
     }
 
-    /** Removes this installation's request listener before replacement. */
+    /** Removes this installation's listeners before replacement. */
     stop() {
       document.removeEventListener(REQUEST_EVENT, this.handler);
+      document.removeEventListener(COMMENTS_READY_EVENT, this.commentsHandler, true);
+    }
+
+    /**
+     * Acknowledges a rendered comment thread belonging to the visible archive.
+     *
+     * Note: Bilibili leaves data-params at its initial archive after reload().
+     * The live oid and showSpinner properties belong to the page world. The
+     * spinner can finish before Lit commits its content, so both are checked.
+     * Empty and closed threads render #contents too; no comment rows are required.
+     *
+     * @param {Event} event
+     */
+    handleCommentsCheck(event) {
+      const root = event.target;
+      const comments = root?.matches?.("bili-comments")
+        ? root : root?.querySelector?.("bili-comments");
+      if (!comments?.isConnected || typeof window.player?.getManifest !== "function") return;
+      let manifest;
+      try {
+        manifest = window.player.getManifest();
+      } catch (_error) {
+        // Note: The native player may temporarily lack a manifest during reload.
+        return;
+      }
+      const url = new URL(window.location.href);
+      const routeId = url.pathname.match(WATCH_PATH_PATTERN)?.[1];
+      if (
+        !manifest?.aid || Number(comments.type) !== 1 ||
+        String(comments.oid) !== String(manifest.aid) ||
+        (routeId !== manifest.bvid && routeId !== `av${manifest.aid}`) ||
+        Number(url.searchParams.get("p") || 1) !== Number(manifest.p) ||
+        comments.showSpinner !== false || comments.isUpdatePending ||
+        !comments.shadowRoot?.querySelector("#contents") ||
+        comments.shadowRoot.querySelector("#spinner-container")
+      ) return;
+      event.preventDefault();
     }
 
     /**

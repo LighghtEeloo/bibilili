@@ -66,7 +66,8 @@
   white-space: nowrap;
 }
 
-#bibilili-loading-cover .bibilili-loading-indicator {
+#bibilili-loading-cover .bibilili-loading-indicator,
+#bibilili-layout-root .bibilili-loading-indicator {
   width: 48px;
   height: 2px;
   margin: 32px auto 0;
@@ -75,7 +76,8 @@
   background: var(--bibilili-loading-track);
 }
 
-#bibilili-loading-cover .bibilili-loading-indicator::after {
+#bibilili-loading-cover .bibilili-loading-indicator::after,
+#bibilili-layout-root .bibilili-loading-indicator::after {
   display: block;
   width: 16px;
   height: 100%;
@@ -167,16 +169,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #bibilili-loading-cover {
+  #bibilili-loading-cover,
+  #bibilili-layout-root .bibilili-comment-pane,
+  #bibilili-layout-root .bibilili-comment-loading {
     transition: none;
   }
 
   #bibilili-loading-cover .bibilili-loading-content,
-  #bibilili-loading-cover .bibilili-loading-indicator::after {
+  #bibilili-loading-cover .bibilili-loading-indicator::after,
+  #bibilili-layout-root .bibilili-loading-indicator::after {
     animation: none;
   }
 
-  #bibilili-loading-cover .bibilili-loading-indicator::after {
+  #bibilili-loading-cover .bibilili-loading-indicator::after,
+  #bibilili-layout-root .bibilili-loading-indicator::after {
     transform: translateX(16px);
   }
 }
@@ -287,6 +293,7 @@
 }
 
 .bibilili-player-pane {
+  grid-area: 1 / 1;
   position: relative;
   display: flex;
   align-items: stretch;
@@ -324,15 +331,62 @@
 }
 
 .bibilili-comment-pane {
+  grid-area: 1 / 3;
   display: none;
   overflow-y: auto;
   overflow-x: clip;
   color: var(--bibilili-comment-text);
   background: var(--bibilili-comment-bg);
   overscroll-behavior: contain;
+  opacity: 1;
+  transition: opacity 240ms ease-out;
+}
+
+.bibilili-comment-loading {
+  --bibilili-loading-track: var(--Ga2, #f0f0f1);
+  --bibilili-loading-stroke: var(--Ga5, #a5a7ab);
+  grid-area: 1 / 3;
+  z-index: 3;
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  color: var(--bibilili-muted);
+  text-align: center;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 240ms ease-out, visibility 240ms;
+}
+
+#bibilili-layout-root:is(.bibilili-has-comments, .bibilili-has-comment-retry, .bibilili-has-video-header)
+  .bibilili-comment-loading {
+  display: grid;
+}
+
+.bibilili-comment-loading-label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+#bibilili-layout-root .bibilili-comment-loading .bibilili-loading-indicator {
+  margin-top: 20px;
+}
+
+#bibilili-layout-root.bibilili-comments-loading .bibilili-comment-pane {
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+#bibilili-layout-root.bibilili-comments-loading .bibilili-comment-loading {
+  visibility: visible;
+  opacity: 1;
 }
 
 .bibilili-comment-resize-handle {
+  grid-area: 1 / 2;
   position: relative;
   display: none;
   min-width: 0;

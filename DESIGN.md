@@ -22,8 +22,8 @@ state. `src/content-theme.js` is the theme prelude. It defines browser
 color-scheme resolution and Bilibili native theme synchronization.
 `src/content-scheduler.js` is the scheduling prelude. It defines urgent and
 lazy reconciliation request coalescing. `src/content-navigation.js` coordinates
-video-switch requests through the packaged page-world bridge in
-`src/page-navigation.js`. `src/content.js` is the main runtime.
+video-switch requests and native comment readiness through the packaged
+page-world bridge in `src/page-navigation.js`. `src/content.js` is the main runtime.
 It owns discovery, reconciliation, rendering, account requests, preview
 hydration, and activation state.
 
@@ -244,6 +244,23 @@ page-owned empty-state marker, or a visibly laid out Bilibili comment host.
 Empty comment shells remain in their native page position so Bilibili can keep
 hydrating them. An already attached comment region stays in its pane while
 Bilibili temporarily empties it to load another video.
+
+Video switches dim the comment pane, including its header and description,
+while keeping its geometry and native nodes intact. The pane becomes inert and
+exposes a busy state. A centered, localized status and the startup cover's thin
+animated bar identify the transition. The status shares the pane's grid cell
+and remains centered independently of comment scrolling.
+
+Card activation starts this state before requesting playback. Native media
+loads and watch-route changes use the same state; ordinary buffering does not.
+The destination route, a displayable video frame, and a rendered destination
+comment thread allow metadata reconciliation and two paint frames before the
+pane fades back over 240 ms. The page bridge checks the native comment host's
+live archive identity, loading state, and rendered content. Empty and closed
+threads count as completed loads. Readiness is checked again before reveal;
+elapsed time alone does not restore stale comments. A playback error still
+waits for destination comments. New switches cancel queued reveals, and teardown
+restores interaction. Reduced motion removes the fade and bar motion.
 
 Activating comment reload runs a forced lazy-primer pass and then reconciles the
 current watch page. It does not reload the browser page or replace Bilibili

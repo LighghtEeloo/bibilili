@@ -5,6 +5,7 @@
   const { UiStrings } = window.__bibililiI18n;
   const REQUEST_EVENT = "bibilili:video-navigation-request";
   const RESULT_EVENT = "bibilili:video-navigation-result";
+  const COMMENTS_READY_EVENT = "bibilili:comments-ready-check";
   const PAGE_SCRIPT_PATH = "src/page-navigation.js";
   const NAVIGATION_TIMEOUT_MS = 10000;
 
@@ -73,6 +74,21 @@
         return false;
       }
       return true;
+    }
+
+    /**
+     * Asks the page world whether this native comment tree has rendered the
+     * current archive. Cancellation acknowledges readiness synchronously.
+     *
+     * @param {Element} comments Mounted page-owned comment region.
+     * @returns {boolean}
+     */
+    commentsReady(comments) {
+      if (!this.ready || !comments?.isConnected) return false;
+      return !comments.dispatchEvent(new Event(COMMENTS_READY_EVENT, {
+        bubbles: true,
+        cancelable: true
+      }));
     }
 
     /**

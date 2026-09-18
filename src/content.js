@@ -36,6 +36,10 @@
   const LOADING_COVER_TIMEOUT_MS = 5000;
   const LOADING_COVER_FADE_MS = 240;
   const PLAYER_RECOVERY_TIMEOUT_MS = 5000;
+  const COMMENT_LOADING_CHECK_INTERVAL_MS = 100;
+  const COMMENT_LOADING_CLASS = "bibilili-comments-loading";
+  const PLAYER_MEDIA_SELECTOR = "video, bwp-video";
+  const PLAYER_LOAD_EVENTS = ["loadstart", "loadeddata", "canplay", "error"];
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
@@ -1336,6 +1340,189 @@
       this.root = null;
       this.title = null;
       this.uploader = null;
+    }
+  }
+
+  /**
+   * Mutes stale comments until the destination video and comment thread render.
+   * Native media events also cover player recommendations and browser history.
+   */
+  class CommentLoadingState {
+    /**
+     * @param {Document} document
+     * @param {LayoutRoot} layout
+     * @param {NativeVideoNavigation} navigation Reads native comment readiness.
+     * @param {() => void} onReady Reconciles metadata before revealing the pane.
+     */
+    constructor(document, layout, navigation, onReady) {
+      this.document = document;
+      this.layout = layout;
+      this.navigation = navigation;
+      this.onReady = onReady;
+      this.active = false;
+      this.targetRouteKey = null;
+      this.readyRouteKey = null;
+      this.readyMedia = null;
+      this.timer = null;
+      this.frame = null;
+      this.handler = null;
+    }
+
+    /** Observes native media loading without changing playback behavior. */
+    start() {
+      if (this.handler) return;
+      this.handler = (event) => this.handleMediaEvent(event);
+      for (const name of PLAYER_LOAD_EVENTS) {
+        // Note: Native media load events do not bubble through the moved player.
+        this.document.addEventListener(name, this.handler, true);
+      }
+    }
+
+    /**
+     * Starts immediately on a card click, before Bilibili changes the URL or media.
+     *
+     * @param {string | null} [targetRouteKey]
+     */
+    begin(targetRouteKey = null) {
+      if (!this.layout.root?.isConnected || !this.layout.commentPane) return;
+      this.cancel();
+      this.active = true;
+      this.targetRouteKey = targetRouteKey;
+      this.readyRouteKey = null;
+      this.readyMedia = null;
+      this.layout.setCommentsLoading(true);
+      this.scheduleCheck();
+    }
+
+    /**
+     * Observes only the mounted player's new media, not ordinary buffering.
+     *
+     * @param {Event} event
+     */
+    handleMediaEvent(event) {
+      const media = event.target;
+      if (!media?.matches?.(PLAYER_MEDIA_SELECTOR) || !this.layout.playerNode?.contains(media)) return;
+      if (event.type === "loadstart") {
+        if (!this.active) this.begin();
+        this.readyMedia = null;
+        this.readyRouteKey = null;
+        this.cancelReveal();
+      } else {
+        this.readyMedia = media;
+        this.readyRouteKey = SourceAdapter.currentWatchRouteKey();
+        this.revealWhenReady();
+      }
+    }
+
+    /**
+     * Covers URL changes arriving before or after the native media load event.
+     *
+     * @param {string} routeKey
+     */
+    followRoute(routeKey) {
+      if (!this.active && this.readyRouteKey !== routeKey) this.begin(routeKey);
+      if (this.readyMedia && (!this.targetRouteKey || this.targetRouteKey === routeKey)) {
+        // Note: Bilibili can commit its URL after the media event. The page
+        // bridge must still confirm that player and comments match this route.
+        this.readyRouteKey = routeKey;
+      }
+      this.revealWhenReady();
+    }
+
+    /**
+     * Applies the native handoff's confirmed route, including AV-to-BV redirects.
+     *
+     * @param {string} landedUrl
+     */
+    confirm(landedUrl) {
+      if (!this.active) return;
+      this.targetRouteKey = SourceAdapter.watchRouteKeyForUrl(landedUrl);
+      const media = this.layout.playerNode?.querySelector(PLAYER_MEDIA_SELECTOR);
+      if (media?.readyState >= 2) {
+        this.readyMedia = media;
+        this.readyRouteKey = this.targetRouteKey;
+      }
+      this.revealWhenReady();
+    }
+
+    /**
+     * Checks native readiness while a switch is active, including shadow-DOM
+     * updates that the document's mutation observer cannot see.
+     */
+    scheduleCheck() {
+      if (!this.active || this.timer !== null) return;
+      this.timer = window.setTimeout(() => {
+        this.timer = null;
+        this.revealWhenReady();
+      }, COMMENT_LOADING_CHECK_INTERVAL_MS);
+    }
+
+    /**
+     * Requires the destination thread as well as a video frame or playback error.
+     * A missing comment tree may reveal the layout's existing retry control.
+     *
+     * @param {string} routeKey
+     * @returns {boolean}
+     */
+    isReady(routeKey) {
+      if (
+        !this.active || !this.readyMedia?.isConnected ||
+        (this.readyMedia.readyState < 2 && !this.readyMedia.error) ||
+        this.readyRouteKey !== routeKey ||
+        (this.targetRouteKey && this.targetRouteKey !== routeKey)
+      ) return false;
+      const comments = this.layout.commentNode;
+      return !comments?.isConnected || this.navigation.commentsReady(comments);
+    }
+
+    /** Reconciles and paints the destination, then rechecks before revealing it. */
+    revealWhenReady() {
+      if (!this.active || this.frame !== null) return;
+      const routeKey = SourceAdapter.currentWatchRouteKey();
+      if (!this.isReady(routeKey)) {
+        this.scheduleCheck();
+        return;
+      }
+      window.clearTimeout(this.timer);
+      this.timer = null;
+      this.onReady();
+      this.frame = window.requestAnimationFrame(() => {
+        this.frame = window.requestAnimationFrame(() => {
+          this.frame = null;
+          if (SourceAdapter.currentWatchRouteKey() === routeKey && this.isReady(routeKey)) {
+            this.cancel();
+          } else {
+            this.scheduleCheck();
+          }
+        });
+      });
+    }
+
+    /** Cancels a queued reveal when another video begins loading. */
+    cancelReveal() {
+      if (this.frame !== null) window.cancelAnimationFrame(this.frame);
+      this.frame = null;
+    }
+
+    /** Restores comment interaction after completion or cancellation. */
+    cancel() {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+      this.cancelReveal();
+      this.active = false;
+      this.targetRouteKey = null;
+      this.layout.setCommentsLoading(false);
+    }
+
+    /** Removes all media listeners and pending presentation work. */
+    stop() {
+      this.cancel();
+      if (this.handler) {
+        for (const name of PLAYER_LOAD_EVENTS) {
+          this.document.removeEventListener(name, this.handler, true);
+        }
+      }
+      this.handler = null;
     }
   }
 
@@ -5735,6 +5922,9 @@
       this.stage = null;
       this.playerPane = null;
       this.commentPane = null;
+      this.commentsLoading = false;
+      this.commentLoadingView = null;
+      this.commentLoadingLabel = null;
       this.commentResizeHandle = null;
       /** @type {{ pointerId: number } | null} */
       this.commentResizeDrag = null;
@@ -5954,6 +6144,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
+      this.setCommentsLoading(false);
       this.stopRailWindow();
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
@@ -6061,6 +6252,7 @@
       this.root.append(this.stage, this.dock);
       this.document.body.prepend(this.root);
       this.applyStoredCommentPaneWidth();
+      this.setCommentsLoading(this.commentsLoading);
     }
 
     /**
@@ -6098,6 +6290,7 @@
         UiStrings.message(UiMessage.WATCH_ACTIONS_LABEL, this.language)
       );
       this.updateCommentRetryLabels();
+      this.updateCommentLoadingLabel();
     }
 
     /**
@@ -6334,6 +6527,45 @@
         this.commentNode.parentElement === this.commentPane
         ? this.commentNode
         : null;
+    }
+
+    /**
+     * Dims the complete comment pane and blocks stale comment controls in place.
+     * The status view shares its grid cell, so it stays centered while scrolled.
+     *
+     * @param {boolean} loading
+     */
+    setCommentsLoading(loading) {
+      this.commentsLoading = loading;
+      this.root?.classList.toggle(COMMENT_LOADING_CLASS, loading);
+      if (this.commentPane) {
+        this.commentPane.inert = loading;
+        this.commentPane.setAttribute("aria-busy", String(loading));
+      }
+      if (loading && this.stage && !this.commentLoadingView?.isConnected) {
+        this.commentLoadingView = this.document.createElement("div");
+        this.commentLoadingView.className = "bibilili-comment-loading";
+        this.commentLoadingView.setAttribute("role", "status");
+        const content = this.document.createElement("div");
+        this.commentLoadingLabel = this.document.createElement("div");
+        this.commentLoadingLabel.className = "bibilili-comment-loading-label";
+        const indicator = this.document.createElement("div");
+        indicator.className = "bibilili-loading-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        content.append(this.commentLoadingLabel, indicator);
+        this.commentLoadingView.append(content);
+        this.stage.append(this.commentLoadingView);
+        this.updateCommentLoadingLabel();
+      }
+      this.commentLoadingView?.setAttribute("aria-hidden", String(!loading));
+    }
+
+    /** Applies the localized status text to the comment loading surface. */
+    updateCommentLoadingLabel() {
+      LayoutRoot.setStableText(
+        this.commentLoadingLabel,
+        UiStrings.message(UiMessage.COMMENT_LOADING_LABEL, this.language)
+      );
     }
 
     /**
@@ -10160,6 +10392,9 @@
         this.layout.scheduleRailRender();
       });
       this.layout = new LayoutRoot(document, this.videoPreviews);
+      this.commentLoading = new CommentLoadingState(document, this.layout, this.navigation, () => {
+        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      });
       this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
@@ -10203,6 +10438,7 @@
     start() {
       this.uiLanguage = LanguageResolver.resolve(this.document);
       this.navigation.start();
+      this.commentLoading.start();
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       BilibiliThemeSync.sync(this.document);
@@ -10252,6 +10488,7 @@
       this.accountSources.stop();
       this.clearRenderedPageState();
       this.navigation.stop();
+      this.commentLoading.stop();
       this.activationControl.destroy();
     }
 
@@ -10260,6 +10497,7 @@
      */
     clearRenderedPageState() {
       this.navigation.cancel();
+      this.commentLoading.cancel();
       this.cancelPlayerRecovery();
       this.loadingCover.stop();
       this.videoPreviews.stop();
@@ -10515,6 +10753,7 @@
     observeNavigation() {
       this.popstateHandler = () => {
         this.navigation.cancel();
+        this.commentLoading.cancel();
         this.handlePotentialNavigation();
       };
       this.hashchangeHandler = () => this.handlePotentialNavigation();
@@ -10562,9 +10801,11 @@
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       if (this.isWatchPage()) {
+        this.commentLoading.followRoute(nextPageKey);
         this.layout.resetPageSession();
       } else {
         this.navigation.cancel();
+        this.commentLoading.cancel();
         this.layout.destroy();
       }
       this.prepareMount();
@@ -10594,12 +10835,14 @@
         return;
       }
       this.recordVideoCardNavigationSource(sourceKind, targetUrl);
+      this.commentLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
       const accepted = this.navigation.navigate(target.href, (success, landedUrl) => {
         if (!this.enabled || !this.isWatchPage()) return;
         if (!success) {
           window.location.assign(target.href);
           return;
         }
+        this.commentLoading.confirm(landedUrl);
         if (
           SourceAdapter.watchRouteKeyForUrl(landedUrl) !==
           SourceAdapter.watchRouteKeyForUrl(target.href)

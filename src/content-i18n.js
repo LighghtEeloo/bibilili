@@ -49,6 +49,7 @@
     COMMENT_RESIZE_LABEL: "commentResizeLabel",
     FIT_VIDEO_LABEL: "fitVideoLabel",
     COMMENT_RETRY_MESSAGE: "commentRetryMessage",
+    COMMENT_LOADING_LABEL: "commentLoadingLabel",
     COMMENT_RELOAD_LABEL: "commentReloadLabel",
     VIEW_COUNT: "viewCount",
     FINISHED_PROGRESS: "finishedProgress",

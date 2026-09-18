@@ -12,6 +12,7 @@ const pageScript = fs.readFileSync(require.resolve("../src/page-navigation.js"),
 const NEXT_HREF = "https://www.bilibili.com/video/BV1xx411c7mD";
 const REQUEST_EVENT = "bibilili:video-navigation-request";
 const RESULT_EVENT = "bibilili:video-navigation-result";
+const COMMENTS_READY_EVENT = "bibilili:comments-ready-check";
 
 /** Connects separate page and content worlds through real DOM-style events. */
 function navigationFixture(t) {
@@ -301,4 +302,80 @@ test("reinstalling the page bridge does not duplicate native requests", async (t
   f.navigation.stop();
   assert.equal(f.scripts.length, 0);
   assert.equal(f.navigation.ready, false);
+});
+
+/** Models a native shadow host; forwards its capture event to the page bridge. */
+function commentsFixture(f) {
+  const comments = new EventTarget();
+  Object.assign(comments, {
+    isConnected: true,
+    type: 1,
+    oid: "1",
+    showSpinner: false,
+    isUpdatePending: false,
+    contents: {},
+    spinner: null,
+    matches: (selector) => selector === "bili-comments",
+    // Bilibili keeps this original value even after its live oid changes.
+    getAttribute: () => "1,1"
+  });
+  comments.shadowRoot = {
+    querySelector: (selector) => selector === "#contents" ? comments.contents : comments.spinner
+  };
+  comments.addEventListener(COMMENTS_READY_EVENT, (event) =>
+    f.pageWindow.__bibililiPageNavigation.handleCommentsCheck(event));
+  return comments;
+}
+
+test("comment readiness requires the live destination identity and committed shadow content", (t) => {
+  const f = navigationFixture(t);
+  const comments = commentsFixture(f);
+  assert.equal(f.navigation.commentsReady(comments), true);
+  f.land({ bvid: "BVnext", aid: 2, p: 1 });
+  assert.equal(f.navigation.commentsReady(comments), false, "old rendered comments are stale");
+  comments.oid = "2";
+  comments.showSpinner = true;
+  assert.equal(f.navigation.commentsReady(comments), false);
+  comments.showSpinner = false;
+  comments.isUpdatePending = true;
+  assert.equal(f.navigation.commentsReady(comments), false, "Lit has not committed the thread");
+  comments.isUpdatePending = false;
+  comments.spinner = {};
+  assert.equal(f.navigation.commentsReady(comments), false, "the native spinner is still rendered");
+  comments.spinner = null;
+  comments.contents = null;
+  assert.equal(f.navigation.commentsReady(comments), false);
+  comments.contents = {};
+  assert.equal(f.navigation.commentsReady(comments), true, "the initial data-params is not reused");
+});
+
+test("empty destination threads and same-archive parts can finish without comment rows", (t) => {
+  const f = navigationFixture(t);
+  const comments = commentsFixture(f);
+  f.land({ bvid: "BVnext", aid: 2, p: 2 });
+  comments.oid = "2";
+  assert.equal(f.navigation.commentsReady(comments), true);
+  global.location.searchParams.set("p", "3");
+  assert.equal(f.navigation.commentsReady(comments), false, "the player must match the visible part");
+  f.land({ bvid: "BVnext", aid: 2, p: 3 });
+  assert.equal(f.navigation.commentsReady(comments), true);
+  comments.isConnected = false;
+  assert.equal(f.navigation.commentsReady(comments), false);
+});
+
+test("a ready thread cannot acknowledge an unrelated route, host type, or unavailable bridge", (t) => {
+  const f = navigationFixture(t);
+  const comments = commentsFixture(f);
+  comments.type = 12;
+  assert.equal(f.navigation.commentsReady(comments), false);
+  comments.type = 1;
+  const getManifest = f.player.getManifest;
+  f.player.getManifest = () => { throw new Error("player is reloading"); };
+  assert.equal(f.navigation.commentsReady(comments), false);
+  f.player.getManifest = getManifest;
+  global.location = new URL(NEXT_HREF);
+  assert.equal(f.navigation.commentsReady(comments), false);
+  global.location = new URL(TEST_WATCH_HREF);
+  f.navigation.stop();
+  assert.equal(f.navigation.commentsReady(comments), false);
 });

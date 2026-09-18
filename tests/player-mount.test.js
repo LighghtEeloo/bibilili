@@ -35,7 +35,8 @@ class CoverElement extends RailElement {
 
   matches(selector) {
     return selector.split(",").some((part) => part.trim().startsWith("#")
-      ? this.id === part.trim().slice(1) : super.matches(part));
+      ? this.id === part.trim().slice(1)
+      : this.tagName === part.trim() || super.matches(part));
   }
 }
 
@@ -123,7 +124,14 @@ function mountFixture(t) {
     frames.clear();
     pending.forEach((callback) => callback());
   };
-  return { controller, cover, document, regions, timers, frames, paintFrame };
+  const runTimers = (delay) => {
+    for (const [id, timer] of [...timers]) {
+      if (timer.delay !== delay) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+  };
+  return { controller, cover, document, regions, timers, frames, paintFrame, runTimers };
 }
 
 /** Exercises real layout moves while stubbing unrelated metadata and dock UI. */
@@ -144,7 +152,9 @@ function commentNavigationFixture(t) {
   layout.root = root;
   layout.playerPane = document.createElement("section");
   layout.commentPane = document.createElement("aside");
-  root.append(layout.playerPane, layout.commentPane);
+  layout.stage = document.createElement("main");
+  layout.stage.append(layout.playerPane, layout.commentPane);
+  root.append(layout.stage);
   document.body.append(root);
   Object.assign(regions, { player, comments, commentState: "loaded", tags: [] });
   layout.destroy = LayoutRoot.prototype.destroy;
@@ -155,6 +165,8 @@ function commentNavigationFixture(t) {
   t.mock.method(layout, "renderVideoDescription", () => {});
   t.mock.method(layout, "setSources", () => {});
   t.mock.method(controller, "startPageReconciliation", () => {});
+  t.mock.method(controller.navigation, "commentsReady", (node) =>
+    node.readyRouteKey === controller.currentPageKey());
   controller.pageKey = controller.currentPageKey();
   controller.prepareMount();
   controller.reconcile(false);
@@ -208,6 +220,212 @@ test("temporarily empty attached comments survive hydration and settling passes"
   regions.commentState = "loaded";
   controller.reconcile(false);
   assert.equal(comments.connections, connections);
+  controller.stop();
+});
+
+test("card navigation dims comments before the native request and preserves their DOM", (t) => {
+  const { controller, layout, root, comments, player, document } = commentNavigationFixture(t);
+  t.mock.method(layout.commentPane, "getBoundingClientRect", () => ({ width: 399 }));
+  const connections = comments.connections;
+  const video = document.createElement("video");
+  video.readyState = 4;
+  player.append(video);
+  t.mock.method(controller.navigation, "navigate", () => {
+    assert.equal(layout.commentPane.inert, true);
+    assert.equal(layout.commentPane.getAttribute("aria-busy"), "true");
+    assert.equal(root.classList.contains("bibilili-comments-loading"), true);
+    assert.equal(comments.connections, connections);
+    assert.equal(comments.parentElement, layout.commentPane);
+    return true;
+  });
+  controller.navigateVideoCard("watch_later", "/video/BVnext", { preventDefault() {} });
+  assert.equal(layout.commentLoadingView.parentElement, layout.stage);
+  assert.equal(layout.commentLoadingView.getAttribute("role"), "status");
+  assert.equal(layout.commentLoadingView.getAttribute("aria-hidden"), "false");
+  controller.stop();
+  assert.equal(controller.commentLoading.active, false);
+});
+
+test("ready video frames keep old comments dim until the destination thread renders", (t) => {
+  const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.commentLoading;
+  loading.begin("video:BVnext:p1");
+  video.readyState = 4;
+  loading.handleMediaEvent({ type: "canplay", target: video });
+  paintFrame();
+  paintFrame();
+  assert.equal(loading.active, true, "a late event from the previous route does not reveal comments");
+
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  video.readyState = 1;
+  loading.handleMediaEvent({ type: "loadstart", target: video });
+  controller.handlePotentialNavigation();
+  assert.equal(layout.commentsLoading, true, "a URL change is not a ready video frame");
+  video.readyState = 2;
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, true, "video readiness does not finish a comment load");
+  for (let pass = 0; pass < 110; pass += 1) runTimers(100);
+  assert.equal(layout.commentsLoading, true, "elapsed time cannot reveal a stale thread");
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  paintFrame();
+  assert.equal(layout.commentsLoading, true);
+  paintFrame();
+  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.commentPane.inert, false);
+  assert.equal(layout.commentPane.getAttribute("aria-busy"), "false");
+  assert.equal(layout.commentLoadingView.getAttribute("aria-hidden"), "true");
+  controller.stop();
+});
+
+test("native player loads use the same comment state and a later URL poll does not restart it", (t) => {
+  const { controller, layout, player, comments, document, paintFrame } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  player.append(video);
+  const unrelated = document.createElement("video");
+  document.body.append(unrelated);
+  const handlers = new Map();
+  document.addEventListener = (name, handler, capture) => {
+    assert.equal(capture, true);
+    handlers.set(name, handler);
+  };
+  document.removeEventListener = (name) => handlers.delete(name);
+  const loading = controller.commentLoading;
+  loading.start();
+  assert.equal(handlers.has("waiting"), false, "buffering does not dim the pane");
+  handlers.get("loadstart")({ type: "loadstart", target: unrelated });
+  assert.equal(loading.active, false);
+  handlers.get("loadstart")({ type: "loadstart", target: video });
+  assert.equal(layout.commentsLoading, true);
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  comments.readyRouteKey = controller.currentPageKey();
+  loading.revealWhenReady();
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, true, "comments alone cannot reveal before the video");
+  video.readyState = 2;
+  handlers.get("loadeddata")({ type: "loadeddata", target: video });
+  paintFrame();
+  paintFrame();
+  controller.handlePotentialNavigation();
+  assert.equal(layout.commentsLoading, false);
+  controller.stop();
+  assert.equal(handlers.size, 0);
+});
+
+test("a second switch cancels the previous frame's queued comment reveal", (t) => {
+  const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.commentLoading;
+  loading.begin("video:BVnext:p1");
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  comments.readyRouteKey = controller.currentPageKey();
+  video.readyState = 2;
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  paintFrame();
+  loading.begin("video:BVthird:p1");
+  paintFrame();
+  assert.equal(layout.commentsLoading, true);
+  global.location = new URL("https://www.bilibili.com/video/BVthird");
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, true, "the earlier video's completion cannot reveal this one");
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, false);
+  controller.stop();
+});
+
+test("confirmed AV redirects reveal ready media under its canonical route", (t) => {
+  const { controller, layout, player, comments, document, paintFrame } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  controller.commentLoading.begin("video:av222:p1");
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  comments.readyRouteKey = controller.currentPageKey();
+  controller.commentLoading.confirm(global.location.href);
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, false);
+  controller.stop();
+});
+
+test("playback errors still wait for current comments; disabling cancels pending checks", (t) => {
+  const { controller, layout, root, player, comments, document, timers, paintFrame, runTimers } = commentNavigationFixture(t);
+  const pane = layout.commentPane;
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.commentLoading;
+  loading.begin();
+  video.readyState = 0;
+  video.error = { code: 2 };
+  loading.handleMediaEvent({ type: "error", target: video });
+  paintFrame();
+  paintFrame();
+  assert.equal(pane.inert, true);
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  paintFrame();
+  paintFrame();
+  assert.equal(pane.inert, false);
+  assert.equal(loading.active, false);
+  loading.begin();
+  const pendingCheck = loading.timer;
+  controller.setEnabled(false);
+  paintFrame();
+  assert.equal(timers.has(pendingCheck), false);
+  assert.equal(pane.inert, false);
+  assert.equal(root.classList.contains("bibilili-comments-loading"), false);
+  assert.equal(loading.active, false);
+  controller.stop();
+});
+
+test("a comment reload between paint frames defers the reveal again", (t) => {
+  const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  controller.commentLoading.begin();
+  comments.readyRouteKey = controller.currentPageKey();
+  controller.commentLoading.handleMediaEvent({ type: "loadeddata", target: video });
+  paintFrame();
+  comments.readyRouteKey = null;
+  paintFrame();
+  assert.equal(layout.commentsLoading, true);
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, false);
+  controller.stop();
+});
+
+test("a native URL commit after the media event still waits for its destination thread", (t) => {
+  const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  controller.commentLoading.handleMediaEvent({ type: "loadstart", target: video });
+  controller.commentLoading.handleMediaEvent({ type: "loadeddata", target: video });
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  controller.handlePotentialNavigation();
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, true);
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.commentsLoading, false);
   controller.stop();
 });
 

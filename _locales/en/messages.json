@@ -133,6 +133,10 @@
     "message": "Comments did not load.",
     "description": "Message shown in the comment pane when comments are missing or empty."
   },
+  "commentLoadingLabel": {
+    "message": "Updating comments…",
+    "description": "Status shown over dimmed comments while switching videos."
+  },
   "commentReloadLabel": {
     "message": "Reload comments",
     "description": "Button label for retrying comment hydration."
