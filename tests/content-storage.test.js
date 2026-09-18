@@ -101,6 +101,23 @@ test("CardNavigationOriginStore clears mismatched and expired origins", () => {
   }
 });
 
+test("card origins carry only bounded navigation geometry", () => {
+  resetStorageState();
+  const geometry = { commentWidth: 399, dockHeight: 242 };
+  CardNavigationOriginStore.write(SourceKind.HISTORY, "video:BV1:p1", geometry);
+  assert.deepEqual(CardNavigationOriginStore.read().geometry, geometry);
+  for (const invalid of [
+    { commentWidth: -1, dockHeight: 242 },
+    { commentWidth: 9000, dockHeight: 242 },
+    { commentWidth: 399, dockHeight: "242" },
+    { commentWidth: 399, dockHeight: 9000 }
+  ]) {
+    CardNavigationOriginStore.write(SourceKind.HISTORY, "video:BV1:p1", invalid);
+    assert.equal(CardNavigationOriginStore.read().geometry, null);
+    assert.equal(CardNavigationOriginStore.take("video:BV1:p1"), SourceKind.HISTORY);
+  }
+});
+
 test("storage helpers tolerate blocked browser storage", () => {
   resetStorageState();
   global.localStorage = new ThrowingStorage();

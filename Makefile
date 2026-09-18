@@ -11,6 +11,7 @@ CHROME_MANIFEST := $(CHROME_MANIFEST_DIR)/manifest.json
 FIREFOX_MANIFEST := $(FIREFOX_MANIFEST_DIR)/manifest.json
 COMMON_PACKAGE_FILES := README.md src assets _locales
 CONTENT_SCRIPT_FILES := $(shell node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8')); process.stdout.write(manifest.content_scripts.flatMap((script)=>script.js ?? []).join(' '));")
+PAGE_SCRIPT_FILES := $(shell node -e "const manifest=require('./manifest.json'); process.stdout.write(manifest.web_accessible_resources.flatMap((entry)=>entry.resources).filter((path)=>path.endsWith('.js')).join(' '));")
 
 .PHONY: help bump-major bump-minor bump-patch validate validate-js validate-tests validate-json validate-assets manual-checklist package package-chrome package-firefox inspect-package test-package clean
 
@@ -21,7 +22,7 @@ help:
 	@printf '%s\n' '  make bump-patch        Increment patch in manifest.json.'
 	@printf '%s\n' '                         Bumps require a clean Git tree and commit as repo: publish.'
 	@printf '%s\n' '  make validate          Run all local validation checks.'
-	@printf '%s\n' '  make validate-js       Check manifest content-script JavaScript syntax.'
+	@printf '%s\n' '  make validate-js       Check content-script and page-script JavaScript syntax.'
 	@printf '%s\n' '  make validate-tests    Run Node tests.'
 	@printf '%s\n' '  make validate-json     Parse manifest and locale JSON.'
 	@printf '%s\n' '  make validate-assets   Verify required package assets.'
@@ -58,7 +59,7 @@ bump-major bump-minor bump-patch:
 validate: validate-js validate-tests validate-json validate-assets
 
 validate-js:
-	@for file in $(CONTENT_SCRIPT_FILES); do \
+	@for file in $(CONTENT_SCRIPT_FILES) $(PAGE_SCRIPT_FILES); do \
 		printf '%s\n' "node --check $$file"; \
 		node --check "$$file"; \
 	done

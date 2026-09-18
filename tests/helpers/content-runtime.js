@@ -70,6 +70,7 @@ function loadContentRuntime() {
   require("../../src/content-storage.js");
   require("../../src/content-theme.js");
   require("../../src/content-scheduler.js");
+  require("../../src/content-navigation.js");
   require("../../src/content.js");
 
   return global.__bibililiInternals;

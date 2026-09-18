@@ -28,6 +28,7 @@
     {
       "resources": [
         "assets/bibilili-logo-white.svg",
+        "src/page-navigation.js",
         "_locales/*/messages.json"
       ],
       "matches": ["https://www.bilibili.com/*"]
@@ -48,6 +49,7 @@
         "src/content-storage.js",
         "src/content-theme.js",
         "src/content-scheduler.js",
+        "src/content-navigation.js",
         "src/content.js"
       ],
       "run_at": "document_start"

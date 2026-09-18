@@ -124,8 +124,9 @@
      *
      * @param {string} sourceKind
      * @param {string} targetRouteKey
+     * @param {NavigationGeometry | null} [geometry]
      */
-    static write(sourceKind, targetRouteKey) {
+    static write(sourceKind, targetRouteKey, geometry = null) {
       if (
         !CardNavigationOriginStore.isValidSourceKind(sourceKind) ||
         !targetRouteKey
@@ -137,7 +138,8 @@
         const record = {
           sourceKind,
           targetRouteKey,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          geometry: CardNavigationOriginStore.validGeometry(geometry)
         };
         window.sessionStorage.setItem(
           CARD_NAVIGATION_ORIGIN_STORAGE_KEY,
@@ -193,11 +195,30 @@
         return {
           sourceKind: record.sourceKind,
           targetRouteKey: record.targetRouteKey,
-          createdAt: Number(record.createdAt)
+          createdAt: Number(record.createdAt),
+          geometry: CardNavigationOriginStore.validGeometry(record.geometry)
         };
       } catch (_error) {
         return null;
       }
+    }
+
+    /**
+     * Keeps bounded pane dimensions for the next document's loading surface.
+     *
+     * @param {NavigationGeometry | null | undefined} geometry
+     * @returns {NavigationGeometry | null}
+     */
+    static validGeometry(geometry) {
+      const commentWidth = geometry?.commentWidth;
+      const dockHeight = geometry?.dockHeight;
+      if (
+        !Number.isFinite(commentWidth) || commentWidth < 0 || commentWidth > 640 ||
+        !Number.isFinite(dockHeight) || dockHeight < 0 || dockHeight > 400
+      ) {
+        return null;
+      }
+      return { commentWidth, dockHeight };
     }
 
     /**
@@ -331,6 +352,13 @@
    * @property {string} sourceKind Closed source kind to select on arrival.
    * @property {string} targetRouteKey Watch route key the click opened.
    * @property {number} createdAt Milliseconds since epoch when recorded.
+   * @property {NavigationGeometry | null} [geometry] Previous layout dimensions.
+   */
+
+  /**
+   * @typedef {object} NavigationGeometry
+   * @property {number} commentWidth Visible comment column width, or zero.
+   * @property {number} dockHeight Visible dock height, or zero.
    */
 
   /**

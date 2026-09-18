@@ -1,12 +1,13 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { loadContentRuntime, TEST_WATCH_HREF } = require("./helpers/content-runtime.js");
+const { FakeStorage, loadContentRuntime, TEST_WATCH_HREF } = require("./helpers/content-runtime.js");
 const { RailElement } = require("./helpers/rail-dom.js");
 const { BibililiController, LayoutRoot } = loadContentRuntime();
 const { ReconcilePriority } = global.__bibililiScheduler;
 const { LanguageResolver, UiStrings } = global.__bibililiI18n;
 const { DomProbe } = global.__bibililiDom;
+const { CardNavigationOriginStore } = global.__bibililiStorageState;
 
 /** Adds owned-root matching to the existing minimal DOM fixture. */
 class CoverElement extends RailElement {
@@ -113,7 +114,8 @@ function mountFixture(t) {
   t.mock.method(controller.layout, "destroy", () => {});
   t.mock.method(controller.layout, "render", () => {
     assert.ok(cover.root.isConnected, "the cover stays above the page during render");
-    controller.layout.root = { isConnected: true };
+    controller.layout.root ??= document.createElement("section");
+    document.body.append(controller.layout.root);
     controller.layout.playerNode = regions.player;
   });
   const paintFrame = () => {
@@ -174,6 +176,7 @@ test("same-document navigation preserves the comment reload and native restore p
   controller.handlePotentialNavigation();
   controller.reconcile(true);
 
+  assert.equal(controller.loadingCover.root, null);
   assert.equal(layout.root, root);
   assert.equal(player.parentElement, layout.playerPane);
   assert.equal(comments.parentElement, layout.commentPane);
@@ -424,7 +427,7 @@ test("disabling, stopping, and watch-page exit remove a pending cover", (t) => {
   assert.equal(timers.size, 0);
 });
 
-test("navigation cancels the previous fade and waits for the next video's title", (t) => {
+test("navigation removes an unfinished startup cover and leaves the mounted layout visible", (t) => {
   const { controller, cover, regions, timers, paintFrame } = mountFixture(t);
   t.mock.method(controller, "startPageReconciliation", () => {});
   controller.pageKey = controller.currentPageKey();
@@ -441,14 +444,65 @@ test("navigation cancels the previous fade and waits for the next video's title"
   controller.handlePotentialNavigation();
   assert.ok(!oldRoot.isConnected);
   assert.ok(!timers.has(oldFade));
-  assert.equal(cover.root.dataset.bibililiLoadingState, undefined);
-  assert.equal(cover.title.textContent, "Loading video");
-  regions.title = "Next video";
-  regions.uploader = { name: "Next creator" };
-  cover.update();
-  assert.equal(cover.title.textContent, "Next video");
-  assert.equal(cover.uploader.textContent, "Next creator");
+  assert.equal(cover.root, null);
+  assert.equal(timers.size, 0);
+});
+
+test("temporary player loss preserves the mounted panes until its replacement arrives", (t) => {
+  const { controller, layout, root, regions, document, player, timers } = commentNavigationFixture(t);
+  player.remove();
+  regions.player = null;
+  controller.reconcile(true);
+  const deadline = controller.playerRecoveryTimer;
+  assert.equal(timers.get(deadline).delay, 5000);
+  controller.reconcile(false);
+  assert.equal(controller.playerRecoveryTimer, deadline);
+  assert.equal(layout.root, root);
+  assert.ok(root.isConnected);
+  regions.player = document.createElement("div");
+  document.body.append(regions.player);
+  controller.reconcile(false);
+  assert.equal(layout.root, root);
+  assert.equal(regions.player.parentElement, layout.playerPane);
+  assert.equal(controller.playerRecoveryTimer, null);
+  assert.ok(!timers.has(deadline));
+  assert.equal(layout.setSources.mock.calls.at(-1).arguments[1], true,
+    "the destination route reset survives the missing-player pass");
+  controller.reconcile(false);
+  assert.equal(layout.setSources.mock.calls.at(-1).arguments[1], false);
+  controller.stop();
+});
+
+test("permanent player loss releases the native page at the recovery deadline", (t) => {
+  const { controller, root, regions, player, timers } = commentNavigationFixture(t);
+  t.mock.method(controller, "scheduleReconcile", () => {});
+  player.remove();
+  regions.player = null;
+  controller.reconcile(false);
+  timers.get(controller.playerRecoveryTimer).callback();
+  assert.ok(!root.isConnected);
+  assert.equal(controller.playerRecoveryTimer, null);
+  controller.stop();
+});
+
+test("a document navigation reserves recorded pane geometry without consuming the source hint", (t) => {
+  const { controller, cover } = mountFixture(t);
+  const previousStorage = global.sessionStorage;
+  global.sessionStorage = new FakeStorage();
+  t.after(() => { global.sessionStorage = previousStorage; });
+  CardNavigationOriginStore.write("history", controller.currentPageKey(), {
+    commentWidth: 399, dockHeight: 242
+  });
+  controller.prepareMount();
+  assert.ok(cover.root.classList.contains("bibilili-loading-shell"));
+  assert.equal(cover.root.style["--bibilili-loading-comment-width"], "399px");
+  assert.equal(cover.root.style["--bibilili-loading-dock-height"], "242px");
+  assert.equal(cover.root.querySelector(".bibilili-loading-comments").contains(cover.title), true);
+  assert.equal(controller.initialSourceRouteState().sourceKind, "history");
   cover.stop();
+  controller.prepareMount();
+  assert.ok(!cover.root.classList.contains("bibilili-loading-shell"), "an unrelated startup has no stale shell");
+  controller.stop();
 });
 
 test("stopping while reveal frames are queued prevents a delayed fade", (t) => {

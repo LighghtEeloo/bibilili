@@ -3,7 +3,7 @@ const test = require("node:test");
 
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 
-const { RegionDiscovery, SourceAdapter, SourceKind } = loadContentRuntime();
+const { LayoutRoot, RegionDiscovery, SourceAdapter, SourceKind } = loadContentRuntime();
 
 class FakeElement {
   constructor(attributes = {}, options = {}) {
@@ -307,4 +307,32 @@ test("bounds collection extraction to a nested video-pod", () => {
     items.map((item) => item.targetUrl),
     ["https://www.bilibili.com/video/BV1aa411c7mD"]
   );
+});
+
+test("modified, canceled, download, and new-tab card clicks retain browser behavior", (t) => {
+  const previousHTMLElement = global.HTMLElement;
+  global.HTMLElement = FakeElement;
+  t.after(() => { global.HTMLElement = previousHTMLElement; });
+  const layout = new LayoutRoot({});
+  const card = new FakeElement({}, { className: "bibilili-video-card" });
+  card.dataset = { bibililiCardSourceKind: SourceKind.COLLECTION };
+  const link = new FakeAnchorElement({ href: "/video/BV1xx411c7mD" });
+  link.href = "https://www.bilibili.com/video/BV1xx411c7mD";
+  card.append(link);
+  const calls = [];
+  layout.onVideoCardNavigate = (...args) => calls.push(args);
+  const event = { button: 0, currentTarget: link };
+  for (const field of ["ctrlKey", "metaKey", "shiftKey", "altKey", "defaultPrevented"]) {
+    layout.handleVideoCardLinkClick({ ...event, [field]: true });
+  }
+  layout.handleVideoCardLinkClick({ ...event, button: 1 });
+  link.target = "_blank";
+  layout.handleVideoCardLinkClick(event);
+  link.target = "";
+  link.attributes.set("download", "");
+  layout.handleVideoCardLinkClick(event);
+  assert.equal(calls.length, 0);
+  link.attributes.delete("download");
+  layout.handleVideoCardLinkClick(event);
+  assert.deepEqual(calls, [[SourceKind.COLLECTION, link.href, event]]);
 });

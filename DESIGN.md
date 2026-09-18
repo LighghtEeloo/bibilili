@@ -21,7 +21,9 @@ defines persisted activation, comment width, navigation-origin, and source-route
 state. `src/content-theme.js` is the theme prelude. It defines browser
 color-scheme resolution and Bilibili native theme synchronization.
 `src/content-scheduler.js` is the scheduling prelude. It defines urgent and
-lazy reconciliation request coalescing. `src/content.js` is the main runtime.
+lazy reconciliation request coalescing. `src/content-navigation.js` coordinates
+video-switch requests through the packaged page-world bridge in
+`src/page-navigation.js`. `src/content.js` is the main runtime.
 It owns discovery, reconciliation, rendering, account requests, preview
 hydration, and activation state.
 
@@ -69,6 +71,10 @@ account list DOM.
 Bibilili may add and remove watch-later account records through Bilibili's
 account API. These operations are account-list mutations. They do not activate
 native watch-later controls or replace Bilibili navigation behavior.
+
+Bibilili hands archive card navigation to Bilibili's native player API. The
+player and watch page own video resolution, playback, metadata, comments, and
+browser history.
 
 Bibilili mirrors native watch action state with extension-owned buttons. Like,
 coin, and favorite forward clicks to Bilibili's page-owned triggers. Coin and
@@ -150,15 +156,22 @@ storage is available.
 The loading cover is an extension-owned surface above the entire watch viewport.
 It follows the browser color-scheme preference from its first paint, using white
 in light mode and charcoal in dark mode. It mounts from document start on enabled
-pages and during activation or same-document video navigation. It shows the
-current title and uploader as native metadata becomes available, with a localized
-loading title as fallback. It reads existing page data without requesting video
-metadata or images.
+pages and during activation. Same-document navigation keeps the mounted layout
+visible. The cover shows the current title and uploader as native metadata
+becomes available, with a localized loading title as fallback. It reads
+existing page data without requesting video metadata or images.
+
+Card navigation carries the current comment width and dock height in its
+tab-scoped origin record. If the destination requires a new document, the
+loading cover reserves those pane dimensions with an empty player surface,
+destination metadata, and dock placeholders. Bilibili creates the destination
+player and comments normally. The geometry expires with the origin record.
 
 The cover background appears immediately and leaves native geometry intact
-beneath it. Its title, uploader, and indicator fade in over 180 ms. The cover
-fades out over 240 ms after the layout mounts, the native lazy-primer pass ends,
-and two animation frames allow the layout to paint. Optional comments, account
+beneath it. The initial title, uploader, and indicator fade in over 180 ms;
+the navigation shell shows them immediately. The cover fades out over 240 ms
+after the layout mounts, the native lazy-primer pass ends, and two animation
+frames allow the layout to paint. Optional comments, account
 lists, and thumbnails continue loading independently. Reduced motion disables
 animation. Disabling Bibilili or leaving the watch page removes the cover
 immediately; a five-second deadline also removes it if startup stalls.
@@ -633,10 +646,14 @@ A video card is the extension-owned rendering of one video item. It uses a
 fixed card width and stable thumbnail aspect ratio. Card content keeps the rail
 height stable.
 
-The card links to the item's target URL. Activating it uses normal page
-navigation unless the browser or Bilibili intercepts the link. When a thumbnail
-is unavailable, the thumbnail area presents the video title and clamps it within
-the fixed preview height.
+The card links to the item's target URL. Plain same-tab archive activation uses
+the native video navigation bridge for every source kind. Modified clicks,
+downloads, and new-tab targets retain normal browser behavior. Activating the
+current watch route preserves playback unless the link specifies a timestamp
+or supersedes an unfinished switch.
+
+When a thumbnail is unavailable, the thumbnail area presents the video title
+and clamps it within the fixed preview height.
 
 During same-route reconciliation, retained card roots, link anchors, and stable
 child nodes are reused. Advisory list or thumbnail updates change card content
@@ -658,6 +675,29 @@ current-video watch-later action. Removal controls always use an
 extension-owned trash icon. Activating the rest of the card follows the card
 link.
 
+## Video Navigation
+
+The navigation bridge hands a BV or AV identifier, one-based part, and optional
+playback timestamp to Bilibili's player reload API. It works between archive
+watch pages without requiring a matching page-owned list item. Bilibili resolves
+the video's playback identifiers and updates its page through native player
+events. The extension keeps the mounted layout and reconciles the new content.
+
+The content script injects a packaged page-world script and exchanges
+JSON-string DOM events with it. The page script validates playback inputs and
+calls the native API. It has no extension API access. The browser history and
+URL are written by Bilibili's watch page.
+
+A handoff succeeds when the player manifest and visible route identify the
+requested archive and part. If the native API is unavailable, the original link
+opens normally. Failed or unresponsive handoffs use document navigation after
+failure or a ten-second deadline. Other route types use normal links.
+
+Each new card click retires the previous request's fallback. Disabling the
+layout, leaving the watch page, or using browser history also cancels pending
+fallback. A delayed failure cannot redirect an unrelated watch route. An AV
+request canonicalized to a BV URL retains its source-route hint.
+
 ## Runtime Controller
 
 The runtime controller coordinates discovery, activation, layout updates,
@@ -673,6 +713,11 @@ Bilibili updates its comment component's video identity in place. Reconnecting
 that component initializes it from an original attribute that can identify a
 previous video. The layout moves a replacement region when Bilibili supplies
 one and restores native regions when disabled or leaving the watch page.
+
+The mounted frame remains visible for up to five seconds while a missing player
+is replaced. A replacement resumes reconciliation in the same panes. If no
+player arrives by the deadline, the controller restores the native page and
+leaves the activation control available for retry.
 
 The page session key is the stable watch route when the URL identifies a
 playable video. Tracking query changes on the same video do not start a new

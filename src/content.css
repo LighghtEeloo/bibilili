@@ -84,6 +84,66 @@
   content: "";
 }
 
+#bibilili-loading-cover.bibilili-loading-shell {
+  grid-template-columns:
+    minmax(0, 1fr) min(50vw, var(--bibilili-loading-comment-width));
+  grid-template-rows: minmax(0, 1fr) var(--bibilili-loading-dock-height);
+  column-gap: var(--bibilili-loading-divider-width);
+  place-items: stretch;
+  padding: 0;
+}
+
+#bibilili-loading-cover .bibilili-loading-player {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  background: #000;
+  color: #eff0f2;
+}
+
+#bibilili-loading-cover .bibilili-loading-comments {
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+}
+
+#bibilili-loading-cover.bibilili-loading-shell .bibilili-loading-content {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 20px;
+  animation: none;
+}
+
+#bibilili-loading-cover.bibilili-loading-shell .bibilili-loading-brand {
+  display: none;
+}
+
+#bibilili-loading-cover.bibilili-loading-shell .bibilili-loading-title {
+  font-size: 16px;
+}
+
+#bibilili-loading-cover .bibilili-loading-dock {
+  grid-column: 1 / -1;
+  min-height: 0;
+  overflow: hidden;
+  box-shadow: inset 0 1px var(--bibilili-loading-track);
+}
+
+#bibilili-loading-cover .bibilili-loading-dock::after {
+  display: block;
+  height: 108px;
+  margin: 70px 12px 0;
+  background: repeating-linear-gradient(
+    to right,
+    var(--bibilili-loading-track) 0 190px,
+    transparent 190px 200px
+  );
+  content: "";
+}
+
 @keyframes bibilili-loading {
   from { transform: translateX(-16px); }
   to { transform: translateX(48px); }

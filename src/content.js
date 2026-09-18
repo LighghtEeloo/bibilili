@@ -15,6 +15,7 @@
   } = window.__bibililiTheme;
   const { ReconcilePriority, ReconcileScheduler } =
     window.__bibililiScheduler;
+  const { NativeVideoNavigation } = window.__bibililiNavigation;
   const {
     ActivationPreference,
     CardNavigationOriginStore,
@@ -34,6 +35,7 @@
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const LOADING_COVER_TIMEOUT_MS = 5000;
   const LOADING_COVER_FADE_MS = 240;
+  const PLAYER_RECOVERY_TIMEOUT_MS = 5000;
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
   const VIDEO_POD_SELECTOR = ".video-pod";
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
@@ -1134,6 +1136,7 @@
       this.pageKey = null;
       this.lastTitle = null;
       this.previousTitle = null;
+      this.geometry = null;
     }
 
     /**
@@ -1152,6 +1155,8 @@
         ? this.lastTitle : null;
       this.stop();
       this.pageKey = pageKey;
+      const origin = CardNavigationOriginStore.read();
+      this.geometry = origin?.targetRouteKey === pageKey ? origin.geometry : null;
       this.timer = window.setTimeout(() => this.stop(), LOADING_COVER_TIMEOUT_MS);
       this.observer = new MutationObserver((mutations) => {
         if (mutations.some((mutation) => !DomProbe.isOwned(mutation.target))) {
@@ -1203,13 +1208,47 @@
         indicator.className = "bibilili-loading-indicator";
         indicator.setAttribute("aria-hidden", "true");
         content.append(brand, this.title, this.uploader, indicator);
-        this.root.append(content);
+        if (this.geometry) {
+          this.mountShell(content);
+        } else {
+          this.root.append(content);
+        }
       }
 
       if (this.root.parentElement !== documentRoot) {
         documentRoot.append(this.root);
       }
       return true;
+    }
+
+    /**
+     * Reserves the previous panes across a document navigation.
+     *
+     * Only dimensions cross the document boundary; native player and comment
+     * trees are created by Bilibili in the destination document.
+     *
+     * @param {HTMLElement} content Loading status and destination metadata.
+     */
+    mountShell(content) {
+      this.root.className = "bibilili-loading-shell";
+      this.root.style.setProperty(
+        "--bibilili-loading-comment-width", `${this.geometry.commentWidth}px`
+      );
+      this.root.style.setProperty(
+        "--bibilili-loading-dock-height", `${this.geometry.dockHeight}px`
+      );
+      this.root.style.setProperty(
+        "--bibilili-loading-divider-width", this.geometry.commentWidth > 0 ? "8px" : "0px"
+      );
+      const player = this.document.createElement("div");
+      player.className = "bibilili-loading-player";
+      const comments = this.document.createElement("div");
+      comments.className = "bibilili-loading-comments";
+      const dock = this.document.createElement("div");
+      dock.className = "bibilili-loading-dock";
+      dock.setAttribute("aria-hidden", "true");
+      (this.geometry.commentWidth > 0 ? comments : player).append(content);
+      this.root.append(player, comments, dock);
     }
 
     /** Coalesces native metadata mutations into one update per frame. */
@@ -5804,7 +5843,7 @@
      * @param {() => void} onWatchActionForward
      * @param {(targetUrl: string) => Promise<void>} onWatchLaterAdd
      * @param {(aid: string) => Promise<void>} onWatchLaterDelete
-     * @param {(sourceKind: string, targetUrl: string) => void} onVideoCardNavigate
+     * @param {(sourceKind: string, targetUrl: string, event: MouseEvent) => void} onVideoCardNavigate
      * @param {(state: SourceRouteState) => void} onSourceRouteChange
      * @param {SourceRouteState | null} sourceRouteState
      * @param {(sourceKind: string) => Promise<void>} onSourceMore
@@ -9563,12 +9602,13 @@
     }
 
     /**
-     * Records normal same-tab card navigation before Bilibili handles the link.
+     * Forwards plain same-tab card activation to the navigation controller.
      *
      * @param {MouseEvent} event
      */
     handleVideoCardLinkClick(event) {
       if (
+        event.defaultPrevented ||
         event.button !== 0 ||
         event.metaKey ||
         event.ctrlKey ||
@@ -9591,12 +9631,14 @@
       if (
         !sourceKind ||
         !SOURCE_ORDER.includes(sourceKind) ||
+        (link.target && link.target.toLowerCase() !== "_self") ||
+        link.getAttribute("download") !== null ||
         !this.onVideoCardNavigate
       ) {
         return;
       }
 
-      this.onVideoCardNavigate(sourceKind, link.href);
+      this.onVideoCardNavigate(sourceKind, link.href, event);
     }
 
     /**
@@ -10112,6 +10154,7 @@
     constructor(document) {
       this.document = document;
       this.discovery = new RegionDiscovery(document);
+      this.navigation = new NativeVideoNavigation(document);
       this.loadingCover = new LoadingCover(document, this.discovery);
       this.videoPreviews = new VideoPreviewStore(() => {
         this.layout.scheduleRailRender();
@@ -10131,6 +10174,7 @@
         this.reconcile(resetSourceRoute);
       });
       this.urlTimer = null;
+      this.playerRecoveryTimer = null;
       this.themePreference = null;
       this.themeChangeHandler = null;
       this.popstateHandler = null;
@@ -10140,12 +10184,13 @@
       /** @type {CardNavigationOriginRecord | null} */
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
+      this.pendingSourceRouteReset = false;
       this.settlingTimers = [];
     }
 
-    /** Covers the viewport during an enabled watch-page layout handoff. */
+    /** Covers startup while keeping an already mounted watch layout visible. */
     prepareMount() {
-      if (this.enabled && this.isWatchPage()) {
+      if (this.enabled && this.isWatchPage() && !this.layout.root?.isConnected) {
         this.loadingCover.start(this.currentPageKey());
       } else {
         this.loadingCover.stop();
@@ -10157,6 +10202,7 @@
      */
     start() {
       this.uiLanguage = LanguageResolver.resolve(this.document);
+      this.navigation.start();
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       BilibiliThemeSync.sync(this.document);
@@ -10205,6 +10251,7 @@
       this.cancelSettlingReconciles();
       this.accountSources.stop();
       this.clearRenderedPageState();
+      this.navigation.stop();
       this.activationControl.destroy();
     }
 
@@ -10212,10 +10259,13 @@
      * Clears rendered page state without changing observers or activation.
      */
     clearRenderedPageState() {
+      this.navigation.cancel();
+      this.cancelPlayerRecovery();
       this.loadingCover.stop();
       this.videoPreviews.stop();
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
+      this.pendingSourceRouteReset = false;
       this.layout.destroy();
     }
 
@@ -10330,6 +10380,7 @@
         return;
       }
 
+      this.pendingSourceRouteReset ||= resetSourceRoute;
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
       this.loadingCover.update();
@@ -10339,11 +10390,16 @@
       );
 
       if (!regions.player) {
+        if (this.layout.root?.isConnected) {
+          this.waitForPlayerReplacement();
+          return;
+        }
         this.layout.destroy();
         this.renderFloatingActivation();
         return;
       }
 
+      this.cancelPlayerRecovery();
       regions.sources = sources;
       const sourceRouteState = this.nextPageSourceRouteState;
       const mountedComments = this.layout.currentMountedComments();
@@ -10372,7 +10428,7 @@
 
       this.layout.render(
         regions,
-        resetSourceRoute,
+        this.pendingSourceRouteReset,
         this.activationControl,
         language,
         this.accountSources.currentWatchLaterCount(),
@@ -10380,8 +10436,8 @@
         () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
         (targetUrl) => this.addWatchLaterItem(targetUrl),
         (aid) => this.deleteWatchLaterItem(aid),
-        (sourceKind, targetUrl) =>
-          this.recordVideoCardNavigationSource(sourceKind, targetUrl),
+        (sourceKind, targetUrl, event) =>
+          this.navigateVideoCard(sourceKind, targetUrl, event),
         (state) => this.storeSourceRouteState(state),
         sourceRouteState,
         (sourceKind) => this.loadMoreAccountSource(sourceKind),
@@ -10390,12 +10446,39 @@
         (source) => this.refreshRail(source)
       );
       this.nextPageSourceRouteState = null;
+      this.pendingSourceRouteReset = false;
       if (this.lazyPrimer.timer === null) {
         this.loadingCover.finish(() => Boolean(
           this.layout.root?.isConnected && this.layout.playerNode?.isConnected &&
           this.lazyPrimer.timer === null
         ));
       }
+    }
+
+    /**
+     * Keeps the frame mounted during a bounded native player replacement.
+     *
+     * Note: A Bilibili route update may remove the old player before inserting
+     * its replacement. A permanent loss still releases the native page.
+     */
+    waitForPlayerReplacement() {
+      if (this.playerRecoveryTimer !== null) {
+        return;
+      }
+      this.playerRecoveryTimer = window.setTimeout(() => {
+        this.playerRecoveryTimer = null;
+        if (!this.discovery.findPlayerRegion()) {
+          this.layout.destroy();
+          this.renderFloatingActivation();
+        }
+        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      }, PLAYER_RECOVERY_TIMEOUT_MS);
+    }
+
+    /** Cancels the current player replacement deadline. */
+    cancelPlayerRecovery() {
+      window.clearTimeout(this.playerRecoveryTimer);
+      this.playerRecoveryTimer = null;
     }
 
     /**
@@ -10430,7 +10513,10 @@
      * history events.
      */
     observeNavigation() {
-      this.popstateHandler = () => this.handlePotentialNavigation();
+      this.popstateHandler = () => {
+        this.navigation.cancel();
+        this.handlePotentialNavigation();
+      };
       this.hashchangeHandler = () => this.handlePotentialNavigation();
       window.addEventListener("popstate", this.popstateHandler);
       window.addEventListener("hashchange", this.hashchangeHandler);
@@ -10470,6 +10556,7 @@
       }
 
       this.lazyPrimer.stop(false);
+      this.cancelPlayerRecovery();
       this.cancelSettlingReconciles();
       this.videoPreviews.stop();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
@@ -10477,10 +10564,61 @@
       if (this.isWatchPage()) {
         this.layout.resetPageSession();
       } else {
+        this.navigation.cancel();
         this.layout.destroy();
       }
       this.prepareMount();
       this.startPageReconciliation(true);
+    }
+
+    /**
+     * Hands every rail source's archive target to Bilibili's native player.
+     * Unavailable or failed handoffs retain ordinary document navigation.
+     *
+     * @param {string} sourceKind
+     * @param {string} targetUrl
+     * @param {MouseEvent} event
+     */
+    navigateVideoCard(sourceKind, targetUrl, event) {
+      const wasPending = Boolean(this.navigation.pending);
+      this.navigation.cancel();
+      const target = new URL(targetUrl, window.location.href);
+      if (target.origin !== new URL(window.location.href).origin) {
+        return;
+      }
+      if (
+        !wasPending && !target.searchParams.has("t") &&
+        SourceAdapter.watchRouteKeyForUrl(targetUrl) === SourceAdapter.currentWatchRouteKey()
+      ) {
+        event.preventDefault();
+        return;
+      }
+      this.recordVideoCardNavigationSource(sourceKind, targetUrl);
+      const accepted = this.navigation.navigate(target.href, (success, landedUrl) => {
+        if (!this.enabled || !this.isWatchPage()) return;
+        if (!success) {
+          window.location.assign(target.href);
+          return;
+        }
+        if (
+          SourceAdapter.watchRouteKeyForUrl(landedUrl) !==
+          SourceAdapter.watchRouteKeyForUrl(target.href)
+        ) {
+          // Note: Bilibili can canonicalize an AV request to its BV watch URL.
+          this.recordVideoCardNavigationSource(sourceKind, landedUrl);
+          if (this.currentPageKey() === this.pageKey) {
+            const state = this.initialSourceRouteState();
+            if (!this.layout.hasUserInteractedWithSources) {
+              this.nextPageSourceRouteState = state;
+              this.scheduleReconcile(false, ReconcilePriority.URGENT);
+            }
+          }
+        }
+        this.handlePotentialNavigation();
+      });
+      if (accepted) {
+        event.preventDefault();
+      }
     }
 
     /**
@@ -10505,7 +10643,11 @@
         targetRouteKey,
         createdAt: Date.now()
       };
-      CardNavigationOriginStore.write(sourceKind, targetRouteKey);
+      const geometry = this.layout.root?.isConnected ? {
+        commentWidth: this.layout.commentPane?.getBoundingClientRect().width ?? 0,
+        dockHeight: this.layout.dock?.getBoundingClientRect().height ?? 0
+      } : null;
+      CardNavigationOriginStore.write(sourceKind, targetRouteKey, geometry);
     }
 
     /**
