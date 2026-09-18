@@ -1105,11 +1105,13 @@
 }
 
 .bibilili-rail-locate,
+.bibilili-rail-start,
 .bibilili-rail-refresh {
   width: 32px;
 }
 
 .bibilili-rail-locate:disabled,
+.bibilili-rail-start:disabled,
 .bibilili-rail-refresh:disabled {
   cursor: default;
   border-color: transparent;

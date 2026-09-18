@@ -518,7 +518,7 @@ removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 The rail action group follows the watch action group, separated by a vertical
-border. It contains Locate, Refresh, and Search in that order and has a
+border. It contains Locate, Start, Refresh, and Search in that order and has a
 localized accessible name.
 
 ## Rail Locate
@@ -535,9 +535,17 @@ marker. Reconciliation records the first matching item's logical index while
 building rail entries. Activation uses that index to render the destination
 window through the existing rail positioning path.
 
+## Rail Start
+
+The Start button follows Locate and returns the rail to its beginning. It
+presents a left chevron and vertical bar with a localized tooltip and
+accessible name. It is disabled when the rail is closed. Activation renders
+the first rail window and preserves the selected source, search query, and
+account expansion depth.
+
 ## Rail Refresh
 
-The Refresh button sits between Locate and Search and reloads the selected rail
+The Refresh button sits between Start and Search and reloads the selected rail
 source. It presents a circular-arrow icon with a localized tooltip and
 accessible name. It is disabled while the rail is closed or a refresh is
 pending. Refresh preserves the search query and selected route while that

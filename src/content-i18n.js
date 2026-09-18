@@ -25,6 +25,7 @@
     VIDEO_DESCRIPTION_LABEL: "videoDescriptionLabel",
     VIDEO_LISTS_LABEL: "videoListsLabel",
     RAIL_LOCATE_LABEL: "railLocateLabel",
+    RAIL_START_LABEL: "railStartLabel",
     RAIL_ACTIONS_LABEL: "railActionsLabel",
     RAIL_REFRESH_LABEL: "railRefreshLabel",
     RAIL_SEARCH_LABEL: "railSearchLabel",

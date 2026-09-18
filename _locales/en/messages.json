@@ -189,6 +189,10 @@
     "message": "Locate",
     "description": "Button label for centering the current video in the displayed rail."
   },
+  "railStartLabel": {
+    "message": "Start",
+    "description": "Accessible name and tooltip for returning to the beginning of the rail."
+  },
   "railRefreshLabel": {
     "message": "Refresh rail",
     "description": "Accessible name and tooltip for refreshing the selected rail source."

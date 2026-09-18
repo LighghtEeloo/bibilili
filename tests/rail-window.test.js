@@ -151,12 +151,14 @@ test("Locate accepts a collection current marker and preserves control placement
   assert.equal(layout.railLocateIndex, 90);
   assert.equal(actions.nextSibling, layout.railActionGroup);
   assert.equal(layout.railActionGroup.firstChild, button);
-  assert.equal(button.nextSibling, layout.railRefreshButton);
+  assert.equal(button.nextSibling, layout.railStartButton);
+  assert.equal(layout.railStartButton.nextSibling, layout.railRefreshButton);
   assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
   layout.renderSourceDock([source], null);
   assert.equal(layout.railLocateButton, button);
   assert.equal(actions.nextSibling, layout.railActionGroup);
-  assert.equal(button.nextSibling, layout.railRefreshButton);
+  assert.equal(button.nextSibling, layout.railStartButton);
+  assert.equal(layout.railStartButton.nextSibling, layout.railRefreshButton);
   assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
 });
 

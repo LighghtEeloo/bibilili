@@ -189,6 +189,10 @@
     "message": "定位",
     "description": "Button label for centering the current video in the displayed rail."
   },
+  "railStartLabel": {
+    "message": "起點",
+    "description": "Accessible name and tooltip for returning to the beginning of the rail."
+  },
   "railRefreshLabel": {
     "message": "重新整理列表",
     "description": "Accessible name and tooltip for refreshing the selected rail source."

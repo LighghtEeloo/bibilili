@@ -5719,6 +5719,7 @@
       this.sourceBar = null;
       this.railActionGroup = null;
       this.railLocateButton = null;
+      this.railStartButton = null;
       /** Logical current-video index in the displayed rail, or -1 when absent. */
       this.railLocateIndex = -1;
       this.railRefreshButton = null;
@@ -7102,16 +7103,17 @@
       }
     }
 
-    /** Groups rail actions in their stable Locate, Refresh, Search order. */
+    /** Groups rail actions in their stable Locate, Start, Refresh, Search order. */
     createRailControls() {
       this.createRailLocate();
+      this.createRailStart();
       this.createRailRefresh();
       this.createRailSearch();
       this.railActionGroup = this.document.createElement("div");
       this.railActionGroup.className = "bibilili-rail-action-group";
       this.railActionGroup.setAttribute("role", "group");
       this.railActionGroup.append(
-        this.railLocateButton, this.railRefreshButton, this.railSearch
+        this.railLocateButton, this.railStartButton, this.railRefreshButton, this.railSearch
       );
     }
 
@@ -7140,7 +7142,32 @@
       this.renderRailWindow({ centerIndex: this.railLocateIndex });
     }
 
-    /** Creates the selected-source refresh control between Locate and Search. */
+    /** Creates the return-to-start icon immediately after Locate. */
+    createRailStart() {
+      this.railStartButton = this.document.createElement("button");
+      this.railStartButton.type = "button";
+      this.railStartButton.className = "bibilili-action-button bibilili-rail-start";
+      this.railStartButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14M17 6l-6 6 6 6"/></svg>';
+      this.railStartButton.setAttribute("aria-controls", LIST_RAIL_ID);
+      this.railStartButton.disabled = true;
+      this.railStartButton.addEventListener("click", () => this.scrollRailToStart());
+    }
+
+    /** Returns to the first rail window while preserving source and search state. */
+    scrollRailToStart() {
+      if (!this.isRailOpen || !this.railSource) return;
+      this.renderRailWindow({ resetScroll: true });
+    }
+
+    /** Updates the Start control's localized label and open-rail availability. */
+    renderRailStart(available) {
+      if (!this.railStartButton) return;
+      UiControl.setLabel(this.railStartButton,
+        UiStrings.message(UiMessage.RAIL_START_LABEL, this.language));
+      this.railStartButton.disabled = !available;
+    }
+
+    /** Creates the selected-source refresh control between Start and Search. */
     createRailRefresh() {
       this.railRefreshButton = this.document.createElement("button");
       this.railRefreshButton.type = "button";
@@ -7235,6 +7262,7 @@
       this.railActionGroup.setAttribute("aria-label",
         UiStrings.message(UiMessage.RAIL_ACTIONS_LABEL, this.language));
       this.renderRailLocate();
+      this.renderRailStart(available);
       this.renderRailRefresh();
       this.railSearch.hidden = !available;
       const label = UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language);
