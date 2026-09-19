@@ -10,6 +10,9 @@
   const FAVORITE_FOLDER_STORAGE_PREFIX = "bibilili:favorite-folder:";
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
+  const SETTINGS_TAB_STORAGE_KEY = "bibilili:settings-tab";
+  /** Closed settings tabs shared by the view and its persisted navigation state. */
+  const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions" });
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true
   });
@@ -127,6 +130,29 @@
         return true;
       } catch (_error) {
         return false;
+      }
+    }
+  }
+
+  /** Remembers the last settings tab across page loads, defaulting to Features. */
+  class SettingsTabPreference {
+    /** @returns {string} Saved tab, or Features when absent, invalid, or unavailable. */
+    static read() {
+      try {
+        const tab = window.localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
+        return Object.values(SettingsTab).includes(tab) ? tab : SettingsTab.FEATURES;
+      } catch (_error) {
+        return SettingsTab.FEATURES;
+      }
+    }
+
+    /** @param {string} tab Closed settings tab selected by pointer or keyboard. */
+    static write(tab) {
+      if (!Object.values(SettingsTab).includes(tab)) return;
+      try {
+        window.localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab);
+      } catch (_error) {
+        // The settings view retains its tab for this page when storage is blocked.
       }
     }
   }
@@ -494,6 +520,8 @@
     SourceRoute,
     SourceRouteStateStore,
     SettingsPreference,
+    SettingsTab,
+    SettingsTabPreference,
     configure
   });
 })();

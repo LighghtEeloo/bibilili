@@ -3,8 +3,7 @@
 
   const { UiControl, PopupPanel } = window.__bibililiControls;
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
-  const { SettingsPreference } = window.__bibililiStorageState;
-  const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions" });
+  const { SettingsPreference, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
 
   /**
    * Renders persisted language, feature, and placement preferences in a reusable popup.
@@ -16,7 +15,7 @@
       this.document = document;
       this.options = options;
       this.panel = new PopupPanel(document, "bibilili-settings");
-      this.tab = SettingsTab.ACTIONS;
+      this.tab = SettingsTabPreference.read();
       this.preferences = SettingsPreference.defaults();
       this.enabled = true;
       this.language = "en";
@@ -226,9 +225,10 @@
       this.options.onChange({ ...this.preferences, [group]: { ...this.preferences[group], [key]: value } });
     }
 
-    /** @param {string} tab */
+    /** Selects and remembers a tab without changing extension feature preferences. @param {string} tab */
     selectTab(tab) {
       this.tab = tab;
+      SettingsTabPreference.write(tab);
       this.render();
       this.panel.position();
     }

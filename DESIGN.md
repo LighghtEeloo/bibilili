@@ -164,7 +164,10 @@ storage is available. Storage events apply changes to other open Bilibili tabs.
 Settings manages extension preferences on the watch page. Its button follows
 the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
-with Features and Action bar tabs.
+with Features and Action bar tabs. It remembers the last selected tab across
+videos and page reloads in origin-local storage. Features is the initial tab
+when no valid selection is saved. Tab selection is stored independently of
+feature preferences and is retained when restoring defaults.
 
 Features begins with the UI language selector. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
