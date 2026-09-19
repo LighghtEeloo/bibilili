@@ -334,5 +334,5 @@ test("modified, canceled, download, and new-tab card clicks retain browser behav
   assert.equal(calls.length, 0);
   link.attributes.delete("download");
   layout.handleVideoCardLinkClick(event);
-  assert.deepEqual(calls, [[SourceKind.COLLECTION, link.href, event]]);
+  assert.deepEqual(calls, [[SourceKind.COLLECTION, link.href, event, undefined]]);
 });

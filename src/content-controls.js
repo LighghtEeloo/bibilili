@@ -10,7 +10,8 @@
     search: "M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0M16 16l5 5",
     more: "M5 12h.01M12 12h.01M19 12h.01",
     settings: "M10 3h4l.7 2.4 2.1 1.2 2.5-.6 2 3.5-1.8 1.8v2.4l1.8 1.8-2 3.5-2.5-.6-2.1 1.2L14 22h-4l-.7-2.4-2.1-1.2-2.5.6-2-3.5 1.8-1.8v-2.4L2.7 9.5l2-3.5 2.5.6 2.1-1.2L10 3M15 12.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
-    close: "M6 6l12 12M6 18 18 6"
+    close: "M6 6l12 12M6 18 18 6",
+    chevronDown: "M6 9l6 6 6-6"
   });
 
   /**
@@ -119,6 +120,71 @@
     }
   }
 
+  /** A search button with shared expansion, Escape, and empty-blur behavior. */
+  class SearchControl {
+    /** @param {Document} document @param {SearchControlOptions} options */
+    constructor(document, options) {
+      this.options = options;
+      this.root = document.createElement("div");
+      this.root.className = options.className;
+      this.button = UiControl.button(document, options.buttonClassName, () => {
+        options.onOpen?.();
+        this.setExpanded(true);
+        this.input.focus();
+      });
+      this.button.append(UiControl.icon(document, "search"));
+      this.button.setAttribute("aria-controls", options.inputId);
+      this.button.setAttribute("aria-expanded", "false");
+      this.input = document.createElement("input");
+      this.input.id = options.inputId;
+      this.input.type = "search";
+      this.input.autocomplete = "off";
+      this.input.hidden = true;
+      this.input.addEventListener("input", () => options.onInput(this.input.value));
+      this.input.addEventListener("keydown", (event) => {
+        // Note: Bilibili handles player shortcuts on the containing document.
+        event.stopPropagation();
+        if (event.key === "Escape" && !event.isComposing) {
+          event.preventDefault();
+          this.input.value = "";
+          options.onInput("");
+          this.setExpanded(false);
+          (options.escapeFocus?.() ?? this.button).focus();
+        }
+      });
+      this.input.addEventListener("blur", () => {
+        if (!this.input.value.trim()) this.setExpanded(false);
+      });
+      this.root.append(this.button, this.input);
+    }
+
+    /** @param {boolean} expanded Whether the field replaces its button. */
+    setExpanded(expanded) {
+      this.input.hidden = !expanded;
+      this.button.hidden = expanded;
+      this.button.setAttribute("aria-expanded", String(expanded));
+      this.options.onExpandedChange?.();
+    }
+
+    /** @param {string} label Localized accessible name and input placeholder. */
+    setLabel(label) {
+      UiControl.setLabel(this.button, label);
+      this.input.setAttribute("aria-label", label);
+      this.input.placeholder = label;
+    }
+  }
+
+  /**
+   * @typedef {object} SearchControlOptions
+   * @property {string} inputId Stable id referenced by the search button.
+   * @property {string} className Container styling.
+   * @property {string} buttonClassName Search button styling.
+   * @property {(query: string) => void} onInput Applies the current query.
+   * @property {() => void} [onOpen] Prepares the containing surface before expansion.
+   * @property {() => void} [onExpandedChange] Reconciles placement or popup geometry.
+   * @property {() => HTMLElement | null} [escapeFocus] Optional alternate focus return target.
+   */
+
   /**
    * Owns a nonmodal panel above a page control, including dismissal and focus.
    * The panel lives outside the layout so Settings can survive deactivation.
@@ -219,5 +285,5 @@
     }
   }
 
-  window.__bibililiControls = Object.freeze({ UiControl, PopupPanel });
+  window.__bibililiControls = Object.freeze({ UiControl, SearchControl, PopupPanel });
 })();

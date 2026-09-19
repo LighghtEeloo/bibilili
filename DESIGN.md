@@ -18,8 +18,10 @@ helpers for moved page nodes and marked source roots. `src/content-i18n.js` is
 the i18n prelude. It defines message catalog loading, formatting, and UI
 language resolution. `src/content-storage.js` is the storage prelude. It
 defines persisted activation, feature preferences, action placement, comment
-width, navigation-origin, and source-route state. `src/content-controls.js`
-defines shared controls, extension icon paths, and popup positioning and focus.
+width, navigation-origin, source-route state, and the last favorite folder per
+account. `src/content-controls.js` defines shared controls, expandable search,
+extension icon paths, and popup positioning and focus.
+`src/content-favorites.js` owns the favorite-folder picker.
 `src/content-settings.js` renders the settings view from ordered definitions and
 the controller's preference snapshot. `src/content-theme.js` defines browser
 color-scheme resolution and Bilibili native theme synchronization.
@@ -59,8 +61,8 @@ into the bottom dock.
 
 Bibilili owns the loading cover, layout root, stage, panes, video header, list dock,
 source bar, video description presentation, watch action group,
-current-video watch-later control, list rail, video cards,
-watch-later mutation controls, Settings and More popups, extension classes, and
+current-video watch-later control, list rail, video cards, watch-later mutation
+controls, Settings, More, and favorite-folder popups, extension classes, and
 bookkeeping attributes.
 Bilibili owns the player, comments, source roots, links, native watch metadata,
 native uploader card, watch action triggers, account controls, account lists,
@@ -168,7 +170,10 @@ description restores its native node and removes its extension presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails. Disabling a source removes it from routing and source
 root marking. A disabled account source cancels outstanding list requests and
-retains its cached items and expansion for a refresh when re-enabled.
+retains its cached items and expansion for a refresh when re-enabled. Favorites
+appears before Watch later in Features, as it does in the dock. Disabling
+Favorites closes its picker and cancels directory and folder requests. The
+current-video favorite action retains its independent Action bar preference.
 
 Action bar controls whether each watch action or list tool appears on the bar
 or in More. All actions default to the bar. Show More button defaults to enabled
@@ -188,8 +193,9 @@ icons use the same sanitized visual renderer and watch-later snapshot as dock
 buttons. List tools use the shared extension icon renderer. An unavailable
 native action retains its preference row with an empty icon slot.
 
-Settings and More share viewport-clamped positioning, outside-click dismissal,
-Escape handling, and focus return to their launcher. Their keyboard events stay
+Settings, More, and the favorite-folder picker share viewport-clamped
+positioning, outside-click dismissal, Escape handling, and focus return to
+their launcher. Their keyboard events stay
 within extension controls. The settings popup remains available while the
 layout is disabled. Popups are excluded from native DOM discovery.
 
@@ -317,9 +323,9 @@ comment controls.
 ## Video List Source
 
 A video list source is a Bilibili list that can produce video items. Source
-kinds form a closed set: parts, collection, recommendations, watch later, and
-history. A source kind is shown when page markup or an account list exposes
-matching content.
+kinds form a closed set: parts, collection, recommendations, favorites, watch
+later, and history. A source kind is shown when page markup or an account list
+exposes matching content.
 
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items. Source adapters convert page-owned list markup and
@@ -335,7 +341,8 @@ include the page number; bangumi route keys use the playable bangumi identity.
 
 Parts and collection sources require at least two valid items. A one-item list
 does not provide navigation and remains absent from the source bar. Other source
-kinds require one valid item.
+kinds require one valid item, except Favorites, whose enabled entry also
+provides folder selection and account recovery when no videos are loaded.
 
 ## Parts and Collection Sources
 
@@ -357,20 +364,22 @@ items and routes separate.
 An account video list source is a Bilibili account list fetched by the content
 script with the current Bilibili login cookies.
 
-The account source kinds are watch later and history. Watch later reads
-Bilibili's to-view list; history reads the recent video history list. Each API
-response is normalized into the same video item shape used by page-owned
-sources. History is read-only in the dock. Watch later supports additions from
-the current watch action and page-owned collection and recommendation cards.
-It supports removals from account-backed watch-later cards.
+The account source kinds are favorites, watch later, and history. Favorites
+reads the signed-in account's owned folders and the selected folder's videos.
+Watch later reads Bilibili's to-view list; history reads the recent video history
+list. Each API response is normalized into the same video item shape used by
+page-owned sources. History is read-only in the dock. Watch later supports
+additions from the current watch action and collection, recommendation, and
+favorite cards. It supports removals from account-backed watch-later cards.
 
 The account source store retains valid items and expansion state separately for
 each source. History starts with a request for 30 entries and retains the
 response cursor for older pages. Watch later retains the returned list and
-initially exposes up to 80 items. Each expansion reveals up to 30 additional
-items, fetching one older page when history has no retained items left to show.
-History pages merge by playable route identity in API order. Empty pages,
-missing cursors, and repeated cursors end history continuation.
+initially exposes up to 80 items. Favorites starts with 20 entries and retains
+a numbered continuation for each folder. Each expansion reveals up to 30
+retained items or fetches one continuation page. Pages merge by playable route
+identity in API order. Empty raw pages, missing continuations, and repeated
+cursors end continuation; a page whose entries are all filtered can continue.
 
 Watch-later expansion can advance directly to the batch containing a cached
 target. It retains any deeper expansion and leaves an absent target unchanged.
@@ -385,10 +394,12 @@ the revealed rail item count, which follows the current expansion depth and
 valid-item rules.
 
 Account source fetches are advisory and never block the first transformed
-layout. A source remains absent until its initial request yields valid items.
-Failed refreshes preserve usable items. Failed continuation requests preserve
-the loaded items and cursor so the same page can be retried. Each source allows
-one active request and discards completions from canceled requests.
+layout. Watch later and history remain absent until their initial requests
+yield valid items. Favorites remains available for folder selection and account
+status. Failed refreshes preserve usable items. Failed continuation requests
+preserve the loaded items and cursor so the same page can be retried. Each
+source instance allows one active request and discards completions from
+canceled requests.
 
 Account sources do not have page-owned roots. They are rendered in the bottom
 dock but do not participate in source-root hiding.
@@ -398,11 +409,56 @@ endpoint when the account payload exposes it. A successful deletion removes the
 item from the loaded watch-later source and reconciles the dock. Deleting the
 currently open video from watch later leaves the watch page open.
 
-The current watch action and collection and recommendation cards derive a
-to-view add identity from their archive target URL. A successful card addition
-refreshes watch later at its current expansion depth and hides the card add
-control for that target during the current layout session. The current watch
-action remains available after a successful addition.
+The current watch action and collection, recommendation, and favorite cards
+derive a to-view add identity from their archive target URL. A successful card
+addition refreshes watch later at its current expansion depth and hides the
+card add control for that target during the current layout session. The current
+watch action remains available after a successful addition.
+
+## Favorite Folders
+
+A favorite folder is one account-owned list identified by its Bilibili media-list
+id. Favorites is one source kind; each folder is a source instance. Folder names,
+counts, and the default-folder marker come from the folder directory. Counts can
+include unavailable or non-video entries, which the video adapter omits from the
+rail.
+
+The Favorites source button precedes Watch later and opens or collapses the
+selected folder's rail. The default folder uses the plain Favorites label.
+Other folders append their name after a middle dot. The adjacent chevron opens
+a folder picker above the dock without changing stage geometry. The picker uses
+the shared popup lifecycle, keyed folder buttons, and the page theme.
+
+The picker's search button expands into a field that matches folder names. The
+field replaces the heading and fills the header beside the close button. It
+shares expansion and keyboard behavior with rail search: Escape clears the
+query and restores the button; an empty field collapses on blur. Opening the
+picker focuses the selected or first visible folder unless a search query is
+active. Zero-count folders remain selectable.
+
+The directory loads when Favorites is first opened or a stored folder route
+needs restoration. Opening the picker rechecks the account and folder directory.
+The first source-label click resumes a saved folder after this check. Without a
+valid saved selection, it opens Bilibili's default folder. If that folder is
+unavailable, the picker stays open. Selecting a folder loads its cards on demand
+through the account store. Each visited folder retains its cards, continuation,
+and horizontal rail position for the layout session.
+
+The last folder is stored per account. Navigation origins and the tab-scoped
+source route carry the folder id. A restored id must belong to the authenticated
+account's directory before its videos are requested. A deleted selection falls
+back to the default folder when available. Sign-out and account changes discard
+cached folder data.
+
+Loading, signed-out, failed-request, and empty-folder states remain inside the
+picker or selected rail. Retry preserves usable cards after a network failure.
+The sign-in action forwards to the native account control. Refresh folders
+updates the directory; rail Refresh reloads the selected folder from its first
+page. Favorites uses the existing current-card highlight, Locate, pagination,
+and add-to-watch-later controls.
+
+The current-video star remains a native favorite action. Bilibili owns saving,
+removing, renaming, and organizing favorites through its existing controls.
 
 ## Video Item
 
@@ -446,18 +502,18 @@ or unavailable videos keep the title placeholder for the page session.
 
 The list dock is the bottom container for the selected video-list source. It
 contains the source bar and list rail, and it is the canonical visual placement
-for parts, collections, recommendations, watch-later entries, history entries,
-and later video-list kinds.
+for parts, collections, recommendations, favorite folders, watch-later entries,
+and history entries.
 
 The list dock has bounded height and owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
 
 The list dock has two enabled states. It is open when a selected source is
-showing its rail. It is controls-only when no discovered source yields valid
-video items or when the selected source route is closed. Controls-only state
-keeps the activation control, available watch action buttons, and available
-source buttons visible, closes the rail, and gives the stage the viewport
-height minus the source bar height.
+showing its rail, including Favorites loading and empty states. It is
+controls-only when no source is available or the selected route is closed.
+Controls-only state keeps the activation control, available watch action
+buttons, and available source buttons visible, closes the rail, and gives the
+stage the viewport height minus the source bar height.
 
 ## Watch Action Control
 
@@ -555,11 +611,15 @@ order can take effect without changing Bilibili behavior.
 
 ## Source Route
 
-The source route is the selected source kind for the list dock. It defaults to
-the first available source in source-kind order: parts, collection,
-recommendations, watch later, history. Reconciliation preserves the current
-route while its source remains available; when the route disappears, the first
-available source becomes selected.
+The source route is the selected source kind and optional favorite-folder id
+for the list dock. It defaults to the first source with valid items in source
+order: parts, collection, recommendations, favorites, watch later, history.
+Favorites provides a folder-selection surface when no source has valid items.
+An automatically selected, unchosen Favorites surface yields to sources that
+load valid items. Explicitly selected and restored routes retain their source
+while folders load. Reconciliation preserves a chosen route while its source
+remains available; when the route disappears, the first available source
+becomes selected.
 
 An origin route is a one-navigation source-route hint created by normal
 same-tab activation of an extension-owned video card. The next watch page
@@ -584,14 +644,15 @@ after their fetch completes.
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
 kind, then contains the pinned watch action group when native watch actions are
-available. Source buttons represent parts, collection, recommendations, watch
-later, and history when those sources are available. Their labels use the
-current UI language.
+available. Source buttons represent parts, collection, recommendations,
+favorites, watch later, and history when those sources are available. Their
+labels use the current UI language.
 
 The selected source button keeps `aria-current` for the remembered route and
 exposes the rail open state with `aria-expanded`. The selected visual treatment
-applies only while `aria-expanded` is `true`. A source with no valid video items
-is omitted from the source bar.
+applies only while `aria-expanded` is `true`. Favorites keeps its folder picker
+available while empty. Other sources with no valid video items are omitted
+from the source bar.
 
 The source bar is rendered whenever the enabled list dock is present. With no
 available source, it contains the activation control, available uploader
@@ -642,9 +703,10 @@ pending. Refresh preserves the search query and selected route while that
 source remains available. Scroll position is retained within the updated
 rail's bounds.
 
-Account sources refresh through one request to their existing list endpoint.
-Watch later retains its expansion budget. History restarts from the latest
-page and uses Show more for older entries. Failed requests retain usable items.
+Loaded account lists refresh through one request to their list endpoint.
+Watch later retains its expansion budget. History and Favorites restart from
+the first page and use Show more for subsequent entries. Failed requests retain
+usable items.
 Page-owned sources are re-extracted from Bilibili's current list markup.
 Refresh updates the dock without reloading the page or remounting the player
 and comments.
@@ -660,7 +722,8 @@ More is hidden. An empty input collapses when focus leaves it.
 Search filters the selected source by title or author using a case-insensitive,
 Unicode-normalized substring. Watch later searches the full retained account
 list, including items beyond the revealed batches. Other sources search their
-currently exposed items. History continuation remains available during search.
+currently exposed items. Favorites labels this scope as loaded favorites.
+History and Favorites continuation remain available during search.
 Clearing the query restores the source's expansion depth. Source changes clear
 the query; ordinary reconciliation preserves it. An empty result keeps the rail
 open and displays a localized no-matches heading.
@@ -685,9 +748,9 @@ Cards retain their logical order and fixed positions within the full row.
 Keyboard navigation reveals adjacent items across window boundaries. Resizing
 preserves the logical scroll position when card dimensions change.
 
-Account-backed history and watch-later groups end with a Show more button while
-additional items are available. The button uses the video card dimensions and
-stays at the end as cards are appended. It keeps its DOM identity during
+Account-backed favorite, history, and watch-later groups end with a Show more
+button while additional items are available. The button uses the video card
+dimensions and stays at the end as cards are appended. It keeps its DOM identity during
 reconciliation, presents Loading while a request is active, and presents Retry
 after a continuation failure. It is removed when continuation ends.
 
@@ -744,9 +807,9 @@ uses selected border and title colors. A collection card for the current
 archive uses the same treatment. For collection cards, a native current-row
 marker from Bilibili is equivalent to an archive match.
 
-Collection and recommendation cards with archive targets include an overlay
-add-to-watch-later button. Watch-later cards with a deletion identity include
-an overlay removal button. The mutation button appears on card hover or card
+Collection, recommendation, and favorite cards with archive targets include an
+overlay add-to-watch-later button. Watch-later cards with a deletion identity
+include an overlay removal button. The mutation button appears on card hover or card
 focus, sits at the top-right of the card, and handles its own activation.
 Add controls use the same captured native watch-later visual as the
 current-video watch-later action. Removal controls always use an

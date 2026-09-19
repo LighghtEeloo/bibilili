@@ -384,7 +384,7 @@ test("ordinary dock reconciliation preserves search and changing source clears i
   const { layout, source } = railFixture(LayoutRoot, 10, SourceKind.HISTORY);
   layout.currentSources = [source];
   layout.selectedSourceKind = source.kind;
-  layout.railSearchKind = source.kind;
+  layout.railSearchKey = source.kind;
   layout.railSearchQuery = "no matching title";
   layout.renderSourceDock([source], {});
   assert.equal(layout.railSearchQuery, "no matching title");

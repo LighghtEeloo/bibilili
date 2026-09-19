@@ -149,6 +149,10 @@
     "message": "合集",
     "description": "Label for a collection video-list source."
   },
+  "sourceFavoritesLabel": {
+    "message": "收藏夹",
+    "description": "Source label for the current account favorite folders."
+  },
   "sourceWatchLaterLabel": {
     "message": "稍后再看",
     "description": "Label for a watch-later video-list source."
@@ -284,5 +288,44 @@
   "settingsPageOnlyLabel": {
     "message": "已在本页应用，但未能保存。",
     "description": "Status when persistent storage is unavailable."
+  },
+  "favoritesSourceLabel": {
+    "message": "收藏夹 · $1"
+  },
+  "favoritesFoldersLabel": {
+    "message": "收藏夹"
+  },
+  "favoritesChooseLabel": {
+    "message": "选择收藏夹"
+  },
+  "favoritesSearchLabel": {
+    "message": "搜索收藏夹"
+  },
+  "favoritesSearchVideosLabel": {
+    "message": "搜索已加载的收藏视频"
+  },
+  "favoritesRefreshLabel": {
+    "message": "刷新收藏夹"
+  },
+  "favoritesSignInLabel": {
+    "message": "登录哔哩哔哩"
+  },
+  "favoritesSignInMessage": {
+    "message": "登录后可浏览收藏夹。"
+  },
+  "favoritesErrorMessage": {
+    "message": "无法加载收藏，请重试。"
+  },
+  "favoritesRefreshErrorMessage": {
+    "message": "刷新失败，可点击刷新重试。"
+  },
+  "favoritesNoFoldersMessage": {
+    "message": "暂无收藏夹。"
+  },
+  "favoritesNoMatchesMessage": {
+    "message": "没有匹配的收藏夹。"
+  },
+  "favoritesEmptyMessage": {
+    "message": "此收藏夹中没有可播放的视频。"
   }
 }

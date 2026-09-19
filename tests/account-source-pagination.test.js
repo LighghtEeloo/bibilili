@@ -270,7 +270,7 @@ test("ignores a late page response after the account session stops", async (t) =
   pending.resolve(payload(entries(31, 30), cursor(60)));
   await loading;
 
-  assert.deepEqual(store.currentSources(), []);
+  assert.deepEqual(store.currentSources().map((source) => source.kind), [SourceKind.FAVORITES]);
   assert.equal(store.currentWatchLaterCount(), null);
   assert.equal(changes, changesAtStop);
 });

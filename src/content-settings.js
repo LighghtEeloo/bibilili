@@ -58,7 +58,7 @@
       this.panel.ensure();
       const root = this.panel.root;
       root.id = "bibilili-settings";
-      const header = this.element("div", "bibilili-settings-header");
+      const header = this.element("div", "bibilili-popup-header bibilili-settings-header");
       header.append(this.text("div", UiMessage.EXTENSION_NAME, "bibilili-settings-title"));
       const activation = this.switchRow("enabled", UiMessage.SETTINGS_ENABLED_LABEL, (checked) => {
         this.options.onEnabledChange(checked);

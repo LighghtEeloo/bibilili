@@ -2,8 +2,9 @@
   "use strict";
 
   const { DomProbe } = window.__bibililiDom;
-  const { UiControl, PopupPanel } = window.__bibililiControls;
+  const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
   const { SettingsView } = window.__bibililiSettings;
+  const { FavoritesView } = window.__bibililiFavorites;
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
   const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
@@ -22,6 +23,8 @@
     ActivationPreference,
     CardNavigationOriginStore,
     CommentPaneWidthPreference,
+    FavoriteFolderPreference,
+    SourceRoute,
     SourceRouteStateStore,
     SettingsPreference,
     configure: configureStorageState
@@ -48,6 +51,10 @@
   const PAGE_LAZY_PRIME_DELAY_MS = 650;
   const URL_POLL_INTERVAL_MS = 500;
   const MAX_ITEMS_PER_SOURCE = 80;
+  const ACCOUNT_FAVORITES_PAGE_SIZE = 20;
+  const FAVORITE_CUSTOM_FOLDER_FLAG = 2;
+  const FAVORITE_ARCHIVE_TYPE = 2;
+  const FAVORITE_UNAVAILABLE_FLAG = 1;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const ACCOUNT_WATCH_LATER_INITIAL_SIZE = 80;
   const ACCOUNT_MORE_BATCH_SIZE = 30;
@@ -66,6 +73,9 @@
     2600,
     5000
   ]);
+  const ACCOUNT_NAV_URL = "https://api.bilibili.com/x/web-interface/nav";
+  const FAVORITE_FOLDERS_URL = "https://api.bilibili.com/x/v3/fav/folder/created/list-all";
+  const FAVORITES_SOURCE_URL = "https://api.bilibili.com/x/v3/fav/resource/list";
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
@@ -722,9 +732,10 @@
   const SourceKind = Object.freeze({
     PARTS: "parts",
     COLLECTION: "collection",
+    RECOMMENDATIONS: "recommendations",
+    FAVORITES: "favorites",
     WATCH_LATER: "watch_later",
-    HISTORY: "history",
-    RECOMMENDATIONS: "recommendations"
+    HISTORY: "history"
   });
 
   /**
@@ -749,9 +760,10 @@
   const SOURCE_LABEL_MESSAGE_NAMES = Object.freeze({
     [SourceKind.PARTS]: "sourcePartsLabel",
     [SourceKind.COLLECTION]: "sourceCollectionLabel",
+    [SourceKind.RECOMMENDATIONS]: "sourceRecommendationsLabel",
+    [SourceKind.FAVORITES]: "sourceFavoritesLabel",
     [SourceKind.WATCH_LATER]: "sourceWatchLaterLabel",
-    [SourceKind.HISTORY]: "sourceHistoryLabel",
-    [SourceKind.RECOMMENDATIONS]: "sourceRecommendationsLabel"
+    [SourceKind.HISTORY]: "sourceHistoryLabel"
   });
 
   const WATCH_ACTION_LABEL_MESSAGE_NAMES = Object.freeze({
@@ -780,11 +792,13 @@
     SourceKind.PARTS,
     SourceKind.COLLECTION,
     SourceKind.RECOMMENDATIONS,
+    SourceKind.FAVORITES,
     SourceKind.WATCH_LATER,
     SourceKind.HISTORY
   ]);
 
   const ACCOUNT_SOURCE_ORDER = Object.freeze([
+    SourceKind.FAVORITES,
     SourceKind.WATCH_LATER,
     SourceKind.HISTORY
   ]);
@@ -795,7 +809,8 @@
   const AccountSourceStatus = Object.freeze({
     READY: "ready",
     LOADING: "loading",
-    ERROR: "error"
+    ERROR: "error",
+    SIGNED_OUT: "signed_out"
   });
 
   const WATCH_ACTION_ORDER = Object.freeze([
@@ -820,6 +835,7 @@
 
   configureStorageState({
     sourceOrder: SOURCE_ORDER,
+    favoritesKind: SourceKind.FAVORITES,
     actionDefaults: Object.fromEntries([...WATCH_ACTION_ORDER, ...RAIL_ACTION_ORDER]
       .map((kind) => [kind, true])),
     commentPaneMinWidth: COMMENT_PANE_MIN_WIDTH,
@@ -3133,7 +3149,7 @@
      * @returns {object[]}
      */
     static entriesFromPayload(payload) {
-      const list = payload?.data?.list;
+      const list = payload?.data?.medias ?? payload?.data?.list;
 
       if (!Array.isArray(list)) {
         return [];
@@ -3207,6 +3223,13 @@
      * @returns {VideoItem | null}
      */
     static itemFromEntry(kind, entry, language) {
+      // Note: Favorites can contain audio and unavailable archives alongside videos.
+      if (kind === SourceKind.FAVORITES && (
+        Number(entry.type) !== FAVORITE_ARCHIVE_TYPE ||
+        (Number(entry.attr) & FAVORITE_UNAVAILABLE_FLAG)
+      )) {
+        return null;
+      }
       const targetUrl = AccountSourceAdapter.targetUrlFor(entry);
       const title = AccountSourceAdapter.titleFor(entry);
 
@@ -3256,7 +3279,7 @@
 
       const page = AccountSourceAdapter.pageNumberFor(entry);
       const bvid = AccountSourceAdapter.stringValue(
-        entry.bvid || entry.history?.bvid
+        entry.bvid || entry.bv_id || entry.history?.bvid
       );
 
       if (bvid) {
@@ -3339,6 +3362,7 @@
       return AccountSourceAdapter.cleanText(
         entry.author_name ||
           entry.owner?.name ||
+          entry.upper?.name ||
           entry.author ||
           entry.up_name
       );
@@ -3353,7 +3377,7 @@
      */
     static viewCountFor(entry, language) {
       const viewCount = AccountSourceAdapter.numberValue(
-        entry.stat?.view ?? entry.view ?? entry.play
+        entry.stat?.view ?? entry.cnt_info?.play ?? entry.view ?? entry.play
       );
 
       if (!viewCount || viewCount <= 0) {
@@ -3466,7 +3490,7 @@
      */
     static archiveAidFor(entry) {
       return AccountSourceAdapter.numberValue(
-        entry.aid ?? entry.kid ?? entry.history?.oid
+        entry.aid ?? entry.kid ?? entry.history?.oid ?? (Number(entry.type) === FAVORITE_ARCHIVE_TYPE ? entry.id : null)
       );
     }
 
@@ -3583,6 +3607,10 @@
       /** @type {Map<string, AccountSourceRecord>} */
       this.records = new Map();
       this.enabledKinds = new Set(ACCOUNT_SOURCE_ORDER);
+      /** @type {Map<string, AccountSourceRecord>} Cached records keyed by folder id. */
+      this.favoriteRecords = new Map();
+      /** @type {FavoriteFolderDirectory | null} Owned folders and directory request state. */
+      this.favoriteFolders = null;
       this.language = null;
       this.stop();
     }
@@ -3611,9 +3639,18 @@
       }
       if (!this.enabledKinds.has(kind)) return null;
       const items = record.items.slice(0, includeAll ? undefined : record.visibleCount);
-      return items.length > 0
+      const favorite = kind === SourceKind.FAVORITES;
+      const folder = favorite ? this.favoriteFolders.items.find((entry) => entry.id === record.folderId) : null;
+      return items.length > 0 || favorite
         ? {
             kind,
+            ...(favorite ? {
+              folderId: record.folderId,
+              title: folder?.title,
+              isDefaultFolder: Boolean(folder?.isDefault),
+              status: record.folderId ? record.status : this.favoriteFolders.status,
+              loaded: record.loaded
+            } : {}),
             root: null,
             items,
             pagination: {
@@ -3673,11 +3710,22 @@
       const enabled = new Set(kinds);
       for (const kind of ACCOUNT_SOURCE_ORDER) {
         if (enabled.has(kind) || !this.enabledKinds.has(kind)) continue;
-        const record = this.records.get(kind);
-        record.controller?.abort();
-        record.controller = null;
-        record.loaded = false;
-        record.status = AccountSourceStatus.READY;
+        const records = kind === SourceKind.FAVORITES
+          ? [this.records.get(kind), ...this.favoriteRecords.values()]
+          : [this.records.get(kind)];
+        for (const record of records) {
+          record.controller?.abort();
+          record.controller = null;
+          record.loaded = false;
+          record.status = AccountSourceStatus.READY;
+        }
+        if (kind === SourceKind.FAVORITES) {
+          this.favoriteFolders.controller?.abort();
+          this.favoriteFolders.controller = null;
+          this.favoriteFolders.promise = null;
+          this.favoriteFolders.loaded = false;
+          this.favoriteFolders.status = AccountSourceStatus.READY;
+        }
       }
       this.enabledKinds = enabled;
     }
@@ -3791,6 +3839,9 @@
       }
 
       await Promise.all(ACCOUNT_SOURCE_ORDER.map((kind) => {
+        if (kind === SourceKind.FAVORITES) {
+          return this.favoriteFolders.requested ? this.loadFavoriteFolders(true) : undefined;
+        }
         const record = this.records.get(kind);
         return !force && (record.loaded || record.controller)
           ? undefined
@@ -3807,10 +3858,12 @@
     async refreshSource(kind) {
       if (!this.enabledKinds.has(kind)) return;
       const record = this.records.get(kind);
+      if (kind === SourceKind.FAVORITES && !record.folderId) {
+        await this.loadFavoriteFolders(true);
+        return;
+      }
       const controller = this.beginRequest(record);
-      const url = kind === SourceKind.WATCH_LATER
-        ? WATCH_LATER_SOURCE_URL
-        : HISTORY_SOURCE_URL;
+      const url = AccountSourceStore.sourceUrl(record);
 
       try {
         const result = await AccountSourceStore.fetchSourceRecord(
@@ -3822,13 +3875,16 @@
           record.cursor = result.cursor;
           record.cursorKeys.clear();
           record.watchLaterCount = result.watchLaterCount;
+          record.status = AccountSourceStatus.READY;
         }
-      } catch (_error) {
-        // Account refreshes retain usable items when Bilibili is unavailable.
+      } catch (error) {
+        if (this.isCurrentRequest(record, controller)) {
+          if (kind === SourceKind.FAVORITES && error.code === -101) this.clearFavoriteAccount();
+          else record.status = AccountSourceStatus.ERROR;
+        }
       } finally {
         if (this.isCurrentRequest(record, controller)) {
           record.loaded = true;
-          record.status = AccountSourceStatus.READY;
           record.controller = null;
           this.onChange();
         }
@@ -3836,7 +3892,7 @@
     }
 
     /**
-     * Reveals retained items or appends one older history page.
+     * Reveals retained items or appends one account continuation page.
      *
      * @param {string} kind
      * @returns {Promise<void>}
@@ -3865,7 +3921,7 @@
       try {
         const result = await AccountSourceStore.fetchSourceRecord(
           kind,
-          AccountSourceStore.historyUrlFor(cursor),
+          AccountSourceStore.sourceUrl(record, cursor),
           controller.signal,
           this.language
         );
@@ -3890,9 +3946,10 @@
           ? result.cursor
           : null;
         record.status = AccountSourceStatus.READY;
-      } catch (_error) {
+      } catch (error) {
         if (this.isCurrentRequest(record, controller)) {
-          record.status = AccountSourceStatus.ERROR;
+          if (kind === SourceKind.FAVORITES && error.code === -101) this.clearFavoriteAccount();
+          else record.status = AccountSourceStatus.ERROR;
         }
       } finally {
         if (this.isCurrentRequest(record, controller)) {
@@ -3925,7 +3982,9 @@
      * @returns {boolean}
      */
     isCurrentRequest(record, controller) {
-      return this.records.get(record.kind) === record &&
+      const current = record.kind === SourceKind.FAVORITES && record.folderId
+        ? this.favoriteRecords.get(record.folderId) : this.records.get(record.kind);
+      return current === record &&
         record.controller === controller && !controller.signal.aborted;
     }
 
@@ -3937,27 +3996,170 @@
         record.controller?.abort();
       }
 
-      this.records = new Map(ACCOUNT_SOURCE_ORDER.map((kind) => [
-        kind,
-        {
-          kind,
-          items: [],
-          visibleCount: kind === SourceKind.WATCH_LATER
-            ? ACCOUNT_WATCH_LATER_INITIAL_SIZE
-            : ACCOUNT_HISTORY_PAGE_SIZE,
-          cursor: null,
-          cursorKeys: new Set(),
-          watchLaterCount: null,
-          loaded: false,
-          status: AccountSourceStatus.READY,
-          controller: null
-        }
-      ]));
+      this.favoriteFolders?.controller?.abort();
+      for (const record of this.favoriteRecords.values()) record.controller?.abort();
+      this.favoriteRecords.clear();
+      this.favoriteFolders = {
+        accountId: null, items: [], requested: false, requestedFolderId: null,
+        loaded: false, status: AccountSourceStatus.READY, controller: null, promise: null
+      };
+      this.records = new Map(ACCOUNT_SOURCE_ORDER.map((kind) => [kind, AccountSourceStore.createRecord(kind)]));
       this.language = null;
     }
 
+    /** Creates a list record shared by singleton sources and favorite folders. */
+    static createRecord(kind, folderId = null) {
+      return {
+        kind, folderId, items: [],
+        visibleCount: kind === SourceKind.WATCH_LATER ? ACCOUNT_WATCH_LATER_INITIAL_SIZE
+          : kind === SourceKind.FAVORITES ? ACCOUNT_FAVORITES_PAGE_SIZE : ACCOUNT_HISTORY_PAGE_SIZE,
+        cursor: null, cursorKeys: new Set(), watchLaterCount: null,
+        loaded: false, status: AccountSourceStatus.READY, controller: null
+      };
+    }
+
     /**
-     * Returns whether retained items or a history continuation remain.
+     * Resolves the first or next request for an account source.
+     * Note: Favorites uses numbered pages; history supplies an opaque cursor.
+     * @param {AccountSourceRecord} record
+     * @param {HistoryCursor | number | null} [cursor]
+     * @returns {string}
+     */
+    static sourceUrl(record, cursor = null) {
+      if (record.kind === SourceKind.FAVORITES) {
+        const url = new URL(FAVORITES_SOURCE_URL);
+        for (const [key, value] of Object.entries({
+          media_id: record.folderId, pn: cursor ?? 1, ps: ACCOUNT_FAVORITES_PAGE_SIZE,
+          order: "mtime", type: 0, tid: 0, platform: "web"
+        })) url.searchParams.set(key, String(value));
+        return url.href;
+      }
+      if (record.kind === SourceKind.WATCH_LATER) return WATCH_LATER_SOURCE_URL;
+      return cursor ? AccountSourceStore.historyUrlFor(cursor) : HISTORY_SOURCE_URL;
+    }
+
+    /** Drops account-private folder data when the authenticated account changes. */
+    clearFavoriteAccount(accountId = null) {
+      for (const record of this.favoriteRecords.values()) record.controller?.abort();
+      this.favoriteRecords.clear();
+      this.records.set(SourceKind.FAVORITES, AccountSourceStore.createRecord(SourceKind.FAVORITES));
+      Object.assign(this.favoriteFolders, {
+        accountId, items: [], loaded: false,
+        status: accountId ? AccountSourceStatus.LOADING : AccountSourceStatus.SIGNED_OUT
+      });
+      this.onChange();
+    }
+
+    /**
+     * Loads owned folders on demand and validates remembered selection against the account.
+     * @param {boolean} [force] Refreshes the directory, including account identity.
+     * @returns {Promise<void>}
+     */
+    async loadFavoriteFolders(force = false) {
+      if (!this.enabledKinds.has(SourceKind.FAVORITES)) return;
+      const directory = this.favoriteFolders;
+      directory.requested = true;
+      if (directory.promise) return directory.promise;
+      if (directory.loaded && !force) {
+        const record = this.records.get(SourceKind.FAVORITES);
+        if (record.folderId && !record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
+        return;
+      }
+      const controller = new AbortController();
+      directory.controller = controller;
+      directory.status = AccountSourceStatus.LOADING;
+      this.onChange();
+      const current = () => this.favoriteFolders === directory &&
+        directory.controller === controller && !controller.signal.aborted;
+      directory.promise = (async () => {
+        try {
+          const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, controller.signal);
+          if (!current()) return;
+          if (account.code === -101 || (account.code === 0 && account.data?.isLogin === false)) {
+            this.clearFavoriteAccount();
+            directory.requestedFolderId = null;
+            return;
+          }
+          const accountId = FavoriteFolderPreference.normalizeId(account.data?.mid);
+          if (account.code !== 0 || !accountId) throw new Error("Account identity unavailable");
+          if (directory.accountId !== accountId) this.clearFavoriteAccount(accountId);
+          const url = new URL(FAVORITE_FOLDERS_URL);
+          url.searchParams.set("up_mid", accountId);
+          const payload = await AccountSourceStore.fetchApiPayload(url.href, controller.signal);
+          if (!current()) return;
+          if (payload.code === -101) { this.clearFavoriteAccount(); return; }
+          if (payload.code !== 0 || !(Array.isArray(payload.data?.list) || payload.data?.count === 0)) {
+            throw new Error("Favorite folders unavailable");
+          }
+          const seen = new Set();
+          directory.items = (payload.data.list ?? []).flatMap((entry) => {
+            const id = FavoriteFolderPreference.normalizeId(entry?.id);
+            const title = AccountSourceAdapter.cleanText(entry?.title);
+            if (!id || !title || seen.has(id)) return [];
+            seen.add(id);
+            // Note: Bilibili clears attr bit 1 for its default folder, independently of title or order.
+            return [{ id, title, count: AccountSourceAdapter.nonNegativeInteger(entry.media_count),
+              isDefault: Number.isInteger(entry.attr) && entry.attr >= 0 &&
+                !(entry.attr & FAVORITE_CUSTOM_FOLDER_FLAG) }];
+          });
+          for (const [id, record] of this.favoriteRecords) {
+            if (seen.has(id)) continue;
+            record.controller?.abort();
+            this.favoriteRecords.delete(id);
+          }
+          const remembered = directory.requestedFolderId || this.records.get(SourceKind.FAVORITES).folderId ||
+            FavoriteFolderPreference.read(accountId);
+          const selected = directory.items.find((folder) => folder.id === remembered) ??
+            directory.items.find((folder) => folder.isDefault);
+          directory.requestedFolderId = null;
+          directory.loaded = true;
+          directory.status = AccountSourceStatus.READY;
+          if (selected) {
+            await this.selectFavoriteFolder(selected.id);
+          } else {
+            this.records.set(SourceKind.FAVORITES, AccountSourceStore.createRecord(SourceKind.FAVORITES));
+            FavoriteFolderPreference.write(accountId, null);
+          }
+        } catch (_error) {
+          if (current()) directory.status = AccountSourceStatus.ERROR;
+        } finally {
+          if (current()) {
+            directory.controller = null;
+            directory.promise = null;
+            this.onChange();
+          }
+        }
+      })();
+      return directory.promise;
+    }
+
+    /** Selects a validated folder and reuses its retained cards and continuation. */
+    async selectFavoriteFolder(folderId) {
+      if (!this.enabledKinds.has(SourceKind.FAVORITES) ||
+          !this.favoriteFolders.items.some((folder) => folder.id === folderId)) return;
+      let record = this.favoriteRecords.get(folderId);
+      if (!record) {
+        record = AccountSourceStore.createRecord(SourceKind.FAVORITES, folderId);
+        this.favoriteRecords.set(folderId, record);
+      }
+      this.favoriteFolders.requestedFolderId = null;
+      this.records.set(SourceKind.FAVORITES, record);
+      FavoriteFolderPreference.write(this.favoriteFolders.accountId, folderId);
+      this.onChange();
+      if (!record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
+    }
+
+    /** Validates a navigation or refresh hint before fetching the requested folder. */
+    restoreFavoriteFolder(folderId) {
+      const id = FavoriteFolderPreference.normalizeId(folderId);
+      if (id && this.records.get(SourceKind.FAVORITES).folderId !== id) {
+        this.favoriteFolders.requestedFolderId = id;
+        void this.loadFavoriteFolders(true);
+      }
+    }
+
+    /**
+     * Returns whether retained items or an account continuation remain.
      *
      * @param {AccountSourceRecord} record
      * @returns {boolean}
@@ -4009,7 +4211,12 @@
       const payload = await AccountSourceStore.fetchApiPayload(url, signal);
 
       if (!AccountSourceStore.isSuccessfulPayload(payload)) {
-        throw new Error("Account source request failed");
+        throw Object.assign(new Error("Account source request failed"), { code: payload?.code });
+      }
+
+      if (kind === SourceKind.FAVORITES &&
+          !Array.isArray(payload.data?.medias) && payload.data?.medias !== null) {
+        throw new Error("Favorite media list unavailable");
       }
 
       return {
@@ -4017,7 +4224,9 @@
         source: AccountSourceAdapter.sourceFromPayload(kind, payload, language),
         cursor: kind === SourceKind.HISTORY
           ? AccountSourceAdapter.historyCursorFromPayload(payload)
-          : null,
+          : kind === SourceKind.FAVORITES && payload.data?.has_more &&
+              AccountSourceAdapter.entriesFromPayload(payload).length
+            ? Number(new URL(url).searchParams.get("pn")) + 1 : null,
         watchLaterCount: kind === SourceKind.WATCH_LATER
           ? AccountSourceAdapter.watchLaterCountFromPayload(payload)
           : null
@@ -5928,6 +6137,7 @@
       this.videoPreviews = videoPreviews;
       this.preferences = SettingsPreference.read();
       this.settingsView = null;
+      this.favoritesView = null;
       this.movedPageNodes = new MovedPageNodeStore(this.document);
       this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
       this.resetLayoutState();
@@ -5980,10 +6190,11 @@
       this.isRailRefreshing = false;
       this.onRailRefresh = null;
       this.railSearch = null;
+      this.railSearchControl = null;
       this.railSearchButton = null;
       this.railSearchInput = null;
       this.railSearchQuery = "";
-      this.railSearchKind = null;
+      this.railSearchKey = null;
       this.onWatchLaterSearchSource = null;
       this.actionGroup = null;
       this.rail = null;
@@ -6000,7 +6211,8 @@
       this.commentNode = null;
       this.selectedSourceKind = null;
       this.isRailOpen = false;
-      this.renderedSourceKind = null;
+      this.renderedSourceKey = null;
+      this.favoriteRailPositions = new Map();
       this.actionButtons = new Map();
       this.sourceButtons = new Map();
       /** @type {WeakMap<HTMLElement, VideoCardRenderState>} */
@@ -6037,6 +6249,8 @@
       this.pendingSourceRouteOpenState = null;
       this.appliedSourceRouteOpenState = null;
       this.hasUserInteractedWithSources = false;
+      /** Whether the selected route was chosen automatically rather than restored or clicked. */
+      this.isDefaultSourceRoute = true;
       this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
     }
@@ -6058,7 +6272,7 @@
      * @param {() => void} onWatchActionForward
      * @param {(targetUrl: string) => Promise<void>} onWatchLaterAdd
      * @param {(aid: string) => Promise<void>} onWatchLaterDelete
-     * @param {(sourceKind: string, targetUrl: string, event: MouseEvent) => void} onVideoCardNavigate
+     * @param {(sourceKind: string, targetUrl: string, event: MouseEvent, folderId?: string) => void} onVideoCardNavigate
      * @param {(state: SourceRouteState) => void} onSourceRouteChange
      * @param {SourceRouteState | null} sourceRouteState
      * @param {(sourceKind: string) => Promise<void>} onSourceMore
@@ -6126,11 +6340,13 @@
      */
     resetPageSession() {
       this.morePanel?.close(true);
+      this.favoritesView?.panel.close();
+      this.rememberFavoriteRailPosition();
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
       this.railPointerCard = null;
       this.pendingSourceMore = null;
-      this.renderedSourceKind = null;
+      this.renderedSourceKey = null;
       this.locatedCurrentRouteKeys.clear();
       this.completedWatchLaterAddKeys.clear();
 
@@ -6170,6 +6386,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
+      this.favoritesView?.destroy();
       this.morePanel?.destroy();
       this.setVideoLoading(false);
       this.stopRailWindow();
@@ -7361,12 +7578,15 @@
 
       let selectedSource = this.selectedSource(sources);
       const hasOpenRail = Boolean(selectedSource && this.isRailOpen);
-      const resetScroll = selectedSource?.kind !== this.renderedSourceKind;
-      if (this.railSearchKind !== selectedSource?.kind) {
+      const sourceKey = LayoutRoot.sourceKey(selectedSource);
+      const resetScroll = sourceKey !== this.renderedSourceKey;
+      const sourceChanged = this.railSearchKey !== sourceKey;
+      if (resetScroll || !hasOpenRail) this.rememberFavoriteRailPosition();
+      if (sourceChanged) {
         this.railSearchQuery = "";
         if (this.railSearchInput) this.railSearchInput.value = "";
         this.setRailSearchExpanded(false);
-        this.railSearchKind = selectedSource?.kind;
+        this.railSearchKey = sourceKey;
       }
 
       if (
@@ -7393,9 +7613,9 @@
 
       if (hasOpenRail) {
         this.renderRail(this.searchRailSource(selectedSource), resetScroll);
-        this.renderedSourceKind = selectedSource.kind;
+        this.renderedSourceKey = sourceKey;
       } else {
-        this.renderedSourceKind = null;
+        this.renderedSourceKey = null;
         this.pendingSourceMore = null;
         this.railSource = null;
         this.railEntries = [];
@@ -7406,6 +7626,10 @@
         this.videoPreviews.setDemand([]);
         this.videoCardStates = new WeakMap();
         this.rail.replaceChildren();
+      }
+      if (sourceChanged && selectedSource?.kind === SourceKind.FAVORITES &&
+          (selectedSource.folderId || !this.isDefaultSourceRoute)) {
+        this.emitSourceRouteChange();
       }
     }
 
@@ -7445,6 +7669,7 @@
       this.dockUtilityGroup = this.document.createElement("div");
       this.dockUtilityGroup.className = "bibilili-dock-utilities";
       this.moreButton = UiControl.button(this.document, "bibilili-action-button", () => {
+        this.favoritesView?.panel.close();
         this.morePanel.toggle(this.moreButton);
       });
       this.moreButton.append(UiControl.icon(this.document, "more"));
@@ -7625,54 +7850,30 @@
 
     /** Creates stable search controls following Refresh. */
     createRailSearch() {
-      this.railSearch = this.document.createElement("div");
-      this.railSearch.className = "bibilili-rail-search";
-      this.railSearchButton = this.document.createElement("button");
-      this.railSearchButton.type = "button";
-      this.railSearchButton.className = "bibilili-action-button";
-      this.railSearchButton.append(UiControl.icon(this.document, RailActionKind.SEARCH));
-      this.railSearchButton.setAttribute("aria-controls", "bibilili-rail-search-input");
-      this.railSearchInput = this.document.createElement("input");
-      this.railSearchInput.id = "bibilili-rail-search-input";
-      this.railSearchInput.type = "search";
-      this.railSearchInput.autocomplete = "off";
+      this.railSearchControl = new SearchControl(this.document, {
+        inputId: "bibilili-rail-search-input",
+        className: "bibilili-rail-search",
+        buttonClassName: "bibilili-action-button",
+        onOpen: () => this.morePanel?.close(false),
+        onInput: (query) => {
+          this.railSearchQuery = query;
+          this.refreshRailSearch();
+        },
+        onExpandedChange: () => this.renderControlPlacement(),
+        escapeFocus: () => this.preferences.pinnedActions[RailActionKind.SEARCH]
+          ? this.railSearchButton : this.moreButton?.hidden ? this.settingsButton : this.moreButton
+      });
+      this.railSearch = this.railSearchControl.root;
+      this.railSearchButton = this.railSearchControl.button;
+      this.railSearchInput = this.railSearchControl.input;
       this.railSearchInput.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railSearchInput.value = this.railSearchQuery;
-      this.railSearchButton.addEventListener("click", () => {
-        this.morePanel?.close(false);
-        this.setRailSearchExpanded(true);
-        this.railSearchInput.focus();
-      });
-      this.railSearchInput.addEventListener("input", () => {
-        this.railSearchQuery = this.railSearchInput.value;
-        this.refreshRailSearch();
-      });
-      this.railSearchInput.addEventListener("keydown", (event) => {
-        event.stopPropagation();
-        if (event.key === "Escape" && !event.isComposing) {
-          event.preventDefault();
-          this.railSearchQuery = "";
-          this.railSearchInput.value = "";
-          this.refreshRailSearch();
-          this.setRailSearchExpanded(false);
-          (this.preferences.pinnedActions[RailActionKind.SEARCH]
-            ? this.railSearchButton : this.moreButton?.hidden ? this.settingsButton : this.moreButton)?.focus();
-        }
-      });
-      this.railSearchInput.addEventListener("blur", () => {
-        if (!this.railSearchQuery.trim()) this.setRailSearchExpanded(false);
-      });
-      this.railSearch.append(this.railSearchButton, this.railSearchInput);
       this.setRailSearchExpanded(Boolean(this.railSearchQuery));
     }
 
     /** @param {boolean} expanded Whether the button presents an editable field. */
     setRailSearchExpanded(expanded) {
-      if (!this.railSearchInput) return;
-      this.railSearchInput.hidden = !expanded;
-      this.railSearchButton.hidden = expanded;
-      this.railSearchButton.setAttribute("aria-expanded", String(expanded));
-      this.renderControlPlacement();
+      this.railSearchControl?.setExpanded(expanded);
     }
 
     /** @param {boolean} available Whether a rail is open for searching. */
@@ -7684,11 +7885,9 @@
       this.renderRailStart(available);
       this.renderRailRefresh();
       this.railSearch.hidden = !available;
-      const label = UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language);
-      this.railSearchButton.setAttribute("aria-label", label);
-      this.railSearchButton.title = label;
-      this.railSearchInput.setAttribute("aria-label", label);
-      this.railSearchInput.placeholder = label;
+      const label = UiStrings.message(this.selectedSourceKind === SourceKind.FAVORITES
+        ? UiMessage.FAVORITES_SEARCH_VIDEOS_LABEL : UiMessage.RAIL_SEARCH_LABEL, this.language);
+      this.railSearchControl.setLabel(label);
     }
 
     /** Renders the current query from the start without changing expansion budgets. */
@@ -7737,7 +7936,11 @@
       for (const source of sources) {
         const button = this.sourceButtonFor(source.kind);
         availableKinds.add(source.kind);
-        button.textContent = UiStrings.sourceLabel(source.kind, this.language);
+        const label = source.kind === SourceKind.FAVORITES && source.title && !source.isDefaultFolder
+          ? UiStrings.message(UiMessage.FAVORITES_SOURCE_LABEL, this.language, [source.title])
+          : UiStrings.sourceLabel(source.kind, this.language);
+        LayoutRoot.setStableText(button, label);
+        UiControl.setLabel(button, label);
         button.setAttribute(
           "aria-current",
           String(this.selectedSourceKind === source.kind)
@@ -7756,6 +7959,17 @@
         }
 
         previous = button;
+        if (source.kind === SourceKind.FAVORITES && this.favoritesView) {
+          button.className = "bibilili-source-button bibilili-favorites-source-button";
+          const picker = this.favoritesView.launcher();
+          picker.setAttribute("data-active", String(this.selectedSourceKind === source.kind && this.isRailOpen));
+          UiControl.place(this.sourceBar, picker, previous);
+          previous = picker;
+        }
+      }
+      if (!availableKinds.has(SourceKind.FAVORITES)) {
+        this.favoritesView?.panel.close();
+        this.favoritesView?.button?.remove();
       }
 
       UiControl.removeStaleButtons(this.sourceButtons, availableKinds);
@@ -9249,6 +9463,7 @@
      */
     handleSourceButtonClick(kind) {
       this.hasUserInteractedWithSources = true;
+      this.isDefaultSourceRoute = false;
       this.pendingSourceRouteHint = null;
       this.pendingSourceRouteOpenState = null;
 
@@ -9260,6 +9475,12 @@
         return;
       }
 
+      const source = this.currentSources.find((candidate) => candidate.kind === kind);
+      if (kind === SourceKind.FAVORITES && !source.folderId && this.favoritesView) {
+        this.favoritesView.open();
+        return;
+      }
+      this.favoritesView?.panel.close();
       if (this.selectedSourceKind === kind) {
         this.isRailOpen = !this.isRailOpen;
       } else {
@@ -9280,6 +9501,8 @@
 
       this.onSourceRouteChange({
         sourceKind: this.selectedSourceKind,
+        ...(this.selectedSourceKind === SourceKind.FAVORITES && this.selectedSource(this.currentSources)?.folderId
+          ? { folderId: this.selectedSource(this.currentSources).folderId } : {}),
         isRailOpen: this.isRailOpen
       });
     }
@@ -9343,7 +9566,7 @@
       this.renderRailLocate();
       this.railEntryIndexes.clear();
       this.railStride = 0;
-      this.renderedSourceKind = null;
+      this.renderedSourceKey = null;
       this.videoPreviews.setDemand([]);
     }
 
@@ -9358,13 +9581,15 @@
         this.pendingSourceMore = null;
       }
 
-      const moreInteraction = this.pendingSourceMore?.kind === source.kind
+      const sourceKey = LayoutRoot.sourceKey(source);
+      const moreInteraction = this.pendingSourceMore?.key === sourceKey
         ? this.pendingSourceMore
         : null;
       const { title } = this.ensureRailSourceGroup(source, resetScroll);
       title.textContent = this.railSearchQuery.trim() && source.items.length === 0
         ? UiStrings.message(UiMessage.RAIL_SEARCH_EMPTY, this.language)
-        : UiStrings.sourceLabel(source.kind, this.language);
+        : source.title ?? UiStrings.sourceLabel(source.kind, this.language);
+      this.renderFavoriteRailState(source, title);
       const watchRouteKey = SourceAdapter.currentWatchRouteKey();
       const locateKey = watchRouteKey ? `route:${watchRouteKey}` : null;
       const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
@@ -9413,13 +9638,70 @@
       let centerIndex = -1;
       if (currentIndex !== -1 && currentRouteKey && !this.railSearchQuery.trim()) {
         if (!moreInteraction && (
-          resetScroll || this.locatedCurrentRouteKeys.get(source.kind) !== currentRouteKey
+          resetScroll || this.locatedCurrentRouteKeys.get(sourceKey) !== currentRouteKey
         )) {
           centerIndex = currentIndex;
         }
-        this.locatedCurrentRouteKeys.set(source.kind, currentRouteKey);
+        this.locatedCurrentRouteKeys.set(sourceKey, currentRouteKey);
       }
-      this.renderRailWindow({ resetScroll, centerIndex, focusIndex });
+      const saved = source.kind === SourceKind.FAVORITES
+        ? this.favoriteRailPositions.get(source.folderId) : undefined;
+      if (resetScroll && saved !== undefined) {
+        centerIndex = -1;
+      }
+      this.renderRailWindow({ resetScroll, centerIndex, focusIndex,
+        restoredScrollLeft: resetScroll ? saved : undefined });
+    }
+
+    /** @param {VideoListSource | null} source @returns {string | null} Stable source instance. */
+    static sourceKey(source) {
+      if (!source) return null;
+      return source.kind === SourceKind.FAVORITES && source.folderId
+        ? `${source.kind}:${source.folderId}` : source.kind;
+    }
+
+    /** Keeps the horizontal position of each visited folder during the layout session. */
+    rememberFavoriteRailPosition() {
+      if (this.railSource?.kind === SourceKind.FAVORITES && this.railSource.folderId && this.rail) {
+        this.favoriteRailPositions.set(this.railSource.folderId, this.rail.scrollLeft);
+      }
+    }
+
+    /** Presents folder loading, empty, and recovery states inside the existing rail. */
+    renderFavoriteRailState(source, title) {
+      if (source.kind !== SourceKind.FAVORITES) return;
+      const group = title.parentElement;
+      let state = group.querySelector(".bibilili-favorite-rail-state");
+      if (!state) {
+        state = this.document.createElement("div");
+        state.className = "bibilili-favorite-rail-state";
+        const text = this.document.createElement("span");
+        text.setAttribute("role", "status");
+        const button = UiControl.button(this.document, "bibilili-source-button", () => {
+          const current = this.selectedSource(this.currentSources);
+          if (current?.folderId && current.status === AccountSourceStatus.ERROR) this.refreshCurrentRail();
+          else this.favoritesView?.open(true);
+        });
+        state.append(text, button);
+        group.append(state);
+      }
+      const empty = source.items.length === 0 && !source.pagination?.hasMore;
+      state.hidden = !empty;
+      const loading = source.status === AccountSourceStatus.LOADING;
+      const failed = source.status === AccountSourceStatus.ERROR;
+      const message = loading ? UiMessage.SOURCE_MORE_LOADING_LABEL
+        : this.railSearchQuery.trim() && !failed ? UiMessage.RAIL_SEARCH_EMPTY
+          : source.status === AccountSourceStatus.SIGNED_OUT ? UiMessage.FAVORITES_SIGN_IN_MESSAGE
+          : failed ? UiMessage.FAVORITES_ERROR_MESSAGE
+            : !source.folderId ? UiMessage.FAVORITES_CHOOSE_LABEL : UiMessage.FAVORITES_EMPTY_MESSAGE;
+      LayoutRoot.setStableText(state.firstElementChild, UiStrings.message(message, this.language));
+      const button = state.lastChild;
+      button.hidden = loading || Boolean(source.folderId && !failed);
+      UiControl.setTextButtonLabel(button, UiStrings.message(
+        failed ? UiMessage.SOURCE_MORE_RETRY_LABEL : UiMessage.FAVORITES_CHOOSE_LABEL, this.language));
+      if (!empty && failed) {
+        title.textContent += ` · ${UiStrings.message(UiMessage.FAVORITES_REFRESH_ERROR_MESSAGE, this.language)}`;
+      }
     }
 
     /**
@@ -9431,13 +9713,15 @@
      * @param {number} [options.focusIndex] Logical card receiving keyboard focus.
      * @param {boolean} [options.revealFocus] Scroll a keyboard target into view.
      * @param {boolean} [options.focusLastControl] Focus the target's last control.
+     * @param {number} [options.restoredScrollLeft] Saved folder offset, applied after row sizing.
      */
     renderRailWindow({
       resetScroll = false,
       centerIndex = -1,
       focusIndex = -1,
       revealFocus = false,
-      focusLastControl = false
+      focusLastControl = false,
+      restoredScrollLeft
     } = {}) {
       const source = this.railSource;
       const row = this.rail?.querySelector(".bibilili-card-row");
@@ -9457,7 +9741,7 @@
       const rowStart = row.getBoundingClientRect().left -
         this.rail.getBoundingClientRect().left + this.rail.scrollLeft;
       const viewportWidth = this.rail.clientWidth;
-      let scrollLeft = resetScroll ? 0 : preservedScrollLeft;
+      let scrollLeft = restoredScrollLeft ?? (resetScroll ? 0 : preservedScrollLeft);
 
       if (!resetScroll && this.railStride && this.railStride !== geometry.stride) {
         scrollLeft = rowStart +
@@ -9510,6 +9794,8 @@
         } else {
           card = this.videoCard(item, entry.isCurrent, entry.key, source.kind);
         }
+        if (source.folderId) card.dataset.bibililiCardFolderId = source.folderId;
+        else delete card.dataset.bibililiCardFolderId;
         card.dataset.bibililiCardIndex = String(index);
         card.style.left = `${index * geometry.stride}px`;
         const reference = previous ? previous.nextSibling : row.firstChild;
@@ -9647,7 +9933,7 @@
       }
 
       this.pendingSourceMore = {
-        kind,
+        key: LayoutRoot.sourceKey(this.railSource),
         button,
         keyboard: event.detail === 0,
         cardKeys: new Set(this.railEntries.map((entry) => entry.key))
@@ -9666,6 +9952,7 @@
       return (
         sourceKind === SourceKind.PARTS ||
         sourceKind === SourceKind.COLLECTION ||
+        sourceKind === SourceKind.FAVORITES ||
         sourceKind === SourceKind.WATCH_LATER
       );
     }
@@ -9679,7 +9966,8 @@
     static sourceSupportsWatchLaterAdd(sourceKind) {
       return (
         sourceKind === SourceKind.COLLECTION ||
-        sourceKind === SourceKind.RECOMMENDATIONS
+        sourceKind === SourceKind.RECOMMENDATIONS ||
+        sourceKind === SourceKind.FAVORITES
       );
     }
 
@@ -10040,7 +10328,7 @@
         return;
       }
 
-      this.onVideoCardNavigate(sourceKind, link.href, event);
+      this.onVideoCardNavigate(sourceKind, link.href, event, card.dataset.bibililiCardFolderId);
     }
 
     /**
@@ -10384,6 +10672,7 @@
       const hintedSourceKind = this.pendingSourceRouteHint;
 
       if (hintedSourceKind && availableKinds.has(hintedSourceKind)) {
+        this.isDefaultSourceRoute = false;
         this.pendingSourceRouteHint = null;
         this.appliedSourceRouteOpenState =
           this.pendingSourceRouteOpenState ?? true;
@@ -10395,21 +10684,25 @@
        * Note: account-backed sources may arrive after the first destination
        * render, so an unavailable hint stays pending for later reconciliation.
        */
+      const current = this.selectedSource(sources);
+      const unchosenFavorites = current?.kind === SourceKind.FAVORITES &&
+        !current.folderId && this.isDefaultSourceRoute;
       if (
         !resetSourceRoute &&
         this.selectedSourceKind &&
-        availableKinds.has(this.selectedSourceKind)
+        availableKinds.has(this.selectedSourceKind) && !unchosenFavorites
       ) {
         return this.selectedSourceKind;
       }
 
       const currentPageSource = this.currentPageSource(sources);
+      this.isDefaultSourceRoute = true;
 
       if (currentPageSource && !this.hasUserInteractedWithSources) {
         return currentPageSource.kind;
       }
 
-      return sources[0]?.kind ?? null;
+      return sources.find((source) => source.items.length)?.kind ?? sources[0]?.kind ?? null;
     }
 
     /**
@@ -10571,6 +10864,17 @@
       });
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
+      this.favoritesView = new FavoritesView(document, {
+        statuses: AccountSourceStatus,
+        onOpen: (choose) => this.openFavoriteFolders(choose),
+        onSelect: (id) => this.selectFavoriteFolder(id),
+        onRefresh: () => this.accountSources.loadFavoriteFolders(true),
+        onSignIn: () => {
+          const trigger = this.layout.accountControl ?? this.discovery.findAccountControl();
+          if (trigger) LayoutRoot.activateNativeAccountControl(trigger);
+        }
+      });
+      this.layout.favoritesView = this.favoritesView;
       this.settingsView = new SettingsView(document, {
         sources: SOURCE_ORDER.map((kind) => ({ kind, message: SOURCE_LABEL_MESSAGE_NAMES[kind] })),
         actionGroups: [
@@ -10584,7 +10888,10 @@
         ],
         onChange: (preferences) => this.setPreferences(preferences),
         onEnabledChange: (enabled) => this.setEnabled(enabled),
-        onOpen: () => this.layout.morePanel?.close(),
+        onOpen: () => {
+          this.layout.morePanel?.close();
+          this.favoritesView.panel.close();
+        },
         renderIcon: (kind, visual) => this.layout.renderSettingsIcon(kind, visual)
       });
       this.layout.settingsView = this.settingsView;
@@ -10660,6 +10967,7 @@
         this.storageHandler = null;
       }
       this.settingsView.destroy();
+      this.favoritesView.destroy();
       if (this.readyHandler) {
         this.document.removeEventListener("DOMContentLoaded", this.readyHandler);
         this.readyHandler = null;
@@ -10829,6 +11137,11 @@
       this.pendingSourceRouteReset ||= resetSourceRoute;
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
+      if (this.nextPageSourceRouteState?.sourceKind === SourceKind.FAVORITES) {
+        this.accountSources.restoreFavoriteFolder(this.nextPageSourceRouteState.folderId);
+      }
+      this.favoritesView.update(this.accountSources.currentSource(SourceKind.FAVORITES),
+        this.accountSources.favoriteFolders, language);
       this.loadingCover.update();
       const sources = SourceMerger.merge(
         regions.sources,
@@ -10882,8 +11195,8 @@
         () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
         (targetUrl) => this.addWatchLaterItem(targetUrl),
         (aid) => this.deleteWatchLaterItem(aid),
-        (sourceKind, targetUrl, event) =>
-          this.navigateVideoCard(sourceKind, targetUrl, event),
+        (sourceKind, targetUrl, event, folderId) =>
+          this.navigateVideoCard(sourceKind, targetUrl, event, folderId),
         (state) => this.storeSourceRouteState(state),
         sourceRouteState,
         (sourceKind) => this.loadMoreAccountSource(sourceKind),
@@ -11028,8 +11341,9 @@
      * @param {string} sourceKind
      * @param {string} targetUrl
      * @param {MouseEvent} event
+     * @param {string} [folderId] Folder captured on the clicked card.
      */
-    navigateVideoCard(sourceKind, targetUrl, event) {
+    navigateVideoCard(sourceKind, targetUrl, event, folderId) {
       const wasPending = Boolean(this.navigation.pending);
       this.navigation.cancel();
       const target = new URL(targetUrl, window.location.href);
@@ -11043,7 +11357,7 @@
         event.preventDefault();
         return;
       }
-      this.recordVideoCardNavigationSource(sourceKind, targetUrl);
+      this.recordVideoCardNavigationSource(sourceKind, targetUrl, folderId);
       this.videoLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
       const accepted = this.navigation.navigate(target.href, (success, landedUrl) => {
         if (!this.enabled || !this.isWatchPage()) return;
@@ -11057,7 +11371,7 @@
           SourceAdapter.watchRouteKeyForUrl(target.href)
         ) {
           // Note: Bilibili can canonicalize an AV request to its BV watch URL.
-          this.recordVideoCardNavigationSource(sourceKind, landedUrl);
+          this.recordVideoCardNavigationSource(sourceKind, landedUrl, folderId);
           if (this.currentPageKey() === this.pageKey) {
             const state = this.initialSourceRouteState();
             if (!this.layout.hasUserInteractedWithSources) {
@@ -11078,8 +11392,9 @@
      *
      * @param {string} sourceKind
      * @param {string} targetUrl
+     * @param {string} [folderId] Favorite folder carried through native canonicalization.
      */
-    recordVideoCardNavigationSource(sourceKind, targetUrl) {
+    recordVideoCardNavigationSource(sourceKind, targetUrl, folderId) {
       const targetRouteKey = SourceAdapter.watchRouteKeyForUrl(targetUrl);
 
       if (!SOURCE_ORDER.includes(sourceKind)) {
@@ -11090,8 +11405,12 @@
         return;
       }
 
+      const route = { sourceKind };
+      if (sourceKind === SourceKind.FAVORITES && FavoriteFolderPreference.normalizeId(folderId)) {
+        route.folderId = folderId;
+      }
       this.pendingVideoCardNavigationOrigin = {
-        sourceKind,
+        ...route,
         targetRouteKey,
         createdAt: Date.now()
       };
@@ -11099,13 +11418,13 @@
         commentWidth: this.layout.commentPane?.getBoundingClientRect().width ?? 0,
         dockHeight: this.layout.dock?.getBoundingClientRect().height ?? 0
       } : null;
-      CardNavigationOriginStore.write(sourceKind, targetRouteKey, geometry);
+      CardNavigationOriginStore.write(route, targetRouteKey, geometry);
     }
 
     /**
      * Converts the latest card click into a one-navigation source route hint.
      *
-     * @returns {string | null}
+     * @returns {{ sourceKind: string, folderId?: string } | null}
      */
     consumeVideoCardNavigationSource() {
       const currentRouteKey = SourceAdapter.currentWatchRouteKey();
@@ -11119,7 +11438,7 @@
         CardNavigationOriginStore.isFresh(origin)
       ) {
         CardNavigationOriginStore.clear();
-        return origin.sourceKind;
+        return SourceRoute.normalize(origin);
       }
 
       if (origin) {
@@ -11137,11 +11456,11 @@
      */
     initialSourceRouteState() {
       const pageRouteKey = SourceAdapter.currentWatchRouteKey();
-      const originSourceKind = this.consumeVideoCardNavigationSource();
+      const originRoute = this.consumeVideoCardNavigationSource();
 
-      if (originSourceKind) {
+      if (originRoute) {
         return {
-          sourceKind: originSourceKind,
+          ...originRoute,
           isRailOpen: true
         };
       }
@@ -11155,6 +11474,11 @@
      * @param {SourceRouteState} state
      */
     storeSourceRouteState(state) {
+      const requestedFolderId = this.accountSources.favoriteFolders.requestedFolderId;
+      if (state.sourceKind === SourceKind.FAVORITES && requestedFolderId) {
+        // Preserve a navigation hint while its account membership is being checked.
+        state = { ...state, folderId: requestedFolderId };
+      }
       SourceRouteStateStore.write(SourceAdapter.currentWatchRouteKey(), state);
     }
 
@@ -11201,8 +11525,35 @@
     /** Shares one preference snapshot with layout and demand-driven stores. */
     applyFeaturePreferences() {
       this.layout.preferences = this.preferences;
+      if (!this.preferences.sources[SourceKind.FAVORITES]) this.favoritesView.panel.close();
       this.videoPreviews.setEnabled(this.preferences.features.thumbnails);
       this.accountSources.setEnabledKinds(ACCOUNT_SOURCE_ORDER.filter((kind) => this.preferences.sources[kind]));
+    }
+
+    /** Opens owned folders and resumes the saved folder only for a source-label click. */
+    async openFavoriteFolders(choose) {
+      const request = this.favoriteOpenSequence = (this.favoriteOpenSequence ?? 0) + 1;
+      if (!this.enabled || !this.preferences.sources[SourceKind.FAVORITES]) return;
+      this.settingsView.panel.close();
+      this.layout.morePanel?.close();
+      await this.accountSources.loadFavoriteFolders(true);
+      if (request !== this.favoriteOpenSequence || !this.enabled ||
+          !this.preferences.sources[SourceKind.FAVORITES] || !this.favoritesView.panel.isOpen) return;
+      const folderId = this.accountSources.currentSource(SourceKind.FAVORITES)?.folderId;
+      if (!choose && folderId) {
+        this.favoritesView.panel.close(true);
+        this.selectFavoriteFolder(folderId);
+      }
+    }
+
+    /** Selects a folder immediately, then lets the shared account completion reconcile it. */
+    selectFavoriteFolder(folderId) {
+      if (!this.enabled || !this.preferences.sources[SourceKind.FAVORITES] ||
+          !this.accountSources.favoriteFolders.items.some((folder) => folder.id === folderId)) return;
+      void this.accountSources.selectFavoriteFolder(folderId);
+      this.nextPageSourceRouteState = { sourceKind: SourceKind.FAVORITES, folderId, isRailOpen: true };
+      this.layout.hasUserInteractedWithSources = true;
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
     }
 
     /**
@@ -11218,8 +11569,8 @@
 
     /**
      * Refreshes the selected rail source without remounting page-owned regions.
-     * Account sources use one request; page sources are re-extracted from DOM.
-     * History resumes from the newest page and its new continuation cursor.
+     * Loaded account lists use one request; page sources are re-extracted from DOM.
+     * History and Favorites restart at their first page.
      *
      * @param {VideoListSource} source
      * @returns {Promise<void>}
@@ -11381,6 +11732,11 @@
   /**
    * @typedef {object} VideoListSource
    * @property {string} kind Closed source kind.
+   * @property {string | null} [folderId] Account-validated favorite folder identity.
+   * @property {string} [title] Selected folder title.
+   * @property {boolean} [isDefaultFolder] Selected folder is Bilibili's default favorites.
+   * @property {string} [status] Closed account-source loading state.
+   * @property {boolean} [loaded] Initial folder request has completed.
    * @property {Element | null} root Page-owned source root for DOM sources.
    * @property {VideoItem[]} items Extracted ordered video items.
    * @property {SourcePagination} [pagination] Account-source continuation state.
@@ -11388,7 +11744,7 @@
 
   /**
    * @typedef {object} SourcePagination
-   * @property {boolean} hasMore Retained items or a history cursor remain.
+   * @property {boolean} hasMore Retained items or an account continuation remain.
    * @property {string} status Closed AccountSourceStatus value.
    */
 
@@ -11401,7 +11757,7 @@
 
   /**
    * @typedef {object} SourceMoreInteraction
-   * @property {string} kind Account source being expanded.
+   * @property {string} key Source instance being expanded.
    * @property {HTMLButtonElement} button Activated continuation control.
    * @property {boolean} keyboard Move focus if it remains on this control.
    * @property {Set<string>} cardKeys All revealed item keys before activation.
@@ -11429,12 +11785,33 @@
    */
 
   /**
+   * @typedef {object} FavoriteFolder
+   * @property {string} id Positive decimal media-list id.
+   * @property {string} title Account-owned folder title.
+   * @property {number | null} count Account media count, including unplayable entries.
+   * @property {boolean} isDefault Bilibili's default-folder attribute.
+   */
+
+  /**
+   * @typedef {object} FavoriteFolderDirectory
+   * @property {string | null} accountId Authenticated account that owns these folders.
+   * @property {FavoriteFolder[]} items Folders in Bilibili's returned order.
+   * @property {boolean} requested Folder loading has been requested during this session.
+   * @property {string | null} requestedFolderId Navigation hint awaiting membership validation.
+   * @property {boolean} loaded The directory has loaded successfully.
+   * @property {string} status Closed AccountSourceStatus value.
+   * @property {AbortController | null} controller Active directory request.
+   * @property {Promise<void> | null} promise Shared completion for concurrent openings.
+   */
+
+  /**
    * @typedef {object} AccountSourceRecord
    * @property {string} kind Closed account source kind.
    * @property {VideoItem[]} items All retained valid items in API order.
    * @property {number} visibleCount Maximum number of retained items revealed in the rail.
-   * @property {HistoryCursor | null} cursor Next older history page.
-   * @property {Set<string>} cursorKeys Successfully consumed history cursors.
+   * @property {string | null} folderId Favorite folder identity.
+   * @property {HistoryCursor | number | null} cursor Next history cursor or favorite page.
+   * @property {Set<string>} cursorKeys Successfully consumed account continuations.
    * @property {number | null} watchLaterCount Full watch-later count when available.
    * @property {boolean} loaded Initial load completed, including advisory failure.
    * @property {string} status Closed AccountSourceStatus value.
@@ -11445,7 +11822,7 @@
    * @typedef {object} AccountSourceFetchRecord
    * @property {string} kind Closed source kind.
    * @property {VideoListSource | null} source Account-backed source when the payload has valid items.
-   * @property {HistoryCursor | null} cursor Next older history page when available.
+   * @property {HistoryCursor | number | null} cursor Next history cursor or favorite page.
    * @property {number | null} watchLaterCount Full watch-later count for the watch-later source.
    */
 

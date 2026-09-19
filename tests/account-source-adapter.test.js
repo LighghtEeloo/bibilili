@@ -284,7 +284,7 @@ test("loads account source records with the watch-later count", async () => {
     await store.refresh("en");
 
     assert.deepEqual(
-      store.currentSources(),
+      store.currentSources().filter((source) => source.kind !== SourceKind.FAVORITES),
       [watchLaterSource, historySource].map((source) => ({
         ...source,
         pagination: { hasMore: false, status: "ready" }
@@ -545,7 +545,7 @@ test("decrements loaded watch-later count after successful deletion", async () =
 
     assert.equal(deletedAid, "123456");
     assert.equal(store.currentWatchLaterCount(), 6);
-    assert.deepEqual(store.currentSources(), []);
+    assert.deepEqual(store.currentSources().map((source) => source.kind), [SourceKind.FAVORITES]);
     assert.equal(changes, 1);
   } finally {
     AccountSourceStore.deleteWatchLaterApiItem =

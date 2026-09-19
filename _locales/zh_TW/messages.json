@@ -149,6 +149,10 @@
     "message": "合輯",
     "description": "Label for a collection video-list source."
   },
+  "sourceFavoritesLabel": {
+    "message": "收藏夾",
+    "description": "Source label for the current account favorite folders."
+  },
   "sourceWatchLaterLabel": {
     "message": "稍後再看",
     "description": "Label for a watch-later video-list source."
@@ -284,5 +288,44 @@
   "settingsPageOnlyLabel": {
     "message": "已在此頁套用，但無法儲存。",
     "description": "Status when persistent storage is unavailable."
+  },
+  "favoritesSourceLabel": {
+    "message": "收藏夾 · $1"
+  },
+  "favoritesFoldersLabel": {
+    "message": "收藏夾"
+  },
+  "favoritesChooseLabel": {
+    "message": "選擇收藏夾"
+  },
+  "favoritesSearchLabel": {
+    "message": "搜尋收藏夾"
+  },
+  "favoritesSearchVideosLabel": {
+    "message": "搜尋已載入的收藏影片"
+  },
+  "favoritesRefreshLabel": {
+    "message": "重新整理收藏夾"
+  },
+  "favoritesSignInLabel": {
+    "message": "登入嗶哩嗶哩"
+  },
+  "favoritesSignInMessage": {
+    "message": "登入後可瀏覽收藏夾。"
+  },
+  "favoritesErrorMessage": {
+    "message": "無法載入收藏，請重試。"
+  },
+  "favoritesRefreshErrorMessage": {
+    "message": "重新整理失敗，可點擊重新整理重試。"
+  },
+  "favoritesNoFoldersMessage": {
+    "message": "尚無收藏夾。"
+  },
+  "favoritesNoMatchesMessage": {
+    "message": "沒有符合的收藏夾。"
+  },
+  "favoritesEmptyMessage": {
+    "message": "此收藏夾中沒有可播放的影片。"
   }
 }

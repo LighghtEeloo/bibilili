@@ -70,13 +70,13 @@ test("CardNavigationOriginStore consumes matching card origins once", () => {
   resetStorageState();
 
   CardNavigationOriginStore.write(
-    SourceKind.RECOMMENDATIONS,
+    { sourceKind: SourceKind.RECOMMENDATIONS },
     "video:BV1:p1"
   );
 
-  assert.equal(
+  assert.deepEqual(
     CardNavigationOriginStore.take("video:BV1:p1"),
-    SourceKind.RECOMMENDATIONS
+    { sourceKind: SourceKind.RECOMMENDATIONS }
   );
   assert.equal(CardNavigationOriginStore.take("video:BV1:p1"), null);
 });
@@ -84,14 +84,14 @@ test("CardNavigationOriginStore consumes matching card origins once", () => {
 test("CardNavigationOriginStore clears mismatched and expired origins", () => {
   resetStorageState();
 
-  CardNavigationOriginStore.write(SourceKind.COLLECTION, "video:BV1:p1");
+  CardNavigationOriginStore.write({ sourceKind: SourceKind.COLLECTION }, "video:BV1:p1");
 
   assert.equal(CardNavigationOriginStore.take("video:BV2:p1"), null);
   assert.equal(CardNavigationOriginStore.take("video:BV1:p1"), null);
 
   const originalNow = Date.now;
   Date.now = () => 1000;
-  CardNavigationOriginStore.write(SourceKind.HISTORY, "video:BV3:p1");
+  CardNavigationOriginStore.write({ sourceKind: SourceKind.HISTORY }, "video:BV3:p1");
   Date.now = () => 123001;
 
   try {
@@ -104,7 +104,7 @@ test("CardNavigationOriginStore clears mismatched and expired origins", () => {
 test("card origins carry only bounded navigation geometry", () => {
   resetStorageState();
   const geometry = { commentWidth: 399, dockHeight: 242 };
-  CardNavigationOriginStore.write(SourceKind.HISTORY, "video:BV1:p1", geometry);
+  CardNavigationOriginStore.write({ sourceKind: SourceKind.HISTORY }, "video:BV1:p1", geometry);
   assert.deepEqual(CardNavigationOriginStore.read().geometry, geometry);
   for (const invalid of [
     { commentWidth: -1, dockHeight: 242 },
@@ -112,9 +112,9 @@ test("card origins carry only bounded navigation geometry", () => {
     { commentWidth: 399, dockHeight: "242" },
     { commentWidth: 399, dockHeight: 9000 }
   ]) {
-    CardNavigationOriginStore.write(SourceKind.HISTORY, "video:BV1:p1", invalid);
+    CardNavigationOriginStore.write({ sourceKind: SourceKind.HISTORY }, "video:BV1:p1", invalid);
     assert.equal(CardNavigationOriginStore.read().geometry, null);
-    assert.equal(CardNavigationOriginStore.take("video:BV1:p1"), SourceKind.HISTORY);
+    assert.deepEqual(CardNavigationOriginStore.take("video:BV1:p1"), { sourceKind: SourceKind.HISTORY });
   }
 });
 
@@ -135,6 +135,6 @@ test("storage helpers tolerate blocked browser storage", () => {
       sourceKind: SourceKind.COLLECTION,
       isRailOpen: true
     });
-    CardNavigationOriginStore.write(SourceKind.COLLECTION, "video:BV1:p1");
+    CardNavigationOriginStore.write({ sourceKind: SourceKind.COLLECTION }, "video:BV1:p1");
   });
 });

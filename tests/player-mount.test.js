@@ -205,7 +205,7 @@ test("same-document navigation preserves the comment reload and native restore p
   const connections = comments.connections;
   const restorePoints = [...layout.movedPageNodes.placeholders];
   layout.commentPane.scrollTop = 500;
-  layout.renderedSourceKind = "recommendations";
+  layout.renderedSourceKey = "recommendations";
   layout.locatedCurrentRouteKeys.set("recommendations", controller.pageKey);
   // Bilibili reloads the live component without changing its initial attribute.
   comments.archiveId = "222";
@@ -224,7 +224,7 @@ test("same-document navigation preserves the comment reload and native restore p
   assert.deepEqual([...layout.movedPageNodes.placeholders], restorePoints);
   assert.equal(controller.lazyPrimer.prime.mock.callCount(), 0);
   assert.equal(layout.commentPane.scrollTop, 0);
-  assert.equal(layout.renderedSourceKind, null);
+  assert.equal(layout.renderedSourceKey, null);
   assert.equal(layout.locatedCurrentRouteKeys.size, 0);
   assert.equal(layout.setSources.mock.calls.at(-1).arguments[1], true);
   controller.stop();
@@ -823,7 +823,7 @@ test("a document navigation reserves recorded pane geometry without consuming th
   const previousStorage = global.sessionStorage;
   global.sessionStorage = new FakeStorage();
   t.after(() => { global.sessionStorage = previousStorage; });
-  CardNavigationOriginStore.write("history", controller.currentPageKey(), {
+  CardNavigationOriginStore.write({ sourceKind: "history" }, controller.currentPageKey(), {
     commentWidth: 399, dockHeight: 242
   });
   controller.prepareMount();

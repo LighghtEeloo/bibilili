@@ -5,6 +5,7 @@
   const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
     "bibilili:card-navigation-origin";
   const SOURCE_ROUTE_STATE_STORAGE_KEY = "bibilili:source-route-state";
+  const FAVORITE_FOLDER_STORAGE_PREFIX = "bibilili:favorite-folder:";
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
   const FEATURE_DEFAULTS = Object.freeze({ description: true, thumbnails: true, moreButton: true });
@@ -12,6 +13,7 @@
 
   let storageConfig = Object.freeze({
     sourceOrder: Object.freeze([]),
+    favoritesKind: null,
     actionDefaults: Object.freeze({}),
     commentPaneMinWidth: 0,
     commentPaneMaxWidth: Number.MAX_SAFE_INTEGER
@@ -25,6 +27,7 @@
   function configure(config) {
     storageConfig = Object.freeze({
       sourceOrder: Object.freeze([...(config.sourceOrder ?? [])]),
+      favoritesKind: config.favoritesKind ?? null,
       actionDefaults: Object.freeze({ ...(config.actionDefaults ?? {}) }),
       commentPaneMinWidth: config.commentPaneMinWidth ?? 0,
       commentPaneMaxWidth:
@@ -177,6 +180,49 @@
     }
   }
 
+  /** Stores the last selected favorite folder separately for each Bilibili account. */
+  class FavoriteFolderPreference {
+    /** @param {unknown} value @returns {string | null} Positive decimal API identity. */
+    static normalizeId(value) {
+      const text = typeof value === "number" && Number.isSafeInteger(value)
+        ? String(value) : typeof value === "string" ? value : "";
+      return /^[1-9]\d*$/u.test(text) ? text : null;
+    }
+
+    /** @param {string} accountId @returns {string | null} */
+    static read(accountId) {
+      if (!this.normalizeId(accountId)) return null;
+      try {
+        return this.normalizeId(window.localStorage.getItem(FAVORITE_FOLDER_STORAGE_PREFIX + accountId));
+      } catch (_error) { return null; }
+    }
+
+    /** @param {string} accountId @param {string | null} folderId */
+    static write(accountId, folderId) {
+      if (!this.normalizeId(accountId)) return;
+      try {
+        const key = FAVORITE_FOLDER_STORAGE_PREFIX + accountId;
+        if (this.normalizeId(folderId)) window.localStorage.setItem(key, folderId);
+        else window.localStorage.removeItem(key);
+      } catch (_error) { /* The current session retains the selection. */ }
+    }
+  }
+
+  /** Validates source routes and retains a folder identity only for Favorites. */
+  class SourceRoute {
+    /** @param {object} route @returns {{ sourceKind: string, folderId?: string } | null} */
+    static normalize(route) {
+      if (!storageConfig.sourceOrder.includes(route?.sourceKind)) return null;
+      const result = { sourceKind: route.sourceKind };
+      if (route.sourceKind === storageConfig.favoritesKind && route.folderId != null) {
+        const folderId = FavoriteFolderPreference.normalizeId(route.folderId);
+        if (!folderId) return null;
+        result.folderId = folderId;
+      }
+      return result;
+    }
+  }
+
   /**
    * Stores a tab-scoped video-card navigation origin across document loads.
    */
@@ -184,13 +230,14 @@
     /**
      * Persists one pending origin route for the clicked target route.
      *
-     * @param {string} sourceKind
+     * @param {{ sourceKind: string, folderId?: string }} route
      * @param {string} targetRouteKey
      * @param {NavigationGeometry | null} [geometry]
      */
-    static write(sourceKind, targetRouteKey, geometry = null) {
+    static write(route, targetRouteKey, geometry = null) {
+      const normalized = SourceRoute.normalize(route);
       if (
-        !CardNavigationOriginStore.isValidSourceKind(sourceKind) ||
+        !normalized ||
         !targetRouteKey
       ) {
         return;
@@ -198,7 +245,7 @@
 
       try {
         const record = {
-          sourceKind,
+          ...normalized,
           targetRouteKey,
           createdAt: Date.now(),
           geometry: CardNavigationOriginStore.validGeometry(geometry)
@@ -216,7 +263,7 @@
      * Returns and clears the pending origin when it matches the current route.
      *
      * @param {string | null} currentRouteKey
-     * @returns {string | null}
+     * @returns {{ sourceKind: string, folderId?: string } | null}
      */
     static take(currentRouteKey) {
       const record = CardNavigationOriginStore.read();
@@ -230,7 +277,7 @@
         return null;
       }
 
-      return record.sourceKind;
+      return SourceRoute.normalize(record);
     }
 
     /**
@@ -255,7 +302,7 @@
         }
 
         return {
-          sourceKind: record.sourceKind,
+          ...SourceRoute.normalize(record),
           targetRouteKey: record.targetRouteKey,
           createdAt: Number(record.createdAt),
           geometry: CardNavigationOriginStore.validGeometry(record.geometry)
@@ -294,25 +341,12 @@
       const age = Date.now() - Number(record?.createdAt);
 
       return (
-        CardNavigationOriginStore.isValidSourceKind(record?.sourceKind) &&
+        Boolean(SourceRoute.normalize(record)) &&
         typeof record?.targetRouteKey === "string" &&
         Boolean(record.targetRouteKey) &&
         Number.isFinite(age) &&
         age >= 0 &&
         age <= CARD_NAVIGATION_ORIGIN_TTL_MS
-      );
-    }
-
-    /**
-     * Returns true when a source kind is part of the configured closed set.
-     *
-     * @param {unknown} sourceKind
-     * @returns {sourceKind is string}
-     */
-    static isValidSourceKind(sourceKind) {
-      return (
-        typeof sourceKind === "string" &&
-        storageConfig.sourceOrder.includes(sourceKind)
       );
     }
 
@@ -339,9 +373,10 @@
      * @param {SourceRouteState} state
      */
     static write(pageRouteKey, state) {
+      const route = SourceRoute.normalize(state);
       if (
         !pageRouteKey ||
-        !CardNavigationOriginStore.isValidSourceKind(state?.sourceKind) ||
+        !route ||
         typeof state?.isRailOpen !== "boolean"
       ) {
         return;
@@ -350,7 +385,7 @@
       try {
         const record = {
           pageRouteKey,
-          sourceKind: state.sourceKind,
+          ...route,
           isRailOpen: state.isRailOpen
         };
         window.sessionStorage.setItem(
@@ -386,14 +421,14 @@
 
         if (
           record?.pageRouteKey !== pageRouteKey ||
-          !CardNavigationOriginStore.isValidSourceKind(record?.sourceKind) ||
+          !SourceRoute.normalize(record) ||
           typeof record?.isRailOpen !== "boolean"
         ) {
           return null;
         }
 
         return {
-          sourceKind: record.sourceKind,
+          ...SourceRoute.normalize(record),
           isRailOpen: record.isRailOpen
         };
       } catch (_error) {
@@ -405,6 +440,7 @@
   /**
    * @typedef {object} StorageStateConfig
    * @property {string[]} [sourceOrder] Closed source kind order.
+   * @property {string} [favoritesKind] Source kind that carries a folder identity.
    * @property {Record<string, boolean>} [actionDefaults] Default placement for each action kind.
    * @property {number} [commentPaneMinWidth] Minimum stored comment pane width.
    * @property {number} [commentPaneMaxWidth] Maximum stored comment pane width.
@@ -413,6 +449,7 @@
   /**
    * @typedef {object} CardNavigationOriginRecord
    * @property {string} sourceKind Closed source kind to select on arrival.
+   * @property {string} [folderId] Favorite folder to select on arrival.
    * @property {string} targetRouteKey Watch route key the click opened.
    * @property {number} createdAt Milliseconds since epoch when recorded.
    * @property {NavigationGeometry | null} [geometry] Previous layout dimensions.
@@ -427,6 +464,7 @@
   /**
    * @typedef {object} SourceRouteState
    * @property {string} sourceKind Closed source kind selected in the rail.
+   * @property {string} [folderId] Selected favorite folder.
    * @property {boolean} isRailOpen Whether the selected route is expanded.
    */
 
@@ -444,6 +482,8 @@
     ActivationPreference,
     CardNavigationOriginStore,
     CommentPaneWidthPreference,
+    FavoriteFolderPreference,
+    SourceRoute,
     SourceRouteStateStore,
     SettingsPreference,
     configure

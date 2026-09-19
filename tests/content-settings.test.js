@@ -41,7 +41,7 @@ function settingsFixture(t) {
 
 test("settings enable every feature and pin by default and validate saved values", () => {
   const defaults = SettingsPreference.defaults();
-  assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "watch_later", "history"]);
+  assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of Object.values(defaults)) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
@@ -142,16 +142,22 @@ test("source changes reconcile through the saved preference snapshot without rev
 });
 
 test("an expanded search stays on the bar even when its shortcut belongs in More", (t) => {
-  const { layout, controller } = settingsFixture(t);
+  const { layout, controller, document } = settingsFixture(t);
   controller.preferences.pinnedActions.search = false;
   layout.renderControlPlacement();
   assert.equal(layout.railSearch.parentElement, layout.moreRailGroup);
-  layout.setRailSearchExpanded(true);
+  layout.railSearchButton.dispatch("click");
   assert.equal(layout.railSearch.parentElement, layout.railActionGroup);
+  assert.equal(document.activeElement, layout.railSearchInput);
+  layout.railSearchInput.value = "Music";
+  layout.railSearchInput.dispatch("input");
+  assert.equal(layout.railSearchQuery, "Music");
   layout.renderControlPlacement();
   assert.equal(layout.railSearch.parentElement, layout.railActionGroup);
-  layout.setRailSearchExpanded(false);
+  layout.railSearchInput.dispatch("keydown", { key: "Escape", stopPropagation() {}, preventDefault() {} });
   assert.equal(layout.railSearch.parentElement, layout.moreRailGroup);
+  assert.equal(layout.railSearchQuery, "");
+  assert.equal(document.activeElement, layout.moreButton);
 });
 
 test("popup dismissal restores focus and reopening retains the same controls", (t) => {

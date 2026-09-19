@@ -149,6 +149,10 @@
     "message": "Collection",
     "description": "Label for a collection video-list source."
   },
+  "sourceFavoritesLabel": {
+    "message": "Favorites",
+    "description": "Source label for the current account favorite folders."
+  },
   "sourceWatchLaterLabel": {
     "message": "Watch Later",
     "description": "Label for a watch-later video-list source."
@@ -284,5 +288,44 @@
   "settingsPageOnlyLabel": {
     "message": "Applied for this page; could not save.",
     "description": "Status when persistent storage is unavailable."
+  },
+  "favoritesSourceLabel": {
+    "message": "Favorites · $1"
+  },
+  "favoritesFoldersLabel": {
+    "message": "Favorite folders"
+  },
+  "favoritesChooseLabel": {
+    "message": "Choose favorite folder"
+  },
+  "favoritesSearchLabel": {
+    "message": "Search folders"
+  },
+  "favoritesSearchVideosLabel": {
+    "message": "Search loaded favorites"
+  },
+  "favoritesRefreshLabel": {
+    "message": "Refresh folders"
+  },
+  "favoritesSignInLabel": {
+    "message": "Sign in on Bilibili"
+  },
+  "favoritesSignInMessage": {
+    "message": "Sign in to browse your favorite folders."
+  },
+  "favoritesErrorMessage": {
+    "message": "Could not load favorites. Try again."
+  },
+  "favoritesRefreshErrorMessage": {
+    "message": "Refresh failed. Use Refresh to retry."
+  },
+  "favoritesNoFoldersMessage": {
+    "message": "No favorite folders yet."
+  },
+  "favoritesNoMatchesMessage": {
+    "message": "No matching folders."
+  },
+  "favoritesEmptyMessage": {
+    "message": "No playable videos in this folder."
   }
 }

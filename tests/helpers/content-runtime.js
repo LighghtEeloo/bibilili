@@ -4,6 +4,7 @@ const TEST_SOURCE_KIND = Object.freeze({
   PARTS: "parts",
   COLLECTION: "collection",
   RECOMMENDATIONS: "recommendations",
+  FAVORITES: "favorites",
   WATCH_LATER: "watch_later",
   HISTORY: "history"
 });
@@ -12,6 +13,7 @@ const TEST_SOURCE_ORDER = Object.freeze([
   TEST_SOURCE_KIND.PARTS,
   TEST_SOURCE_KIND.COLLECTION,
   TEST_SOURCE_KIND.RECOMMENDATIONS,
+  TEST_SOURCE_KIND.FAVORITES,
   TEST_SOURCE_KIND.WATCH_LATER,
   TEST_SOURCE_KIND.HISTORY
 ]);
@@ -69,6 +71,7 @@ function loadContentRuntime() {
   require("../../src/content-i18n.js");
   require("../../src/content-storage.js");
   require("../../src/content-controls.js");
+  require("../../src/content-favorites.js");
   require("../../src/content-settings.js");
   require("../../src/content-theme.js");
   require("../../src/content-scheduler.js");
@@ -91,6 +94,7 @@ function resetStorageState() {
   global.sessionStorage = new FakeStorage();
   storageState.configure({
     sourceOrder: TEST_SOURCE_ORDER,
+    favoritesKind: TEST_SOURCE_KIND.FAVORITES,
     commentPaneMinWidth: 240,
     commentPaneMaxWidth: 640
   });
