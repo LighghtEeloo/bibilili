@@ -274,7 +274,7 @@
     "description": "Accessible name for a settings help button, including the setting name."
   },
   "settingsFavoriteFolderHint": {
-    "message": "收藏按钮未点亮时直接保存到当前收藏夹，无需显示收藏列表；已点亮时仍打开哔哩哔哩的收藏管理。",
+    "message": "收藏按钮未点亮时直接保存到当前收藏夹；已点亮时或该功能关闭时，则打开哔哩哔哩的收藏管理。",
     "description": "Explains the selected-folder shortcut and native handling for existing favorites."
   },
   "settingsSourcesLabel": {
