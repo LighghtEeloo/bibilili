@@ -912,7 +912,8 @@ restarting the debounce or postponing the pass indefinitely.
 Each pass discovers page-owned regions, then applies an idempotent render to
 extension-owned surfaces. The render path updates stable controls in place and
 moves page-owned player and comment nodes only when their owning region
-changes.
+changes. Document-root classes and theme attributes are written only when their
+values change, so reconciliation settles after page activity stops.
 
 When a source root changes or an account source finishes loading, that source is
 re-extracted and the list rail is re-rendered from the current source route.

@@ -1740,7 +1740,7 @@
         this.document.documentElement.classList.contains(HTML_MOUNTED_CLASS);
 
       if (hadMountedClass) {
-        this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+        this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, false);
       }
 
       if (this.timer) {
@@ -1753,7 +1753,7 @@
           this.document.documentElement.classList.contains(HTML_MOUNTED_CLASS));
 
       if (restoreMountedClass) {
-        this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+        this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, false);
       }
 
       const startX = window.scrollX;
@@ -1766,7 +1766,7 @@
 
       if (!this.scrollToPrimeTarget(target, startX, startY, maxY, force)) {
         if (restoreMountedClass) {
-          this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+          this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, true);
         }
 
         return false;
@@ -1902,7 +1902,7 @@
       }
 
       this.restoreMountedClass = false;
-      this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+      this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, true);
     }
 
     /**
@@ -6443,7 +6443,8 @@
       onFavoriteAction
     ) {
       this.ensure();
-      this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
+      // Forced toggles leave unchanged root attributes silent for mutation observation.
+      this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, true);
       this.onCommentReload = onCommentReload;
       this.onWatchActionForward = onWatchActionForward;
       this.onFavoriteAction = onFavoriteAction;
@@ -6511,7 +6512,7 @@
     destroy() {
       this.releasePageOwnership();
       this.resetLayoutState();
-      this.document.documentElement?.classList.remove(HTML_MOUNTED_CLASS);
+      this.document.documentElement?.classList.toggle(HTML_MOUNTED_CLASS, false);
     }
 
     /**
@@ -6524,7 +6525,7 @@
      */
     releaseForNativePrime() {
       this.releasePageOwnership();
-      this.document.documentElement.classList.remove(HTML_MOUNTED_CLASS);
+      this.document.documentElement.classList.toggle(HTML_MOUNTED_CLASS, false);
     }
 
     /**
@@ -7302,14 +7303,14 @@
 
       event.preventDefault();
       this.commentResizeDrag = { pointerId: event.pointerId };
-      this.document.documentElement.classList.add(COMMENT_PANE_RESIZING_CLASS);
+      this.document.documentElement.classList.toggle(COMMENT_PANE_RESIZING_CLASS, true);
 
       try {
         this.commentResizeHandle.setPointerCapture(event.pointerId);
       } catch (_error) {
         this.commentResizeDrag = null;
-        this.document.documentElement.classList.remove(
-          COMMENT_PANE_RESIZING_CLASS
+        this.document.documentElement.classList.toggle(
+          COMMENT_PANE_RESIZING_CLASS, false
         );
         return;
       }
@@ -7348,8 +7349,8 @@
       const shouldPersist = Boolean(this.commentResizeDrag);
       const pointerId = event?.pointerId ?? this.commentResizeDrag?.pointerId;
       this.commentResizeDrag = null;
-      this.document.documentElement?.classList.remove(
-        COMMENT_PANE_RESIZING_CLASS
+      this.document.documentElement?.classList.toggle(
+        COMMENT_PANE_RESIZING_CLASS, false
       );
 
       if (

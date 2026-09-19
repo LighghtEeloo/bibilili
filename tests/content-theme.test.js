@@ -204,3 +204,19 @@ test("BilibiliThemeSync removes dark markers for light mode", () => {
     "https://s1.hdslb.com/bfs/seed/jinkela/short/bili-theme/light.css"
   );
 });
+
+test("repeated dark theme synchronization preserves root attributes without writes", (t) => {
+  const { document, documentElement } = fakeDocument();
+  t.mock.method(BilibiliThemeSync, "systemTheme", () => ThemeMode.DARK);
+  BilibiliThemeSync.sync(document);
+  const writes = t.mock.method(documentElement, "setAttribute");
+
+  BilibiliThemeSync.sync(document);
+  BilibiliThemeSync.sync(document);
+  assert.equal(writes.mock.callCount(), 0);
+
+  documentElement.removeAttribute(BILIBILI_DARK_PAGE_ATTR);
+  BilibiliThemeSync.sync(document);
+  assert.equal(writes.mock.callCount(), 1);
+  assert.equal(documentElement.getAttribute(BILIBILI_DARK_PAGE_ATTR), "common");
+});

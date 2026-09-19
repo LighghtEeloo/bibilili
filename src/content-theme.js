@@ -166,12 +166,16 @@
       }
 
       if (mode === ThemeMode.DARK) {
-        root.setAttribute(BILIBILI_DARK_PAGE_ATTR, BILIBILI_DARK_PAGE_VALUE);
+        if (root.getAttribute(BILIBILI_DARK_PAGE_ATTR) !== BILIBILI_DARK_PAGE_VALUE) {
+          root.setAttribute(BILIBILI_DARK_PAGE_ATTR, BILIBILI_DARK_PAGE_VALUE);
+        }
         /*
          * Note: Bilibili has used both common-theme-dark-page="common" and a
          * boolean common-theme-dark-common marker for its common-page dark CSS.
          */
-        root.setAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR, "");
+        if (!root.hasAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR)) {
+          root.setAttribute(BILIBILI_LEGACY_DARK_COMMON_ATTR, "");
+        }
         return;
       }
 

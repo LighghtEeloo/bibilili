@@ -21,6 +21,7 @@ class CoverElement extends RailElement {
       remove: (name) => { tokens.delete(name); this.className = [...tokens].join(" "); },
       toggle: (name, force) => {
         const enabled = force ?? !tokens.has(name);
+        if (tokens.has(name) === enabled) return enabled;
         if (enabled) tokens.add(name); else tokens.delete(name);
         this.className = [...tokens].join(" ");
         return enabled;
@@ -199,6 +200,26 @@ function watchActionLoadingFixture(t) {
   controller.reconcile(false);
   return { ...fixture, sourceButton };
 }
+
+test("repeated rendering and teardown leave unchanged document classes silent", (t) => {
+  const { controller, document } = commentNavigationFixture(t);
+  const root = document.documentElement;
+  let className = root.className;
+  let writes = 0;
+  Object.defineProperty(root, "className", {
+    get: () => className,
+    set: (value) => { className = value; writes += 1; }
+  });
+
+  controller.reconcile(false);
+  controller.reconcile(false);
+  assert.equal(writes, 0);
+
+  controller.stop();
+  assert.equal(writes, 1);
+  controller.layout.destroy();
+  assert.equal(writes, 1);
+});
 
 test("same-document navigation preserves the comment reload and native restore points", (t) => {
   const { controller, layout, root, comments, player } = commentNavigationFixture(t);
