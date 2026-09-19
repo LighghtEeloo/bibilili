@@ -429,6 +429,7 @@ test("hidden loading pauses checks and retains media readiness for visibility", 
   loading.pause();
   assert.equal(loading.timer, null);
   assert.equal(loading.active, true);
+  assert.equal(layout.isVideoLoadingPaused, true);
   video.readyState = 2;
   comments.readyRouteKey = controller.currentPageKey();
   loading.handleMediaEvent({ type: "loadeddata", target: video });
@@ -439,6 +440,66 @@ test("hidden loading pauses checks and retains media readiness for visibility", 
   paintFrame();
   paintFrame();
   assert.equal(layout.isVideoLoading, false);
+  assert.equal(layout.isVideoLoadingPaused, false);
+  controller.stop();
+});
+
+test("stalled loads stop fast polling and animation without revealing stale comments", (t) => {
+  const { controller, layout, player, comments, document, root, paintFrame, runTimers } = commentNavigationFixture(t);
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  const loading = controller.videoLoading;
+  loading.begin(controller.currentPageKey());
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  const checks = t.mock.method(loading, "revealWhenReady");
+  controller.pollPageState();
+  assert.equal(checks.mock.callCount(), 0, "the shared timer skips fast polling");
+
+  now = 10000;
+  runTimers(100);
+  assert.equal(loading.timer, null);
+  assert.equal(loading.active, true);
+  assert.equal(layout.commentPane.inert, true);
+  assert.equal(root.classList.contains("bibilili-video-loading-paused"), true);
+  controller.pollPageState();
+  controller.pollPageState();
+  assert.equal(loading.timer, null, "slow checks do not create another timer");
+  assert.equal(layout.isVideoLoading, true);
+
+  comments.readyRouteKey = controller.currentPageKey();
+  controller.pollPageState();
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.isVideoLoading, false);
+  assert.equal(layout.commentPane.inert, false);
+  assert.equal(root.classList.contains("bibilili-video-loading-paused"), false);
+  controller.stop();
+});
+
+test("a new native media load renews the fast-check budget after a stalled load", (t) => {
+  const { controller, layout, player, document, runTimers } = commentNavigationFixture(t);
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.videoLoading;
+  loading.begin();
+  now = 10000;
+  runTimers(100);
+  assert.equal(loading.timer, null);
+  assert.equal(layout.isVideoLoadingPaused, true);
+
+  now = 15000;
+  loading.handleMediaEvent({ type: "loadstart", target: video });
+  assert.notEqual(loading.timer, null);
+  assert.equal(layout.isVideoLoadingPaused, false);
+  now = 25000;
+  runTimers(100);
+  assert.equal(loading.timer, null);
+  assert.equal(layout.isVideoLoadingPaused, true);
   controller.stop();
 });
 

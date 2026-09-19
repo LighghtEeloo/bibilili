@@ -43,7 +43,9 @@
   const LOADING_FADE_MS = 240;
   const PLAYER_RECOVERY_TIMEOUT_MS = 5000;
   const VIDEO_LOADING_CHECK_INTERVAL_MS = 100;
+  const VIDEO_LOADING_FAST_CHECK_TIMEOUT_MS = 10000;
   const VIDEO_LOADING_CLASS = "bibilili-video-loading";
+  const VIDEO_LOADING_PAUSED_CLASS = "bibilili-video-loading-paused";
   const PLAYER_MEDIA_SELECTOR = "video, bwp-video";
   const PLAYER_LOAD_EVENTS = ["loadstart", "loadeddata", "canplay", "error"];
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
@@ -1370,6 +1372,7 @@
       this.readyRouteKey = null;
       this.readyMedia = null;
       this.timer = null;
+      this.checkDeadline = 0;
       this.frame = null;
       this.handler = null;
     }
@@ -1397,7 +1400,7 @@
       this.readyRouteKey = null;
       this.readyMedia = null;
       this.layout.setVideoLoading(true);
-      this.scheduleCheck();
+      this.startChecks();
     }
 
     /**
@@ -1410,6 +1413,7 @@
       if (!media?.matches?.(PLAYER_MEDIA_SELECTOR) || !this.layout.playerNode?.contains(media)) return;
       if (event.type === "loadstart") {
         if (!this.active) this.begin();
+        else this.startChecks();
         this.readyMedia = null;
         this.readyRouteKey = null;
         this.cancelReveal();
@@ -1452,15 +1456,27 @@
     }
 
     /**
-     * Checks native readiness while a switch is active, including shadow-DOM
-     * updates that the document's mutation observer cannot see.
+     * Gives a new media load a bounded interval of responsive readiness checks.
+     */
+    startChecks() {
+      this.checkDeadline = performance.now() + VIDEO_LOADING_FAST_CHECK_TIMEOUT_MS;
+      this.layout.setVideoLoadingPaused(Boolean(this.document.hidden));
+      this.scheduleCheck();
+    }
+
+    /**
+     * Checks readiness quickly until the deadline, then uses the navigation tick.
+     * Note: Native comment shadow-DOM updates escape document observation.
      */
     scheduleCheck() {
       if (!this.active || this.document.hidden || this.timer !== null) return;
+      const remaining = this.checkDeadline - performance.now();
+      this.layout.setVideoLoadingPaused(remaining <= 0);
+      if (remaining <= 0) return;
       this.timer = window.setTimeout(() => {
         this.timer = null;
         this.revealWhenReady();
-      }, VIDEO_LOADING_CHECK_INTERVAL_MS);
+      }, Math.min(VIDEO_LOADING_CHECK_INTERVAL_MS, remaining));
     }
 
     /**
@@ -1515,6 +1531,7 @@
       window.clearTimeout(this.timer);
       this.timer = null;
       this.cancelReveal();
+      if (this.active) this.layout.setVideoLoadingPaused(true);
     }
 
     /** Restores covered controls after completion or cancellation. */
@@ -1523,6 +1540,7 @@
       this.timer = null;
       this.cancelReveal();
       this.active = false;
+      this.checkDeadline = 0;
       this.targetRouteKey = null;
       this.layout.setVideoLoading(false);
     }
@@ -6298,6 +6316,7 @@
       this.playerPane = null;
       this.commentPane = null;
       this.isVideoLoading = false;
+      this.isVideoLoadingPaused = false;
       this.commentLoadingView = null;
       this.commentLoadingLabel = null;
       this.commentResizeHandle = null;
@@ -6937,6 +6956,7 @@
     setVideoLoading(loading) {
       this.isVideoLoading = loading;
       this.root?.classList.toggle(VIDEO_LOADING_CLASS, loading);
+      this.setVideoLoadingPaused(loading && this.isVideoLoadingPaused);
       for (const button of this.actionButtons.values()) {
         this.syncWatchActionButtonState(button);
       }
@@ -6958,6 +6978,12 @@
         this.updateCommentLoadingLabel();
       }
       this.commentLoadingView?.setAttribute("aria-hidden", String(!loading));
+    }
+
+    /** Keeps pending content covered while pausing its loading animation. */
+    setVideoLoadingPaused(paused) {
+      this.isVideoLoadingPaused = paused;
+      this.root?.classList.toggle(VIDEO_LOADING_PAUSED_CLASS, paused);
     }
 
     /** Applies the localized status text to the comment loading surface. */
@@ -11473,6 +11499,12 @@
       this.urlTimer = null;
     }
 
+    /** Shares one visible-page timer between navigation and slow loading checks. */
+    pollPageState() {
+      this.handlePotentialNavigation();
+      if (this.videoLoading.timer === null) this.videoLoading.revealWhenReady();
+    }
+
     /**
      * Runs page observation only for an enabled, visible document.
      * Settings, storage, history, and visibility events remain available while off.
@@ -11485,7 +11517,7 @@
         this.observeMutations();
         if (this.urlTimer === null) {
           this.urlTimer = window.setInterval(
-            () => this.handlePotentialNavigation(), URL_POLL_INTERVAL_MS
+            () => this.pollPageState(), URL_POLL_INTERVAL_MS
           );
         }
         return;

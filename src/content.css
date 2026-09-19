@@ -112,6 +112,11 @@
   animation-play-state: running;
 }
 
+#bibilili-layout-root.bibilili-video-loading-paused .bibilili-loading-overlay
+  .bibilili-loading-indicator::after {
+  animation-play-state: paused;
+}
+
 #bibilili-loading-cover.bibilili-loading-shell {
   grid-template-columns:
     minmax(0, 1fr) min(50vw, var(--bibilili-loading-comment-width));

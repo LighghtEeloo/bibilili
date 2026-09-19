@@ -152,7 +152,7 @@ locations, removes the layout root, and leaves the floating activation control
 mounted. Enabling Bibilili starts or retries a transformed page session.
 
 The off state stops page mutation observation, URL polling, media-load
-observation, account requests, and preview demand. Settings and event-based
+observation, account-list loading, and preview demand. Settings and event-based
 activation remain available. Enabling samples the current route before mounting.
 
 Activation applies through an urgent reconciliation request after the current
@@ -330,6 +330,11 @@ threads count as completed loads. Readiness is checked again before reveal;
 elapsed time alone does not restore stale comments. A playback error still
 waits for destination comments. New switches cancel queued reveals, and teardown
 restores interaction. Reduced motion removes the fade and bar motion.
+
+Readiness checks run every 100 ms for up to ten seconds after a media load
+starts. Longer waits pause the loading animation and share the existing 500 ms
+navigation check while the document is visible. Native media events can also
+complete the transition. A new media load starts a new fast-check interval.
 
 Activating comment reload runs a forced lazy-primer pass and then reconciles the
 current watch page. It does not reload the browser page or replace Bilibili
