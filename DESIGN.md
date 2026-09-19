@@ -242,11 +242,15 @@ the request's starting state. Reset and recording changes discard unfinished
 samples. URLs, identifiers, response bodies, and individual event histories are
 not retained.
 
-Features exposes the Record performance switch. The Performance tab is available
-while recording or the extension is off. It shows a timestamped snapshot with
+Features exposes the Record performance switch. The Performance tab appears
+only while this feature is enabled, including when the extension is off.
+It shows a timestamped snapshot with
 state columns, then expandable work timings, update triggers, and current
 resource counts. Resource counts include page observation, navigation and
 loading timers, rendered and listed cards, and preview requests and records.
+
+Disabling the feature hides the tab and returns a selected Performance tab to
+Features. Keyboard tab navigation skips unavailable tabs.
 
 The statistics view creates its tables when Performance is first opened.
 Opening or selecting Performance captures a snapshot. Refresh replaces it;

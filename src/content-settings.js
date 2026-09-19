@@ -50,6 +50,7 @@
     /** @param {HTMLElement} anchor */
     toggle(anchor) {
       this.ensure();
+      this.syncSelectedTab();
       if (!this.panel.isOpen && this.tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
       this.render();
       if (!this.panel.isOpen) this.options.onOpen();
@@ -89,7 +90,7 @@
         button.addEventListener("keydown", (event) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault();
-          const order = [...this.tabs.keys()];
+          const order = [...this.tabs.keys()].filter((key) => this.isTabAvailable(key));
           const index = order.indexOf(this.tab);
           this.selectTab(event.key === "Home" ? order[0] : event.key === "End" ? order.at(-1)
             : order[(index + (event.key === "ArrowRight" ? 1 : -1) + order.length) % order.length]);
@@ -235,12 +236,28 @@
 
     /** Selects and remembers a tab without changing extension feature preferences. @param {string} tab */
     selectTab(tab) {
-      if (!this.tabs.has(tab)) return;
+      if (!this.tabs.has(tab) || !this.isTabAvailable(tab)) return;
       this.tab = tab;
       SettingsTabPreference.write(tab);
       if (tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
       this.render();
       this.panel.position();
+    }
+
+    /** Performance is available only while its recording feature is enabled. */
+    isTabAvailable(tab) {
+      return tab !== SettingsTab.PERFORMANCE || this.preferences.features.performance;
+    }
+
+    /** Falls back from an unavailable saved tab and keeps focus out of hidden content. */
+    syncSelectedTab() {
+      if (this.isTabAvailable(this.tab)) return;
+      const focused = this.document.activeElement;
+      const moveFocus = this.panel.isOpen && (focused === this.tabs.get(this.tab) ||
+        this.panels.get(this.tab)?.contains(focused));
+      this.tab = SettingsTab.FEATURES;
+      SettingsTabPreference.write(this.tab);
+      if (moveFocus) this.tabs.get(this.tab)?.focus({ preventScroll: true });
     }
 
     /**
@@ -252,6 +269,7 @@
     update(preferences, enabled, language) {
       const recordingChanged = this.preferences.features.performance !== preferences.features.performance;
       this.preferences = preferences;
+      this.syncSelectedTab();
       this.enabled = enabled;
       this.language = language;
       if (this.button) UiControl.setLabel(this.button, UiStrings.message(UiMessage.SETTINGS_LABEL, language));
@@ -277,6 +295,7 @@
     /** Reuses the layout's icon renderer for all settings action rows. */
     render() {
       if (!this.panel.root) return;
+      this.syncSelectedTab();
       const message = (key) => UiStrings.message(key, this.language);
       this.panel.root.lang = this.language;
       this.panel.root.setAttribute("aria-label", message(UiMessage.SETTINGS_LABEL));
@@ -297,6 +316,7 @@
       this.activationInput.checked = this.enabled;
       for (const [input, { group, key }] of this.inputs) input.checked = this.preferences[group][key];
       for (const [key, button] of this.tabs) {
+        button.hidden = !this.isTabAvailable(key);
         const active = key === this.tab;
         button.setAttribute("aria-selected", String(active));
         button.tabIndex = active ? 0 : -1;

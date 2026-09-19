@@ -8,11 +8,16 @@ const { UiControl } = global.__bibililiControls;
 const { UiLanguage, UiMessage, UiStrings } = global.__bibililiI18n;
 
 /** Uses the real controller and settings definitions with the existing small DOM model. */
-function settingsFixture(t) {
+function settingsFixture(t, { performance = false } = {}) {
   const fixture = railFixture(LayoutRoot, 5, SourceKind.COLLECTION);
   const { document } = fixture;
   const storage = global.localStorage;
   global.localStorage = new FakeStorage();
+  if (performance) {
+    const preferences = SettingsPreference.defaults();
+    preferences.features.performance = true;
+    SettingsPreference.write(preferences);
+  }
   t.after(() => { global.localStorage = storage; });
   const controller = new BibililiController(document);
   t.mock.method(controller, "refreshAccountSources", () => {});
@@ -90,12 +95,14 @@ test("performance toggles recording without reconciliation and snapshots refresh
   const input = [...view.inputs.keys()].find((input) => input.name === "performance");
   view.render();
   assert.equal(input.checked, false);
+  assert.equal(view.tabs.get("performance").hidden, true);
   input.checked = true;
   input.dispatch("change");
   assert.equal(controller.performance.enabled, true);
   assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
   assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
   assert.equal(SettingsPreference.read().features.performance, true);
+  assert.equal(view.tabs.get("performance").hidden, false);
   view.selectTab("performance");
   const performance = view.performanceView;
   const retained = performance.snapshot;
@@ -114,10 +121,56 @@ test("performance toggles recording without reconciliation and snapshots refresh
   input.checked = false;
   input.dispatch("change");
   assert.equal(controller.performance.enabled, false);
+  assert.equal(view.tab, "features");
+  assert.equal(view.tabs.get("performance").hidden, true);
+  assert.equal(view.panels.get("performance").hidden, true);
+});
+
+test("unavailable Performance tabs are skipped by keyboard navigation and saved selection", (t) => {
+  const { view, controller, document } = settingsFixture(t);
+  view.ensure();
+  view.selectTab("actions");
+  const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
+  key("ArrowRight");
+  assert.equal(view.tab, "features");
+  key("ArrowLeft");
+  assert.equal(view.tab, "actions");
+  key("Home");
+  key("End");
+  assert.equal(view.tab, "actions");
+  view.selectTab("performance");
+  assert.equal(view.tab, "actions");
+  assert.equal(view.performanceView.status, undefined);
+
+  global.__bibililiStorageState.SettingsTabPreference.write("performance");
+  const restored = new global.__bibililiSettings.SettingsView(document, view.options);
+  restored.update(controller.preferences, true, "en");
+  restored.ensure();
+  restored.render();
+  assert.equal(restored.tab, "features");
+  assert.equal(restored.tabs.get("performance").hidden, true);
+  assert.equal(global.__bibililiStorageState.SettingsTabPreference.read(), "features");
+});
+
+test("a recording change from another tab moves focus out of hidden statistics and preserves totals", (t) => {
+  const { view, controller, document } = settingsFixture(t, { performance: true });
+  view.ensure();
+  t.mock.method(view.panel, "position", () => {});
+  view.panel.root.hidden = false;
+  view.selectTab("performance");
+  view.performanceView.copyButton.focus();
+  controller.performance.count("navigationTicks");
+  const preferences = SettingsPreference.defaults();
+  SettingsPreference.write(preferences);
+  controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
+  assert.equal(view.tab, "features");
+  assert.equal(document.activeElement, view.tabs.get("features"));
+  assert.equal(view.tabs.get("performance").hidden, true);
+  assert.equal(controller.performance.snapshot().states.visible.counters.navigationTicks, 1);
 });
 
 test("all three settings tabs support roving keyboard focus and persisted selection", (t) => {
-  const { view, document } = settingsFixture(t);
+  const { view, document } = settingsFixture(t, { performance: true });
   view.ensure();
   view.selectTab("features");
   const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
@@ -140,7 +193,7 @@ test("all three settings tabs support roving keyboard focus and persisted select
 });
 
 test("copy exports the displayed snapshot and reports clipboard failures", async (t) => {
-  const { controller, view } = settingsFixture(t);
+  const { controller, view } = settingsFixture(t, { performance: true });
   view.ensure();
   view.selectTab("performance");
   const performance = view.performanceView;
@@ -159,7 +212,7 @@ test("copy exports the displayed snapshot and reports clipboard failures", async
 });
 
 test("report clipboard fallback stays inside settings and restores focus even on failure", (t) => {
-  const { view, document } = settingsFixture(t);
+  const { view, document } = settingsFixture(t, { performance: true });
   view.ensure();
   view.selectTab("performance");
   document.body.append(view.panel.root);
