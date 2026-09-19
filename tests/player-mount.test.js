@@ -418,6 +418,30 @@ test("ready video frames keep old comments dim until the destination thread rend
   controller.stop();
 });
 
+test("hidden loading pauses checks and retains media readiness for visibility", (t) => {
+  const { controller, layout, player, comments, document, timers, frames, paintFrame } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.videoLoading;
+  loading.begin(controller.currentPageKey());
+  assert.notEqual(loading.timer, null);
+  document.hidden = true;
+  loading.pause();
+  assert.equal(loading.timer, null);
+  assert.equal(loading.active, true);
+  video.readyState = 2;
+  comments.readyRouteKey = controller.currentPageKey();
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  assert.equal(frames.size, 0);
+  assert.ok([...timers.values()].every(({ delay }) => delay !== 100));
+  document.hidden = false;
+  loading.revealWhenReady();
+  paintFrame();
+  paintFrame();
+  assert.equal(layout.isVideoLoading, false);
+  controller.stop();
+});
+
 test("native player loads use the same comment state and a later URL poll does not restart it", (t) => {
   const { controller, layout, player, comments, document, paintFrame } = commentNavigationFixture(t);
   const video = document.createElement("video");
@@ -893,7 +917,7 @@ test("late player arrival bypasses lazy scheduling without making other mutation
   controller.layout.playerNode = null;
   controller.enabled = false;
   mutate();
-  assert.equal(requests.pop(), ReconcilePriority.LAZY);
+  assert.equal(requests.length, 0, "disabled page changes stay ignored");
 
   controller.observer.callback([{ target: { closest: () => ({}) } }]);
   assert.equal(requests.length, 0, "extension-owned changes stay ignored");

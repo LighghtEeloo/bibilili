@@ -151,6 +151,10 @@ Disabling Bibilili restores page-owned player and comment nodes to their page
 locations, removes the layout root, and leaves the floating activation control
 mounted. Enabling Bibilili starts or retries a transformed page session.
 
+The off state stops page mutation observation, URL polling, media-load
+observation, account requests, and preview demand. Settings and event-based
+activation remain available. Enabling samples the current route before mounting.
+
 Activation applies through an urgent reconciliation request after the current
 input task when the player region is available. The layout mounts independently
 of lazy reconciliation and page priming.
@@ -876,6 +880,12 @@ updates, account source completion, and page theme marker changes. When the
 watched video changes, it starts a new page session and reconciles discovered
 regions in the mounted layout. The comment scroll position and source-route
 interaction state reset for the destination video.
+
+Hidden documents suspend mutation observation, URL polling, preview demand,
+loading-readiness checks, and scheduled reconciliation. Native playback and
+attached page nodes remain in place. Media events retain loading state, and
+completed account requests retain their results. Visibility restores observation
+and reconciles the current route and page state before presentation resumes.
 
 Same-document navigation preserves attached player and comment regions.
 Bilibili updates its comment component's video identity in place. Reconnecting

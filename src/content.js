@@ -1456,7 +1456,7 @@
      * updates that the document's mutation observer cannot see.
      */
     scheduleCheck() {
-      if (!this.active || this.timer !== null) return;
+      if (!this.active || this.document.hidden || this.timer !== null) return;
       this.timer = window.setTimeout(() => {
         this.timer = null;
         this.revealWhenReady();
@@ -1483,7 +1483,7 @@
 
     /** Reconciles and paints the destination, then rechecks before revealing it. */
     revealWhenReady() {
-      if (!this.active || this.frame !== null) return;
+      if (!this.active || this.document.hidden || this.frame !== null) return;
       const routeKey = SourceAdapter.currentWatchRouteKey();
       if (!this.isReady(routeKey)) {
         this.scheduleCheck();
@@ -1508,6 +1508,13 @@
     cancelReveal() {
       if (this.frame !== null) window.cancelAnimationFrame(this.frame);
       this.frame = null;
+    }
+
+    /** Pauses hidden-page readiness work while retaining native media state. */
+    pause() {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+      this.cancelReveal();
     }
 
     /** Restores covered controls after completion or cancellation. */
@@ -11073,6 +11080,7 @@
         this.setEnabled(enabled);
       });
       this.readyHandler = null;
+      this.started = false;
       this.observer = null;
       this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute) => {
         this.reconcile(resetSourceRoute);
@@ -11083,18 +11091,20 @@
       this.themeChangeHandler = null;
       this.popstateHandler = null;
       this.hashchangeHandler = null;
+      this.visibilityHandler = null;
       this.uiLanguage = DEFAULT_UI_LANGUAGE;
       this.pageKey = "";
       /** @type {CardNavigationOriginRecord | null} */
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
+      this.pendingAccountRefresh = false;
       this.settlingTimers = [];
     }
 
     /** Covers startup while keeping an already mounted watch layout visible. */
     prepareMount() {
-      if (this.enabled && this.isWatchPage() && !this.layout.root?.isConnected) {
+      if (this.enabled && !this.document.hidden && this.isWatchPage() && !this.layout.root?.isConnected) {
         this.loadingCover.start(this.currentPageKey());
       } else {
         this.loadingCover.stop();
@@ -11105,17 +11115,17 @@
      * Starts observers, account loading, and the first reconciliation pass.
      */
     start() {
+      this.started = true;
       this.uiLanguage = LanguageResolver.resolve(this.document, this.preferences.language);
-      this.navigation.start();
-      this.videoLoading.start();
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
-      BilibiliThemeSync.sync(this.document);
-      this.observeMutations();
       this.observeNavigation();
       this.observeThemePreference();
+      this.visibilityHandler = () => this.handleVisibilityChange();
+      this.document.addEventListener("visibilitychange", this.visibilityHandler);
       this.storageHandler = this.onStorageChange;
       window.addEventListener("storage", this.storageHandler);
+      this.updateRuntimeActivity();
       this.renderFloatingActivation();
       this.startPageReconciliation(false);
     }
@@ -11124,6 +11134,11 @@
      * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
+      this.started = false;
+      if (this.visibilityHandler) {
+        this.document.removeEventListener("visibilitychange", this.visibilityHandler);
+        this.visibilityHandler = null;
+      }
       if (this.storageHandler) {
         window.removeEventListener("storage", this.storageHandler);
         this.storageHandler = null;
@@ -11139,10 +11154,7 @@
 
       this.reconcileScheduler.cancel();
 
-      if (this.urlTimer) {
-        window.clearInterval(this.urlTimer);
-        this.urlTimer = null;
-      }
+      this.stopUrlPolling();
 
       if (this.popstateHandler) {
         window.removeEventListener("popstate", this.popstateHandler);
@@ -11182,6 +11194,7 @@
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
+      this.pendingAccountRefresh = false;
       this.layout.destroy();
     }
 
@@ -11206,6 +11219,8 @@
       resetSourceRoute = false,
       priority = ReconcilePriority.LAZY
     ) {
+      this.pendingSourceRouteReset ||= resetSourceRoute;
+      if (this.document.hidden) return;
       this.reconcileScheduler.request(resetSourceRoute, priority);
     }
 
@@ -11214,6 +11229,7 @@
      */
     scheduleSettlingReconciles() {
       this.cancelSettlingReconciles();
+      if (!this.enabled || this.document.hidden || !this.isWatchPage()) return;
 
       for (const delay of LAZY_SETTLING_RECONCILE_DELAYS_MS) {
         const timer = window.setTimeout(() => {
@@ -11221,7 +11237,7 @@
             (candidate) => candidate !== timer
           );
 
-          if (!this.enabled || !this.isWatchPage()) {
+          if (!this.enabled || this.document.hidden || !this.isWatchPage()) {
             return;
           }
 
@@ -11282,6 +11298,8 @@
      * @param {boolean} resetSourceRoute
      */
     reconcile(resetSourceRoute) {
+      this.pendingSourceRouteReset ||= resetSourceRoute;
+      if (this.document.hidden) return;
       BilibiliThemeSync.sync(this.document);
 
       if (!this.isWatchPage()) {
@@ -11297,7 +11315,6 @@
         return;
       }
 
-      this.pendingSourceRouteReset ||= resetSourceRoute;
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
       this.reconcileFavoriteAction(regions.actions);
@@ -11410,7 +11427,9 @@
      * Reconciles player arrival urgently and other page mutations lazily.
      */
     observeMutations() {
+      if (this.observer) return;
       this.observer = new MutationObserver((mutations) => {
+        if (!this.enabled || this.document.hidden) return;
         const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwned(mutation.target));
 
         if (hasPageMutation) {
@@ -11446,11 +11465,58 @@
       this.hashchangeHandler = () => this.handlePotentialNavigation();
       window.addEventListener("popstate", this.popstateHandler);
       window.addEventListener("hashchange", this.hashchangeHandler);
+    }
 
-      this.urlTimer = window.setInterval(
-        () => this.handlePotentialNavigation(),
-        URL_POLL_INTERVAL_MS
-      );
+    /** Stops the navigation fallback until the page can use reconciliation. */
+    stopUrlPolling() {
+      if (this.urlTimer !== null) window.clearInterval(this.urlTimer);
+      this.urlTimer = null;
+    }
+
+    /**
+     * Runs page observation only for an enabled, visible document.
+     * Settings, storage, history, and visibility events remain available while off.
+     */
+    updateRuntimeActivity() {
+      if (!this.started) return;
+      if (this.enabled && !this.document.hidden) {
+        this.navigation.start();
+        this.videoLoading.start();
+        this.observeMutations();
+        if (this.urlTimer === null) {
+          this.urlTimer = window.setInterval(
+            () => this.handlePotentialNavigation(), URL_POLL_INTERVAL_MS
+          );
+        }
+        return;
+      }
+
+      this.observer?.disconnect();
+      this.observer = null;
+      this.stopUrlPolling();
+      this.reconcileScheduler.cancel();
+      this.cancelSettlingReconciles();
+      this.cancelPlayerRecovery();
+      this.lazyPrimer.stop();
+      this.loadingCover.stop();
+      this.videoPreviews.setDemand([]);
+      this.videoLoading.pause();
+      if (!this.enabled) {
+        this.navigation.stop();
+        this.videoLoading.stop();
+      }
+    }
+
+    /** Reconciles the current route and native state after visibility returns. */
+    handleVisibilityChange() {
+      this.updateRuntimeActivity();
+      if (this.document.hidden) return;
+      if (!this.handlePotentialNavigation()) {
+        this.prepareMount();
+        if (this.pendingAccountRefresh) this.startPageReconciliation(false);
+        else this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      }
+      this.videoLoading.revealWhenReady();
     }
 
     /**
@@ -11460,7 +11526,6 @@
     observeThemePreference() {
       this.themePreference = window.matchMedia(BROWSER_DARK_SCHEME_QUERY);
       this.themeChangeHandler = () => {
-        BilibiliThemeSync.sync(this.document);
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       };
       this.themePreference.addEventListener("change", this.themeChangeHandler);
@@ -11473,12 +11538,15 @@
      * lazy-prime, preview, and source-route state are reset before the new
      * page's urgent reconciliation. The mounted layout retains native nodes
      * while Bilibili updates them for the destination video.
+     *
+     * @returns {boolean} Whether a new page session was started.
      */
     handlePotentialNavigation() {
+      if (this.document.hidden) return false;
       const nextPageKey = this.currentPageKey();
 
       if (nextPageKey === this.pageKey) {
-        return;
+        return false;
       }
 
       this.lazyPrimer.stop(false);
@@ -11498,6 +11566,7 @@
       }
       this.prepareMount();
       this.startPageReconciliation(true);
+      return true;
     }
 
     /**
@@ -11658,6 +11727,7 @@
       this.enabled = enabled;
       if (persist) this.settingsView.showSaveResult(ActivationPreference.writeEnabled(enabled));
       this.reconcileScheduler.cancel();
+      this.updateRuntimeActivity();
 
       if (!enabled) {
         this.lazyPrimer.stop();
@@ -11668,9 +11738,10 @@
         return;
       }
 
-      this.prepareMount();
-      this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
-      this.startPageReconciliation(true);
+      if (!this.handlePotentialNavigation()) {
+        this.prepareMount();
+        this.startPageReconciliation(true);
+      }
     }
 
     /**
@@ -11871,7 +11942,8 @@
       if (!this.enabled || !this.isWatchPage()) {
         return;
       }
-
+      this.pendingAccountRefresh = Boolean(this.document.hidden);
+      if (this.pendingAccountRefresh) return;
       this.accountSources.refresh(this.resolveUiLanguage());
     }
 
@@ -11946,7 +12018,8 @@
         this.uiLanguage = nextLanguage;
 
         if (this.enabled && this.isWatchPage()) {
-          this.accountSources.refresh(nextLanguage, true);
+          if (this.document.hidden) this.pendingAccountRefresh = true;
+          else this.accountSources.refresh(nextLanguage, true);
         }
       }
 
@@ -11957,6 +12030,7 @@
      * Renders the activation button as a floating start or retry control.
      */
     renderFloatingActivation() {
+      if (this.document.hidden) return;
       if (!this.isWatchPage()) {
         this.activationControl.destroy();
         return;
