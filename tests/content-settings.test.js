@@ -40,14 +40,14 @@ function settingsFixture(t) {
   return { ...fixture, controller, layout, anchor, view: controller.settingsView };
 }
 
-test("settings enable every feature, source, and pin by default and validate saved values", () => {
+test("settings enable presentation features, sources, and pins while recording defaults off", () => {
   const defaults = SettingsPreference.defaults();
   assert.equal(defaults.language, null);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
-  for (const group of [defaults.features, defaults.sources, defaults.pinnedActions]) {
+  for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
-  assert.deepEqual(defaults.features, { description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true });
+  assert.deepEqual(defaults.features, { description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true, performance: false });
   const value = SettingsPreference.normalize({
     features: { description: false, thumbnails: "false", unknown: true },
     sources: { collection: false, history: 0 }, pinnedActions: { like: false, unknown: true }

@@ -216,6 +216,34 @@ their launcher. Their keyboard events stay
 within extension controls. The settings popup remains available while the
 layout is disabled. Popups are excluded from native DOM discovery.
 
+## Runtime Measurements
+
+The performance recorder aggregates extension work for the current document.
+Recording defaults to off. Its preference persists with other features; its
+measurements remain in memory. Disabling recording freezes totals, enabling it
+resumes them, and resetting clears them. Same-document navigation retains the
+measurements. A new document starts a new recording.
+
+Measurements use three exclusive states: enabled and visible, enabled and
+hidden, and extension off. Off includes visible and hidden documents. Elapsed
+recording time is accounted for at state changes and snapshots. Counters record
+reconciliation requests, relevant mutation batches, navigation and fast-loading
+timer callbacks, API starts and failures, cancellations, and cached thumbnail
+applications. Scheduling causes count requests before coalescing or deferral.
+
+Synchronous timing records retain count, total duration, and maximum duration
+for reconciliation, discovery, layout rendering, and rail updates. Durations
+are inclusive; nested phases overlap. They describe elapsed execution time,
+including synchronous browser work, rather than processor utilization or power.
+API counts cover extension account and preview requests. Outcomes belong to
+the request's starting state. Reset and recording changes discard unfinished
+samples. URLs, identifiers, response bodies, and individual event histories are
+not retained.
+
+Recording uses existing runtime callbacks and fixed-size aggregate records.
+It installs no observer, timer, or network request. Disabled instrumentation
+returns before reading the clock or allocating samples.
+
 ## Startup
 
 The loading cover is an extension-owned surface above the entire watch viewport.

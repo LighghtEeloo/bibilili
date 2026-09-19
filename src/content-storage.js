@@ -14,7 +14,8 @@
   /** Closed settings tabs shared by the view and its persisted navigation state. */
   const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions" });
   const FEATURE_DEFAULTS = Object.freeze({
-    description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true
+    description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true,
+    performance: false
   });
   const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
 
@@ -504,7 +505,7 @@
   /**
    * @typedef {object} SettingsPreferenceRecord
    * @property {string | null} language Supported UI language; null uses automatic detection.
-   * @property {{ description: boolean, thumbnails: boolean, favoriteToSelectedFolder: boolean, moreButton: boolean }} features Optional presentations and action behavior.
+   * @property {{ description: boolean, thumbnails: boolean, favoriteToSelectedFolder: boolean, moreButton: boolean, performance: boolean }} features Optional presentations, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
    */

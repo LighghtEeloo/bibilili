@@ -4,6 +4,8 @@
   const { DomProbe } = window.__bibililiDom;
   const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
   const { SettingsView } = window.__bibililiSettings;
+  const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause } =
+    window.__bibililiPerformance;
   const { FavoritesView } = window.__bibililiFavorites;
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
@@ -1361,8 +1363,10 @@
      * @param {LayoutRoot} layout
      * @param {NativeVideoNavigation} navigation Reads native comment readiness.
      * @param {() => void} onReady Reconciles metadata and actions before reveal.
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    constructor(document, layout, navigation, onReady) {
+    constructor(document, layout, navigation, onReady, recorder = null) {
+      this.performance = recorder;
       this.document = document;
       this.layout = layout;
       this.navigation = navigation;
@@ -1475,6 +1479,7 @@
       if (remaining <= 0) return;
       this.timer = window.setTimeout(() => {
         this.timer = null;
+        this.performance?.count(PerformanceCounter.LOADING);
         this.revealWhenReady();
       }, Math.min(VIDEO_LOADING_CHECK_INTERVAL_MS, remaining));
     }
@@ -3630,8 +3635,10 @@
      * Creates independently loaded account sources.
      *
      * @param {() => void} onChange
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    constructor(onChange) {
+    constructor(onChange, recorder = null) {
+      this.performance = recorder;
       this.onChange = onChange;
       /** @type {Map<string, AccountSourceRecord>} */
       this.records = new Map();
@@ -3793,7 +3800,7 @@
       }
 
       const records = this.records;
-      await AccountSourceStore.addWatchLaterApiItem(identity);
+      await AccountSourceStore.addWatchLaterApiItem(identity, this.performance);
 
       if (records !== this.records) {
         return;
@@ -3820,7 +3827,7 @@
       }
 
       const record = this.records.get(SourceKind.WATCH_LATER);
-      await AccountSourceStore.deleteWatchLaterApiItem(normalizedAid);
+      await AccountSourceStore.deleteWatchLaterApiItem(normalizedAid, this.performance);
 
       if (this.records.get(SourceKind.WATCH_LATER) !== record) {
         return;
@@ -3925,7 +3932,7 @@
 
       try {
         const result = await AccountSourceStore.fetchSourceRecord(
-          kind, url, controller.signal, this.language
+          kind, url, controller.signal, this.language, this.performance
         );
 
         if (this.isCurrentRequest(record, controller)) {
@@ -3981,7 +3988,7 @@
           kind,
           AccountSourceStore.sourceUrl(record, cursor),
           controller.signal,
-          this.language
+          this.language, this.performance
         );
 
         if (!this.isCurrentRequest(record, controller)) {
@@ -4141,7 +4148,7 @@
         directory.controller === controller && !controller.signal.aborted;
       directory.promise = (async () => {
         try {
-          const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, controller.signal);
+          const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, controller.signal, this.performance);
           if (!current()) return;
           if (account.code === -101 || (account.code === 0 && account.data?.isLogin === false)) {
             this.clearFavoriteAccount();
@@ -4153,7 +4160,7 @@
           if (directory.accountId !== accountId) this.clearFavoriteAccount(accountId);
           const url = new URL(FAVORITE_FOLDERS_URL);
           url.searchParams.set("up_mid", accountId);
-          const payload = await AccountSourceStore.fetchApiPayload(url.href, controller.signal);
+          const payload = await AccountSourceStore.fetchApiPayload(url.href, controller.signal, this.performance);
           if (!current()) return;
           if (payload.code === -101) { this.clearFavoriteAccount(); return; }
           if (payload.code !== 0 || !(Array.isArray(payload.data?.list) || payload.data?.count === 0)) {
@@ -4261,7 +4268,7 @@
         throw new Error("No selected favorite folder");
       }
       if (!current()) return null;
-      const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, signal);
+      const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, signal, this.performance);
       if (!current()) return null;
       if (account.code !== 0 || account.data?.isLogin !== true ||
           FavoriteFolderPreference.normalizeId(account.data.mid) !== accountId) {
@@ -4269,10 +4276,10 @@
         throw new Error("Favorite account changed");
       }
       const aid = identity.queryName === "aid" ? FavoriteFolderPreference.normalizeId(identity.queryValue) :
-        await AccountSourceStore.archiveAidForIdentity(identity, signal);
+        await AccountSourceStore.archiveAidForIdentity(identity, signal, this.performance);
       if (!aid) throw new Error("Archive identity unavailable");
       if (!current()) return null;
-      const alreadySaved = await AccountSourceStore.isFavorite(aid, signal);
+      const alreadySaved = await AccountSourceStore.isFavorite(aid, signal, this.performance);
       if (!current()) return null;
       if (alreadySaved) return { aid, accountId, alreadySaved: true };
 
@@ -4282,7 +4289,7 @@
       body.set("add_media_ids", folderId);
       body.set("del_media_ids", "");
       body.set("platform", "web");
-      const result = await AccountSourceStore.postApiPayload(FAVORITE_ADD_URL, body);
+      const result = await AccountSourceStore.postApiPayload(FAVORITE_ADD_URL, body, this.performance);
       if (!AccountSourceStore.isSuccessfulPayload(result)) throw new Error("Favorite addition failed");
 
       if (this.favoriteFolders === directory && directory.accountId === accountId) {
@@ -4303,19 +4310,26 @@
      * @param {ArchiveVideoIdentity} identity
      * @param {AbortSignal} signal
      * @returns {Promise<string>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async archiveAidForIdentity(identity, signal) {
-      const payload = await AccountSourceStore.fetchApiPayload(VideoPreviewStore.sourceUrl(identity), signal);
+    static async archiveAidForIdentity(identity, signal, recorder = null) {
+      const payload = await AccountSourceStore.fetchApiPayload(VideoPreviewStore.sourceUrl(identity), signal, recorder);
       const aid = FavoriteFolderPreference.normalizeId(payload?.data?.aid);
       if (!AccountSourceStore.isSuccessfulPayload(payload) || !aid) throw new Error("Archive identity unavailable");
       return aid;
     }
 
-    /** @param {string} aid @param {AbortSignal} [signal] @returns {Promise<boolean>} Account favorite state. */
-    static async isFavorite(aid, signal) {
+    /**
+     * Reads the account's favorite state for one archive.
+     * @param {string} aid
+     * @param {AbortSignal} [signal]
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
+     * @returns {Promise<boolean>}
+     */
+    static async isFavorite(aid, signal, recorder = null) {
       const url = new URL(FAVORITE_STATUS_URL);
       url.searchParams.set("aid", aid);
-      const payload = await AccountSourceStore.fetchApiPayload(url.href, signal);
+      const payload = await AccountSourceStore.fetchApiPayload(url.href, signal, recorder);
       if (!AccountSourceStore.isSuccessfulPayload(payload) || typeof payload.data?.favoured !== "boolean") {
         throw new Error("Favorite state unavailable");
       }
@@ -4370,9 +4384,10 @@
      * @param {AbortSignal} signal
      * @param {string} language
      * @returns {Promise<AccountSourceFetchRecord>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async fetchSourceRecord(kind, url, signal, language) {
-      const payload = await AccountSourceStore.fetchApiPayload(url, signal);
+    static async fetchSourceRecord(kind, url, signal, language, recorder = null) {
+      const payload = await AccountSourceStore.fetchApiPayload(url, signal, recorder);
 
       if (!AccountSourceStore.isSuccessfulPayload(payload)) {
         throw Object.assign(new Error("Account source request failed"), { code: payload?.code });
@@ -4405,14 +4420,15 @@
      *
      * @param {ArchiveVideoIdentity} identity
      * @returns {Promise<void>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async addWatchLaterApiItem(identity) {
+    static async addWatchLaterApiItem(identity, recorder = null) {
       const body = AccountSourceStore.csrfApiBody();
       body.set(identity.queryName, identity.queryValue);
 
       const payload = await AccountSourceStore.postApiPayload(
         WATCH_LATER_ADD_URL,
-        body
+        body, recorder
       );
 
       if (!AccountSourceStore.isSuccessfulPayload(payload)) {
@@ -4428,14 +4444,15 @@
      *
      * @param {string} aid
      * @returns {Promise<void>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async deleteWatchLaterApiItem(aid) {
+    static async deleteWatchLaterApiItem(aid, recorder = null) {
       const body = AccountSourceStore.csrfApiBody();
       body.set("aid", aid);
 
       const payload = await AccountSourceStore.postApiPayload(
         WATCH_LATER_DELETE_URL,
-        body
+        body, recorder
       );
 
       if (!AccountSourceStore.isSuccessfulPayload(payload)) {
@@ -4469,9 +4486,10 @@
      * @param {string} url
      * @param {AbortSignal} signal
      * @returns {Promise<object>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async fetchApiPayload(url, signal) {
-      return AccountSourceStore.requestApiPayload(url, { signal });
+    static async fetchApiPayload(url, signal, recorder = null) {
+      return AccountSourceStore.requestApiPayload(url, { signal }, recorder);
     }
 
     /**
@@ -4480,15 +4498,16 @@
      * @param {string} url
      * @param {URLSearchParams} body
      * @returns {Promise<object>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async postApiPayload(url, body) {
+    static async postApiPayload(url, body, recorder = null) {
       return AccountSourceStore.requestApiPayload(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
         },
         body
-      });
+      }, recorder);
     }
 
     /**
@@ -4497,22 +4516,27 @@
      * @param {string} url
      * @param {RequestInit} [options]
      * @returns {Promise<object>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async requestApiPayload(url, options = {}) {
-      const response = await fetch(url, {
-        ...options,
-        credentials: "include",
-        headers: {
-          Accept: "application/json, text/plain, */*",
-          ...(options.headers ?? {})
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    static async requestApiPayload(url, options = {}, recorder = null) {
+      const sample = recorder?.beginRequest();
+      try {
+        const response = await fetch(url, {
+          ...options,
+          credentials: "include",
+          headers: {
+            Accept: "application/json, text/plain, */*",
+            ...(options.headers ?? {})
+          }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = AccountSourceStore.parseApiPayload(await response.text());
+        recorder?.endRequest(sample, !AccountSourceStore.isSuccessfulPayload(payload));
+        return payload;
+      } catch (error) {
+        recorder?.endRequest(sample, true, options.signal?.aborted || error.name === "AbortError");
+        throw error;
       }
-
-      return AccountSourceStore.parseApiPayload(await response.text());
     }
 
     /**
@@ -4580,8 +4604,10 @@
      * Creates a preview store.
      *
      * @param {() => void} onChange
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    constructor(onChange) {
+    constructor(onChange, recorder = null) {
+      this.performance = recorder;
       this.onChange = onChange;
       this.enabled = true;
       /** @type {Map<string, VideoPreviewRecord>} */
@@ -4649,6 +4675,7 @@
 
       const record = this.records.get(identity.key);
       if (record?.state === "available" && record.thumbnailUrl) {
+        this.performance?.count(PerformanceCounter.CACHE);
         return {
           ...item,
           thumbnailUrl: record.thumbnailUrl
@@ -4709,7 +4736,7 @@
         identity
       });
 
-      VideoPreviewStore.fetchPreview(identity, controller.signal)
+      VideoPreviewStore.fetchPreview(identity, controller.signal, this.performance)
         .then((thumbnailUrl) => {
           if (this.controllers.get(identity.key) !== controller) {
             return;
@@ -4760,11 +4787,12 @@
      * @param {ArchiveVideoIdentity} identity
      * @param {AbortSignal} signal
      * @returns {Promise<string | null>}
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    static async fetchPreview(identity, signal) {
+    static async fetchPreview(identity, signal, recorder = null) {
       const payload = await AccountSourceStore.fetchApiPayload(
         VideoPreviewStore.sourceUrl(identity),
-        signal
+        signal, recorder
       );
 
       if (!AccountSourceStore.isSuccessfulPayload(payload)) {
@@ -6295,8 +6323,10 @@
      *
      * @param {Document} document
      * @param {VideoPreviewStore} videoPreviews
+     * @param {RuntimePerformance | null} [recorder] Optional runtime measurements.
      */
-    constructor(document, videoPreviews) {
+    constructor(document, videoPreviews, recorder = null) {
+      this.performance = recorder;
       this.document = document;
       this.videoPreviews = videoPreviews;
       this.preferences = SettingsPreference.read();
@@ -9898,6 +9928,7 @@
 
     /**
      * Renders visible cards, a small buffer, and any active interaction targets.
+     * Measures updates from reconciliation, scrolling, and preview completion.
      *
      * @param {object} [options]
      * @param {boolean} [options.resetScroll]
@@ -9907,7 +9938,17 @@
      * @param {boolean} [options.focusLastControl] Focus the target's last control.
      * @param {number} [options.restoredScrollLeft] Saved folder offset, applied after row sizing.
      */
-    renderRailWindow({
+    renderRailWindow(options = {}) {
+      const sample = this.performance?.begin();
+      try {
+        return this.updateRailWindow(options);
+      } finally {
+        this.performance?.end(PerformanceWork.RAIL, sample);
+      }
+    }
+
+    /** Applies a virtual rail window while preserving native scrolling and focus. */
+    updateRailWindow({
       resetScroll = false,
       centerIndex = -1,
       focusIndex = -1,
@@ -11040,21 +11081,22 @@
      */
     constructor(document) {
       this.document = document;
+      this.performance = new RuntimePerformance();
       this.discovery = new RegionDiscovery(document);
       this.navigation = new NativeVideoNavigation(document);
       this.loadingCover = new LoadingCover(document, this.discovery,
         () => LanguageResolver.resolve(this.document, this.preferences.language));
       this.videoPreviews = new VideoPreviewStore(() => {
         this.layout.scheduleRailRender();
-      });
-      this.layout = new LayoutRoot(document, this.videoPreviews);
+      }, this.performance);
+      this.layout = new LayoutRoot(document, this.videoPreviews, this.performance);
       this.videoLoading = new VideoLoadingState(document, this.layout, this.navigation, () => {
         this.reconcile(false);
-      });
+      }, this.performance);
       this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
-        this.scheduleReconcile(false, ReconcilePriority.LAZY);
-      });
+        this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.ACCOUNT);
+      }, this.performance);
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
       /** @type {FavoriteActionState | null} */
@@ -11160,6 +11202,7 @@
      * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
+      this.performance.setEnabled(false);
       this.started = false;
       if (this.visibilityHandler) {
         this.document.removeEventListener("visibilitychange", this.visibilityHandler);
@@ -11231,7 +11274,7 @@
      */
     startPageReconciliation(resetSourceRoute) {
       this.refreshAccountSources();
-      this.scheduleReconcile(resetSourceRoute, ReconcilePriority.URGENT);
+      this.scheduleReconcile(resetSourceRoute, ReconcilePriority.URGENT, ReconcileCause.PAGE);
       this.scheduleSettlingReconciles();
     }
 
@@ -11240,11 +11283,14 @@
      *
      * @param {boolean} [resetSourceRoute]
      * @param {string} [priority]
+     * @param {string} [cause] Closed reason counted before scheduling or deferral.
      */
     scheduleReconcile(
       resetSourceRoute = false,
-      priority = ReconcilePriority.LAZY
+      priority = ReconcilePriority.LAZY,
+      cause = ReconcileCause.ACTION
     ) {
+      this.performance.request(cause);
       this.pendingSourceRouteReset ||= resetSourceRoute;
       if (this.document.hidden) return;
       this.reconcileScheduler.request(resetSourceRoute, priority);
@@ -11267,7 +11313,7 @@
             return;
           }
 
-          this.scheduleReconcile(false, ReconcilePriority.LAZY);
+          this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.SETTLING);
         }, delay);
 
         this.settlingTimers.push(timer);
@@ -11301,7 +11347,7 @@
       this.layout.releaseForNativePrime();
 
       const afterPrime = () => {
-        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.COMMENTS);
         this.scheduleSettlingReconciles();
       };
 
@@ -11326,6 +11372,16 @@
     reconcile(resetSourceRoute) {
       this.pendingSourceRouteReset ||= resetSourceRoute;
       if (this.document.hidden) return;
+      const sample = this.performance.begin();
+      try {
+        this.reconcilePage();
+      } finally {
+        this.performance.end(PerformanceWork.RECONCILE, sample);
+      }
+    }
+
+    /** Reconciles the visible page after pending source state has been captured. */
+    reconcilePage() {
       BilibiliThemeSync.sync(this.document);
 
       if (!this.isWatchPage()) {
@@ -11342,7 +11398,13 @@
       }
 
       const language = this.resolveUiLanguage();
-      const regions = this.discovery.discover();
+      const discoverySample = this.performance.begin();
+      let regions;
+      try {
+        regions = this.discovery.discover();
+      } finally {
+        this.performance.end(PerformanceWork.DISCOVERY, discoverySample);
+      }
       this.reconcileFavoriteAction(regions.actions);
       if (this.nextPageSourceRouteState?.sourceKind === SourceKind.FAVORITES) {
         this.accountSources.restoreFavoriteFolder(this.nextPageSourceRouteState.folderId);
@@ -11380,7 +11442,7 @@
         !mountedComments &&
         (this.lazyPrimer.timer !== null ||
           this.lazyPrimer.prime(this.pageKey, () => {
-            this.scheduleReconcile(false, ReconcilePriority.LAZY);
+            this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.COMMENTS);
           }))
       ) {
         /*
@@ -11392,26 +11454,31 @@
         regions.commentState = CommentPaneState.RETRY;
       }
 
-      this.layout.render(
-        regions,
-        this.pendingSourceRouteReset,
-        this.activationControl,
-        language,
-        this.accountSources.currentWatchLaterCount(),
-        () => this.reloadComments(),
-        () => this.scheduleReconcile(false, ReconcilePriority.LAZY),
-        (targetUrl) => this.addWatchLaterItem(targetUrl),
-        (aid) => this.deleteWatchLaterItem(aid),
-        (sourceKind, targetUrl, event, folderId) =>
-          this.navigateVideoCard(sourceKind, targetUrl, event, folderId),
-        (state) => this.storeSourceRouteState(state),
-        sourceRouteState,
-        (sourceKind) => this.loadMoreAccountSource(sourceKind),
-        () => this.accountSources.revealWatchLaterItem(window.location.href),
-        () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
-        (source) => this.refreshRail(source),
-        (action) => this.handleFavoriteAction(action)
-      );
+      const layoutSample = this.performance.begin();
+      try {
+        this.layout.render(
+          regions,
+          this.pendingSourceRouteReset,
+          this.activationControl,
+          language,
+          this.accountSources.currentWatchLaterCount(),
+          () => this.reloadComments(),
+          () => this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.COMMENTS),
+          (targetUrl) => this.addWatchLaterItem(targetUrl),
+          (aid) => this.deleteWatchLaterItem(aid),
+          (sourceKind, targetUrl, event, folderId) =>
+            this.navigateVideoCard(sourceKind, targetUrl, event, folderId),
+          (state) => this.storeSourceRouteState(state),
+          sourceRouteState,
+          (sourceKind) => this.loadMoreAccountSource(sourceKind),
+          () => this.accountSources.revealWatchLaterItem(window.location.href),
+          () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
+          (source) => this.refreshRail(source),
+          (action) => this.handleFavoriteAction(action)
+        );
+      } finally {
+        this.performance.end(PerformanceWork.LAYOUT, layoutSample);
+      }
       this.settingsView.update(this.preferences, this.enabled, language);
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
@@ -11439,7 +11506,7 @@
           this.layout.destroy();
           this.renderFloatingActivation();
         }
-        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.RECOVERY);
       }, PLAYER_RECOVERY_TIMEOUT_MS);
     }
 
@@ -11459,12 +11526,14 @@
         const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwned(mutation.target));
 
         if (hasPageMutation) {
+          this.performance.count(PerformanceCounter.MUTATIONS);
           const playerArrived = this.enabled && this.isWatchPage() &&
             !this.layout.playerNode?.isConnected &&
             this.discovery.findPlayerRegion();
           this.scheduleReconcile(
             false,
-            playerArrived ? ReconcilePriority.URGENT : ReconcilePriority.LAZY
+            playerArrived ? ReconcilePriority.URGENT : ReconcilePriority.LAZY,
+            ReconcileCause.MUTATION
           );
         }
       });
@@ -11501,6 +11570,7 @@
 
     /** Shares one visible-page timer between navigation and slow loading checks. */
     pollPageState() {
+      this.performance.count(PerformanceCounter.NAVIGATION);
       this.handlePotentialNavigation();
       if (this.videoLoading.timer === null) this.videoLoading.revealWhenReady();
     }
@@ -11510,6 +11580,7 @@
      * Settings, storage, history, and visibility events remain available while off.
      */
     updateRuntimeActivity() {
+      this.performance.setState(this.enabled, this.document.hidden);
       if (!this.started) return;
       if (this.enabled && !this.document.hidden) {
         this.navigation.start();
@@ -11546,7 +11617,7 @@
       if (!this.handlePotentialNavigation()) {
         this.prepareMount();
         if (this.pendingAccountRefresh) this.startPageReconciliation(false);
-        else this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        else this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.VISIBILITY);
       }
       this.videoLoading.revealWhenReady();
     }
@@ -11558,7 +11629,7 @@
     observeThemePreference() {
       this.themePreference = window.matchMedia(BROWSER_DARK_SCHEME_QUERY);
       this.themeChangeHandler = () => {
-        this.scheduleReconcile(false, ReconcilePriority.LAZY);
+        this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.THEME);
       };
       this.themePreference.addEventListener("change", this.themeChangeHandler);
     }
@@ -11782,17 +11853,26 @@
      * @param {boolean} [persist] False applies another tab's storage event.
      */
     setPreferences(preferences, persist = true) {
+      const previous = this.preferences;
       this.preferences = SettingsPreference.normalize(preferences);
+      const runtimeChanged = previous.language !== this.preferences.language ||
+        ["features", "sources", "pinnedActions"].some((group) =>
+          Object.keys(this.preferences[group]).some((key) =>
+            !(group === "features" && key === "performance") &&
+            previous[group][key] !== this.preferences[group][key]));
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();
       this.settingsView.update(this.preferences, this.enabled, this.resolveUiLanguage());
       if (persist) this.settingsView.showSaveResult(saved);
+      if (!runtimeChanged) return;
       this.refreshAccountSources();
-      this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.SETTINGS);
     }
 
     /** Shares one preference snapshot with layout and demand-driven stores. */
     applyFeaturePreferences() {
+      this.performance.setState(this.enabled, this.document.hidden);
+      this.performance.setEnabled(this.preferences.features.performance);
       this.layout.preferences = this.preferences;
       if (this.favoriteActionState?.pending && !this.preferences.features.favoriteToSelectedFolder) {
         this.clearFavoriteActionState();
@@ -11930,7 +12010,7 @@
         state.nativeDialog = null;
         state.waitingForNative = false;
         const revision = state.nativeRevision;
-        void AccountSourceStore.isFavorite(state.aid, state.controller.signal).then((saved) => {
+        void AccountSourceStore.isFavorite(state.aid, state.controller.signal, this.performance).then((saved) => {
           if (!this.isFavoriteActionCurrent(state) || revision !== state.nativeRevision ||
               state.accountId !== this.accountSources.favoriteFolders.accountId) return;
           state.saved = saved;
@@ -12365,7 +12445,7 @@
         return;
       }
 
-      controller.scheduleReconcile(false, ReconcilePriority.LAZY);
+      controller.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.CATALOG);
     };
 
     void UiStrings.loadSupported().then(

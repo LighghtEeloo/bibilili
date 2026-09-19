@@ -176,3 +176,48 @@ test("stopping removes lifecycle listeners and prevents visibility resumption", 
   assert.equal(timers.size, 0);
   for (const callbacks of listeners.values()) assert.equal(callbacks.size, 0);
 });
+
+test("performance recording adds no scheduled work and accounts for hidden and off periods", (t) => {
+  const { controller, timers, intervals, visibility } = activityFixture(t);
+  controller.start();
+  const before = [...timers.keys()];
+  const requests = controller.accountSources.refresh.mock.callCount();
+  let now = 0;
+  controller.performance.now = () => now;
+  controller.setPreferences({ ...controller.preferences,
+    features: { ...controller.preferences.features, performance: true } }, false);
+  assert.deepEqual([...timers.keys()], before);
+  assert.equal(intervals.size, 1);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), requests);
+  controller.pollPageState();
+  now = 100;
+  visibility(true);
+  controller.scheduleReconcile(false);
+  now = 300;
+  controller.setEnabled(false, false);
+  now = 600;
+  const { states } = controller.performance.snapshot();
+  assert.deepEqual(Object.values(states).map((state) => state.elapsedMs), [100, 200, 300]);
+  assert.equal(states.visible.counters.navigationTicks, 1);
+  assert.equal(states.hidden.counters.navigationTicks, 0);
+  assert.equal(states.hidden.counters.reconcileRequests, 1);
+  assert.equal(states.hidden.work.reconcile.count, 0);
+  assert.equal(states.off.counters.navigationTicks, 0);
+  assert.equal(timers.size, 0);
+  assert.equal(intervals.size, 0);
+});
+
+test("recording distinguishes coalesced scheduling requests from executed work", (t) => {
+  const { controller } = activityFixture(t);
+  const { ReconcileCause } = global.__bibililiPerformance;
+  controller.performance.setEnabled(true);
+  t.mock.method(controller, "reconcilePage", () => {});
+  controller.scheduleReconcile(false, undefined, ReconcileCause.MUTATION);
+  controller.scheduleReconcile(false, undefined, ReconcileCause.ACCOUNT);
+  controller.reconcileScheduler.run();
+  const state = controller.performance.snapshot().states.visible;
+  assert.equal(state.counters.reconcileRequests, 2);
+  assert.equal(state.work.reconcile.count, 1);
+  assert.equal(state.causes.mutation, 1);
+  assert.equal(state.causes.account, 1);
+});
