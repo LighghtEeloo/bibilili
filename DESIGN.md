@@ -123,10 +123,11 @@ borders, text, and controls. Static fallbacks cover missing native variables.
 ## UI Language
 
 The UI language is the language used by extension-owned labels and accessible
-names. Bibilili resolves it from Bilibili document language markers, storage or
-cookie locale markers, localized page chrome, the extension i18n UI language,
-and then the browser language. The resolved language selects a packaged
-extension i18n catalog.
+names. Settings offers Automatic, English, Simplified Chinese, and Traditional
+Chinese. An explicit choice selects its packaged extension i18n catalog.
+Automatic is the default. It resolves the language from Bilibili document
+language markers, storage or cookie locale markers, localized page chrome,
+the extension i18n UI language, and then the browser language.
 
 Extension-owned labels and accessible names are message keys. Source kinds stay
 language-neutral; the renderer maps them to localized button text and rail
@@ -165,10 +166,11 @@ the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
 with Features and Action bar tabs.
 
-Features controls the description and tags, missing-thumbnail enrichment,
-direct favorite saves, and each video source. All features and sources default
-to enabled. Disabling the description restores its native node and removes its
-extension presentation.
+Features begins with the UI language selector. Language names appear in their
+own language. The tab also controls the description and tags, missing-thumbnail
+enrichment, direct favorite saves, and each video source. All features and
+sources default to enabled. Disabling the description restores its native node
+and removes its extension presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails. Disabling a source removes it from routing and source
 root marking. A disabled account source cancels outstanding list requests and
@@ -177,6 +179,9 @@ appears before Watch later in Features, as it does in the dock. Disabling
 Favorites closes its picker and cancels folder video requests. Folder metadata
 remains available to direct saves while that feature is enabled. The current-video
 favorite action retains its independent behavior and Action bar preferences.
+Its setting explains direct saves through a question-mark help button beside
+the label. The explanation appears on hover or keyboard focus; activating the
+help button also reveals it for touch input.
 
 Action bar controls whether each watch action or list tool appears on the bar
 or in More. All actions default to the bar. Show More button defaults to enabled
@@ -184,12 +189,12 @@ and displays the launcher when More contains available actions. Disabling it
 hides the launcher and closes its popup while retaining action placements.
 Source order and the Power and Settings entry points have fixed placement.
 
-Preferences use a validated record of feature, source, and action booleans in
-Bilibili origin-local storage. Changes apply immediately, persist across videos
-and reloads, and propagate through storage events to other Bilibili tabs.
+Preferences use a validated record of UI language and feature, source, and action
+booleans in Bilibili origin-local storage. Changes apply immediately, persist
+across videos and reloads, and propagate through storage events to other Bilibili tabs.
 Unavailable storage leaves the current page's choices active and displays a
-save-failure status. Restore defaults resets feature and placement preferences
-while retaining the activation state and pane dimensions.
+save-failure status. Restore defaults resets language, feature, source, and
+placement preferences while retaining the activation state and pane dimensions.
 
 Settings rows keep their control identity through reconciliation. Native watch
 icons use the same sanitized visual renderer and watch-later snapshot as dock

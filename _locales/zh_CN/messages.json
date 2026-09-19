@@ -213,6 +213,18 @@
     "message": "没有匹配的视频",
     "description": "Rail heading when the search has no matches."
   },
+  "languageName": {
+    "message": "简体中文",
+    "description": "This language's own name, shown in the language selector."
+  },
+  "settingsLanguageLabel": {
+    "message": "语言",
+    "description": "Label for the extension UI language selector."
+  },
+  "settingsLanguageAutomaticLabel": {
+    "message": "自动",
+    "description": "Language option that uses page and browser language detection."
+  },
   "settingsLabel": {
     "message": "设置",
     "description": "Label for the settings popup and its launcher."
@@ -257,6 +269,10 @@
     "message": "直接收藏到选中的收藏夹",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
   },
+  "settingsHelpLabel": {
+    "message": "说明：$1",
+    "description": "Accessible name for a settings help button, including the setting name."
+  },
   "settingsFavoriteFolderHint": {
     "message": "收藏按钮未点亮时直接保存到当前收藏夹，无需显示收藏列表；已点亮时仍打开哔哩哔哩的收藏管理。",
     "description": "Explains the selected-folder shortcut and native handling for existing favorites."
@@ -283,7 +299,7 @@
   },
   "settingsRestoreLabel": {
     "message": "恢复默认",
-    "description": "Resets feature and placement preferences."
+    "description": "Resets language, feature, source, and placement preferences."
   },
   "settingsAutosaveLabel": {
     "message": "更改立即生效",

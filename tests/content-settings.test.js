@@ -5,6 +5,7 @@ const { railFixture } = require("./helpers/rail-dom.js");
 const { AccountSourceStore, BibililiController, LayoutRoot, SourceKind, WatchActionKind, VideoPreviewStore } = loadContentRuntime();
 const { SettingsPreference } = global.__bibililiStorageState;
 const { UiControl } = global.__bibililiControls;
+const { UiLanguage, UiMessage, UiStrings } = global.__bibililiI18n;
 
 /** Uses the real controller and settings definitions with the existing small DOM model. */
 function settingsFixture(t) {
@@ -41,8 +42,9 @@ function settingsFixture(t) {
 
 test("settings enable every feature, source, and pin by default and validate saved values", () => {
   const defaults = SettingsPreference.defaults();
+  assert.equal(defaults.language, null);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
-  for (const group of Object.values(defaults)) {
+  for (const group of [defaults.features, defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
   assert.deepEqual(defaults.features, { description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true });
@@ -69,6 +71,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   value.features.thumbnails = false;
   value.features.favoriteToSelectedFolder = false;
   value.pinnedActions.coin = false;
+  value.language = UiLanguage.TRADITIONAL_CHINESE;
   assert.equal(SettingsPreference.write(value), true);
   assert.deepEqual(SettingsPreference.read(), value);
   global.localStorage.setItem(SettingsPreference.key, "not json");
@@ -76,6 +79,84 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new ThrowingStorage();
   assert.equal(SettingsPreference.write(value), false);
   assert.deepEqual(SettingsPreference.read(), SettingsPreference.defaults());
+});
+
+test("language preferences accept only packaged languages and default to automatic", () => {
+  for (const language of Object.values(UiLanguage)) {
+    assert.equal(SettingsPreference.normalize({ language }).language, language);
+  }
+  for (const language of [null, undefined, "", "de", "zh-CN", "toString", {}, ["en"], false]) {
+    assert.equal(SettingsPreference.normalize({ language }).language, null);
+  }
+});
+
+test("the language selector updates labels in place and restores automatic detection", async (t) => {
+  t.mock.method(global, "fetch", async (url) => ({ ok: true, json: async () => require(`../${url}`) }));
+  await UiStrings.loadSupported();
+  const { view, controller, document } = settingsFixture(t);
+  document.body.setAttribute("lang", "zh-CN");
+  t.mock.method(view.panel, "position", () => {});
+  t.mock.method(controller, "isWatchPage", () => true);
+  t.mock.method(controller.accountSources, "refresh", async () => {});
+  view.ensure();
+  view.panel.isOpen = true;
+  controller.setPreferences({ ...controller.preferences, sources: { ...controller.preferences.sources, history: false } });
+  const select = view.languageSelect;
+  const options = [...select.children];
+  assert.equal(select.value, "");
+  assert.equal(controller.uiLanguage, UiLanguage.SIMPLIFIED_CHINESE);
+  assert.equal(options[0].textContent, "自动");
+  assert.deepEqual(options.slice(1).map((option) => option.textContent), ["English", "简体中文", "繁體中文"]);
+  select.focus();
+  for (const language of Object.values(UiLanguage)) {
+    select.value = language;
+    select.dispatch("change");
+    assert.equal(controller.uiLanguage, language);
+    assert.equal(SettingsPreference.read().language, language);
+    assert.equal(view.panel.root.lang, language);
+    assert.equal(view.panel.root.getAttribute("aria-label"), UiStrings.message(UiMessage.SETTINGS_LABEL, language));
+    assert.equal(controller.loadingCover.resolveLanguage(), language);
+    assert.equal(controller.preferences.sources.history, false);
+    assert.equal(document.body.getAttribute("lang"), "zh-CN");
+    assert.equal(document.activeElement, select);
+    controller.resolveUiLanguage();
+    view.update(controller.preferences, true, language);
+    assert.equal(view.languageSelect, select);
+    assert.deepEqual([...select.children], options);
+  }
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 4);
+  view.selectTab("features");
+  assert.equal(select.parentElement.parentElement, view.panels.get("features"));
+  assert.equal(view.panels.get("features").hidden, false);
+  view.selectTab("actions");
+  assert.equal(view.panels.get("features").hidden, true);
+  view.selectTab("features");
+  select.value = "";
+  select.dispatch("change");
+  assert.equal(controller.uiLanguage, UiLanguage.SIMPLIFIED_CHINESE);
+  assert.equal(SettingsPreference.read().language, null);
+  select.value = UiLanguage.ENGLISH;
+  select.dispatch("change");
+  view.panel.root.querySelector(".bibilili-settings-restore").dispatch("click");
+  assert.equal(select.value, "");
+  assert.equal(controller.uiLanguage, UiLanguage.SIMPLIFIED_CHINESE);
+  assert.equal(controller.preferences.sources.history, true);
+});
+
+test("a language choice stays active with blocked storage while the layout is disabled", (t) => {
+  const { view, controller, document } = settingsFixture(t);
+  document.body.setAttribute("lang", "zh-CN");
+  global.localStorage = new ThrowingStorage();
+  controller.enabled = false;
+  view.ensure();
+  view.languageSelect.value = UiLanguage.ENGLISH;
+  view.languageSelect.dispatch("change");
+  assert.equal(controller.resolveUiLanguage(), UiLanguage.ENGLISH);
+  assert.equal(controller.loadingCover.resolveLanguage(), UiLanguage.ENGLISH);
+  assert.equal(view.language, UiLanguage.ENGLISH);
+  assert.equal(view.statusKey, UiMessage.SETTINGS_PAGE_ONLY_LABEL);
+  assert.equal(view.languageSelect.value, UiLanguage.ENGLISH);
+  assert.equal(controller.enabled, false);
 });
 
 test("the direct-favorite switch uses the shared settings row and persistence", (t) => {
@@ -238,10 +319,13 @@ test("storage events apply another tab's preferences without writing them back",
   const preferences = SettingsPreference.defaults();
   preferences.sources.history = false;
   preferences.pinnedActions.like = false;
+  preferences.language = UiLanguage.TRADITIONAL_CHINESE;
   SettingsPreference.write(preferences);
   t.mock.method(SettingsPreference, "write", () => { throw new Error("unexpected write"); });
   controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
   assert.equal(controller.preferences.sources.history, false);
+  assert.equal(controller.uiLanguage, UiLanguage.TRADITIONAL_CHINESE);
+  assert.equal(controller.settingsView.language, UiLanguage.TRADITIONAL_CHINESE);
   assert.equal(controller.layout.preferences.pinnedActions.like, false);
   assert.equal(controller.accountSources.enabledKinds.has(SourceKind.HISTORY), false);
   controller.onStorageChange({ key: SettingsPreference.key, storageArea: new FakeStorage() });

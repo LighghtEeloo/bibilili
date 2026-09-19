@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const { UiLanguage } = window.__bibililiI18n;
+
   const ENABLED_STORAGE_KEY = "bibilili:enabled";
   const CARD_NAVIGATION_ORIGIN_STORAGE_KEY =
     "bibilili:card-navigation-origin";
@@ -72,7 +74,7 @@
     }
   }
 
-  /** Persists feature switches, enabled sources, and action placement on Bilibili. */
+  /** Persists UI language, feature switches, enabled sources, and action placement. */
   class SettingsPreference {
     /** @returns {string} Origin-local key observed across Bilibili tabs. */
     static get key() { return SETTINGS_STORAGE_KEY; }
@@ -80,6 +82,7 @@
     /** @returns {SettingsPreferenceRecord} Fresh defaults in canonical key order. */
     static defaults() {
       return {
+        language: null,
         features: { ...FEATURE_DEFAULTS },
         sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
         pinnedActions: { ...storageConfig.actionDefaults }
@@ -87,13 +90,15 @@
     }
 
     /**
-     * Keeps booleans from known keys and supplies defaults for missing values.
+     * Keeps a supported language and known booleans, defaulting missing values.
      * @param {unknown} value
      * @returns {SettingsPreferenceRecord}
      */
     static normalize(value) {
       const result = SettingsPreference.defaults();
-      for (const [group, defaults] of Object.entries(result)) {
+      if (Object.values(UiLanguage).includes(value?.language)) result.language = value.language;
+      for (const group of ["features", "sources", "pinnedActions"]) {
+        const defaults = result[group];
         for (const key of Object.keys(defaults)) {
           if (typeof value?.[group]?.[key] === "boolean") defaults[key] = value[group][key];
         }
@@ -472,6 +477,7 @@
 
   /**
    * @typedef {object} SettingsPreferenceRecord
+   * @property {string | null} language Supported UI language; null uses automatic detection.
    * @property {{ description: boolean, thumbnails: boolean, favoriteToSelectedFolder: boolean, moreButton: boolean }} features Optional presentations and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.

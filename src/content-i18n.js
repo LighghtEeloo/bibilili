@@ -20,6 +20,10 @@
   const UiMessage = Object.freeze({
     EXTENSION_NAME: "extensionName",
     SETTINGS_LABEL: "settingsLabel",
+    SETTINGS_HELP_LABEL: "settingsHelpLabel",
+    SETTINGS_LANGUAGE_LABEL: "settingsLanguageLabel",
+    SETTINGS_LANGUAGE_AUTOMATIC_LABEL: "settingsLanguageAutomaticLabel",
+    LANGUAGE_NAME: "languageName",
     CLOSE_LABEL: "closeLabel",
     MORE_ACTIONS_LABEL: "moreActionsLabel",
     SETTINGS_ENABLED_LABEL: "settingsEnabledLabel",
@@ -480,16 +484,19 @@
   }
 
   /**
-   * Resolves extension UI language from Bilibili page language state.
+   * Resolves extension UI language from an explicit preference or Bilibili state.
    */
   class LanguageResolver {
     /**
      * Returns the current UI language for extension-owned controls.
      *
      * @param {Document} document
+     * @param {string | null} [preference] Supported language, or null for automatic detection.
      * @returns {string}
      */
-    static resolve(document) {
+    static resolve(document, preference = null) {
+      if (Object.values(UiLanguage).includes(preference)) return preference;
+
       return (
         LanguageResolver.documentLanguage(document) ??
         LanguageResolver.storedLanguage("localStorage") ??

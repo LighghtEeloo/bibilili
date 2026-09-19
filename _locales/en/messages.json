@@ -213,6 +213,18 @@
     "message": "No matching videos",
     "description": "Rail heading when the search has no matches."
   },
+  "languageName": {
+    "message": "English",
+    "description": "This language's own name, shown in the language selector."
+  },
+  "settingsLanguageLabel": {
+    "message": "Language",
+    "description": "Label for the extension UI language selector."
+  },
+  "settingsLanguageAutomaticLabel": {
+    "message": "Automatic",
+    "description": "Language option that uses page and browser language detection."
+  },
   "settingsLabel": {
     "message": "Settings",
     "description": "Label for the settings popup and its launcher."
@@ -257,6 +269,10 @@
     "message": "Save favorites to selected folder",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
   },
+  "settingsHelpLabel": {
+    "message": "Help: $1",
+    "description": "Accessible name for a settings help button, including the setting name."
+  },
   "settingsFavoriteFolderHint": {
     "message": "Unlit Favorite buttons save to the current folder even when the Favorites rail is hidden. Lit buttons open Bilibili’s controls.",
     "description": "Explains the selected-folder shortcut and native handling for existing favorites."
@@ -283,7 +299,7 @@
   },
   "settingsRestoreLabel": {
     "message": "Restore defaults",
-    "description": "Resets feature and placement preferences."
+    "description": "Resets language, feature, source, and placement preferences."
   },
   "settingsAutosaveLabel": {
     "message": "Changes apply immediately",

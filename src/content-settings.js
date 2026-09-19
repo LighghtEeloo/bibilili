@@ -2,12 +2,12 @@
   "use strict";
 
   const { UiControl, PopupPanel } = window.__bibililiControls;
-  const { UiMessage, UiStrings } = window.__bibililiI18n;
+  const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
   const { SettingsPreference } = window.__bibililiStorageState;
   const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions" });
 
   /**
-   * Renders persisted feature and placement preferences in a reusable popup.
+   * Renders persisted language, feature, and placement preferences in a reusable popup.
    * Native action icons are supplied by the layout's existing visual renderer.
    */
   class SettingsView {
@@ -21,6 +21,8 @@
       this.enabled = true;
       this.language = "en";
       this.labels = new Map();
+      this.helpButtons = new Map();
+      this.languageOptions = new Map();
       this.inputs = new Map();
       this.actions = new Map();
       this.tabs = new Map();
@@ -97,13 +99,13 @@
         this.panels.set(key, panel);
       }
       const features = this.panels.get(SettingsTab.FEATURES);
+      features.append(this.languageRow());
       features.append(this.text("h3", UiMessage.SETTINGS_WATCH_PAGE_LABEL));
-      for (const [key, message] of [
+      for (const [key, message, hint] of [
         ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL],
         ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
-        ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL]
-      ]) this.addPreferenceSwitch(features, "features", key, message);
-      features.append(this.text("p", UiMessage.SETTINGS_FAVORITE_FOLDER_HINT, "bibilili-settings-hint"));
+        ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT]
+      ]) this.addPreferenceSwitch(features, "features", key, message, hint);
       features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {
         this.addPreferenceSwitch(features, "sources", source.kind, source.message);
@@ -154,21 +156,67 @@
       return element;
     }
 
-    /** Creates a labeled native checkbox switch with a single change handler. */
-    switchRow(key, message, onChange) {
+    /** Creates a native language selector with each language named in its own language. */
+    languageRow() {
       const row = this.element("label", "bibilili-settings-row");
+      this.languageSelect = this.element("select", "bibilili-settings-select");
+      this.languageSelect.name = "language";
+      const automatic = this.text("option", UiMessage.SETTINGS_LANGUAGE_AUTOMATIC_LABEL);
+      automatic.value = "";
+      this.languageSelect.append(automatic);
+      for (const language of Object.values(UiLanguage)) {
+        const option = this.element("option");
+        option.value = language;
+        option.lang = language;
+        this.languageOptions.set(option, language);
+        this.languageSelect.append(option);
+      }
+      this.languageSelect.addEventListener("change", () => {
+        this.options.onChange({ ...this.preferences, language: this.languageSelect.value || null });
+      });
+      row.append(this.text("span", UiMessage.SETTINGS_LANGUAGE_LABEL), this.languageSelect);
+      return row;
+    }
+
+    /** Creates a labeled native switch, keeping optional help outside its clickable label. */
+    switchRow(key, message, onChange, hint = null) {
+      const row = this.element(hint ? "div" : "label",
+        `bibilili-settings-row${hint ? " bibilili-settings-row-with-help" : ""}`);
       const input = this.element("input", "bibilili-settings-switch");
       input.type = "checkbox";
       input.name = key;
       input.setAttribute("role", "switch");
       input.addEventListener("change", () => onChange(input.checked));
-      row.append(this.text("span", message), input);
+      if (hint) {
+        input.id = `bibilili-settings-${key}`;
+        const label = this.text("label", message);
+        label.setAttribute("for", input.id);
+        const name = this.element("span", "bibilili-settings-name");
+        name.append(label, this.helpControl(key, message, hint));
+        row.append(name, input);
+      } else {
+        row.append(this.text("span", message), input);
+      }
       return { row, input };
     }
 
+    /** Shows localized help on hover or focus; activation also focuses it for touch input. */
+    helpControl(key, message, hint) {
+      const help = this.element("span", "bibilili-settings-help");
+      const button = UiControl.button(this.document, "bibilili-settings-help-button", () => button.focus());
+      button.textContent = "?";
+      const tooltip = this.text("span", hint, "bibilili-settings-tooltip");
+      tooltip.id = `bibilili-settings-${key}-help`;
+      tooltip.setAttribute("role", "tooltip");
+      button.setAttribute("aria-describedby", tooltip.id);
+      this.helpButtons.set(button, message);
+      help.append(button, tooltip);
+      return help;
+    }
+
     /** Adds one switch from the shared preference record. */
-    addPreferenceSwitch(parent, group, key, message) {
-      const { row, input } = this.switchRow(key, message, (checked) => this.change(group, key, checked));
+    addPreferenceSwitch(parent, group, key, message, hint = null) {
+      const { row, input } = this.switchRow(key, message, (checked) => this.change(group, key, checked), hint);
       this.inputs.set(input, { group, key });
       parent.append(row);
     }
@@ -186,7 +234,7 @@
     }
 
     /**
-     * Refreshes labels and checked state without rebuilding interactive rows.
+     * Refreshes labels and selected values without rebuilding interactive rows.
      * @param {SettingsPreferenceRecord} preferences
      * @param {boolean} enabled
      * @param {string} language
@@ -212,12 +260,22 @@
     render() {
       if (!this.panel.root) return;
       const message = (key) => UiStrings.message(key, this.language);
+      this.panel.root.lang = this.language;
       this.panel.root.setAttribute("aria-label", message(UiMessage.SETTINGS_LABEL));
       UiControl.setLabel(this.closeButton, message(UiMessage.CLOSE_LABEL));
       for (const [element, key] of this.labels) {
         const label = message(key);
         if (element.textContent !== label) element.textContent = label;
       }
+      for (const [button, key] of this.helpButtons) {
+        button.setAttribute("aria-label", UiStrings.message(UiMessage.SETTINGS_HELP_LABEL, this.language, [message(key)]));
+      }
+      for (const [option, language] of this.languageOptions) {
+        const label = UiStrings.message(UiMessage.LANGUAGE_NAME, language);
+        if (option.textContent !== label) option.textContent = label;
+      }
+      const languageValue = this.preferences.language ?? "";
+      if (this.languageSelect.value !== languageValue) this.languageSelect.value = languageValue;
       this.activationInput.checked = this.enabled;
       for (const [input, { group, key }] of this.inputs) input.checked = this.preferences[group][key];
       for (const [key, button] of this.tabs) {

@@ -213,6 +213,18 @@
     "message": "沒有符合的影片",
     "description": "Rail heading when the search has no matches."
   },
+  "languageName": {
+    "message": "繁體中文",
+    "description": "This language's own name, shown in the language selector."
+  },
+  "settingsLanguageLabel": {
+    "message": "語言",
+    "description": "Label for the extension UI language selector."
+  },
+  "settingsLanguageAutomaticLabel": {
+    "message": "自動",
+    "description": "Language option that uses page and browser language detection."
+  },
   "settingsLabel": {
     "message": "設定",
     "description": "Label for the settings popup and its launcher."
@@ -257,6 +269,10 @@
     "message": "直接收藏到選取的收藏夾",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
   },
+  "settingsHelpLabel": {
+    "message": "說明：$1",
+    "description": "Accessible name for a settings help button, including the setting name."
+  },
   "settingsFavoriteFolderHint": {
     "message": "收藏按鈕未點亮時直接儲存到目前的收藏夾，無需顯示收藏清單；已點亮時仍開啟嗶哩嗶哩的收藏管理。",
     "description": "Explains the selected-folder shortcut and native handling for existing favorites."
@@ -283,7 +299,7 @@
   },
   "settingsRestoreLabel": {
     "message": "恢復預設",
-    "description": "Resets feature and placement preferences."
+    "description": "Resets language, feature, source, and placement preferences."
   },
   "settingsAutosaveLabel": {
     "message": "變更立即生效",

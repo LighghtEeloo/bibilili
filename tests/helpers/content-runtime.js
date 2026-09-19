@@ -83,6 +83,8 @@ function loadContentRuntime() {
 
 function loadStorageState() {
   global.window = globalThis;
+  require("../../src/content-dom.js");
+  require("../../src/content-i18n.js");
   require("../../src/content-storage.js");
 
   return globalThis.__bibililiStorageState;

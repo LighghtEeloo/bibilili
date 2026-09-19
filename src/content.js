@@ -1133,10 +1133,12 @@
     /**
      * @param {Document} document
      * @param {RegionDiscovery} discovery
+     * @param {() => string} resolveLanguage Current controller language preference and page signals.
      */
-    constructor(document, discovery) {
+    constructor(document, discovery, resolveLanguage) {
       this.document = document;
       this.discovery = discovery;
+      this.resolveLanguage = resolveLanguage;
       this.root = null;
       this.title = null;
       this.uploader = null;
@@ -1275,7 +1277,7 @@
         return;
       }
 
-      const language = LanguageResolver.resolve(this.document);
+      const language = this.resolveLanguage();
       const loadingLabel = UiStrings.message(UiMessage.LAYOUT_LOADING_LABEL, language);
       const candidate = this.discovery.findWatchTitle();
       const title = candidate !== this.previousTitle ? candidate : null;
@@ -11006,7 +11008,8 @@
       this.document = document;
       this.discovery = new RegionDiscovery(document);
       this.navigation = new NativeVideoNavigation(document);
-      this.loadingCover = new LoadingCover(document, this.discovery);
+      this.loadingCover = new LoadingCover(document, this.discovery,
+        () => LanguageResolver.resolve(this.document, this.preferences.language));
       this.videoPreviews = new VideoPreviewStore(() => {
         this.layout.scheduleRailRender();
       });
@@ -11101,7 +11104,7 @@
      * Starts observers, account loading, and the first reconciliation pass.
      */
     start() {
-      this.uiLanguage = LanguageResolver.resolve(this.document);
+      this.uiLanguage = LanguageResolver.resolve(this.document, this.preferences.language);
       this.navigation.start();
       this.videoLoading.start();
       this.pageKey = this.currentPageKey();
@@ -11678,7 +11681,7 @@
       this.preferences = SettingsPreference.normalize(preferences);
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();
-      this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
+      this.settingsView.update(this.preferences, this.enabled, this.resolveUiLanguage());
       if (persist) this.settingsView.showSaveResult(saved);
       this.refreshAccountSources();
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
@@ -11936,7 +11939,7 @@
      * @returns {string}
      */
     resolveUiLanguage() {
-      const nextLanguage = LanguageResolver.resolve(this.document);
+      const nextLanguage = LanguageResolver.resolve(this.document, this.preferences.language);
 
       if (nextLanguage !== this.uiLanguage) {
         this.uiLanguage = nextLanguage;

@@ -138,6 +138,12 @@ test("resolves language from document and Bilibili chrome signals", () => {
     LanguageResolver.resolve(document),
     UiLanguage.TRADITIONAL_CHINESE
   );
+  for (const language of Object.values(UiLanguage)) {
+    assert.equal(LanguageResolver.resolve(document, language), language);
+  }
+  for (const preference of [null, "", "de", "toString", {}, ["en"]]) {
+    assert.equal(LanguageResolver.resolve(document, preference), UiLanguage.TRADITIONAL_CHINESE);
+  }
   assert.equal(
     LanguageResolver.pageChromeLanguage({
       querySelectorAll: (selector) => (

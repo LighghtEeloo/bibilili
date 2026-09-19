@@ -104,6 +104,7 @@ function railFixture(LayoutRoot, count, kind = "history") {
     cardWidth: 190
   };
   document.body = document.createElement("body");
+  document.body.setAttribute("lang", "en");
   document.activeElement = document.body;
   const demands = [];
   const previews = {

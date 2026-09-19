@@ -1473,7 +1473,8 @@
 
 
 .bibilili-popup button,
-.bibilili-popup input {
+.bibilili-popup input,
+.bibilili-popup select {
   font: inherit;
 }
 
@@ -1488,7 +1489,8 @@
 
 
 .bibilili-popup button:focus-visible,
-.bibilili-popup input:focus-visible {
+.bibilili-popup input:focus-visible,
+.bibilili-popup select:focus-visible {
   outline: 2px solid var(--bibilili-selected-border);
   outline-offset: 2px;
 }
@@ -1576,8 +1578,74 @@
   margin: 0;
 }
 
-label.bibilili-settings-row {
+label.bibilili-settings-row,
+.bibilili-settings-name > label {
   cursor: pointer;
+}
+
+.bibilili-settings-row-with-help {
+  position: relative;
+}
+
+.bibilili-settings-name,
+.bibilili-settings-help {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bibilili-settings-help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 50%;
+  color: var(--bibilili-muted);
+  background: transparent;
+}
+
+.bibilili-settings-help-button:hover,
+.bibilili-settings-help-button:focus {
+  color: var(--bibilili-text);
+  border-color: var(--bibilili-muted);
+}
+
+.bibilili-settings-tooltip {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  inset-inline: 0;
+  visibility: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--bibilili-border);
+  border-radius: 6px;
+  background: var(--bibilili-panel-raised);
+  box-shadow: 0 4px 16px var(--bibilili-shadow);
+  color: var(--bibilili-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bibilili-settings-help:hover > .bibilili-settings-tooltip,
+.bibilili-settings-help:focus-within > .bibilili-settings-tooltip {
+  visibility: visible;
+}
+
+.bibilili-settings-select {
+  width: 180px;
+  max-width: 65%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 5px;
+  color: var(--bibilili-text);
+  background: var(--bibilili-panel);
 }
 
 
@@ -1738,6 +1806,7 @@ label.bibilili-settings-row {
   }
 
   .bibilili-settings-placement,
+  .bibilili-settings-select,
   .bibilili-settings-tab,
   .bibilili-settings-restore,
   .bibilili-more-popup .bibilili-action-button {
