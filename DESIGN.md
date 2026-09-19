@@ -665,9 +665,9 @@ in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 The rail action group follows the watch action group, separated by a vertical
 border. Pinned tools retain Locate, Start, Refresh, Search order. More and
-Settings remain at the trailing edge of the bar. The bar uses equal horizontal
-edge padding before the activation control and after Settings, including while
-its contents scroll.
+Settings remain at the trailing edge of the bar. Their leading separator
+appears when More is visible. The bar uses equal horizontal edge padding before
+the activation control and after Settings, including while its contents scroll.
 
 More contains unpinned watch actions followed by unpinned list tools, with
 visible action labels. Each action keeps one button node, count, loading state,

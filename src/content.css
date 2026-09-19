@@ -1420,8 +1420,11 @@
   gap: 4px;
   margin-left: auto;
   padding: 0 var(--bibilili-source-bar-edge-padding) 0 6px;
-  border-left: 1px solid var(--bibilili-border);
   background: var(--bibilili-panel);
+}
+
+.bibilili-dock-utilities.bibilili-has-more {
+  border-left: 1px solid var(--bibilili-border);
 }
 
 .bibilili-dock-utilities > button,

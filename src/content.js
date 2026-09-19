@@ -7724,6 +7724,7 @@
         this.morePanel.root.contains(this.document.activeElement);
       this.moreButton.hidden = !this.preferences.features.moreButton ||
         (!this.moreWatchGroup.childElementCount && !hasMoreTools);
+      this.dockUtilityGroup.classList.toggle("bibilili-has-more", !this.moreButton.hidden);
       if (this.moreButton.hidden) {
         this.morePanel.close();
         if (moreHasFocus) this.settingsButton.focus();
