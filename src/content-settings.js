@@ -100,8 +100,10 @@
       features.append(this.text("h3", UiMessage.SETTINGS_WATCH_PAGE_LABEL));
       for (const [key, message] of [
         ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL],
-        ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL]
+        ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
+        ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL]
       ]) this.addPreferenceSwitch(features, "features", key, message);
+      features.append(this.text("p", UiMessage.SETTINGS_FAVORITE_FOLDER_HINT, "bibilili-settings-hint"));
       features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {
         this.addPreferenceSwitch(features, "sources", source.kind, source.message);

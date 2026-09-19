@@ -29,6 +29,8 @@
     SETTINGS_WATCH_PAGE_LABEL: "settingsWatchPageLabel",
     SETTINGS_DESCRIPTION_LABEL: "settingsDescriptionLabel",
     SETTINGS_THUMBNAILS_LABEL: "settingsThumbnailsLabel",
+    SETTINGS_FAVORITE_FOLDER_LABEL: "settingsFavoriteFolderLabel",
+    SETTINGS_FAVORITE_FOLDER_HINT: "settingsFavoriteFolderHint",
     SETTINGS_SOURCES_LABEL: "settingsSourcesLabel",
     SETTINGS_SOURCES_HINT: "settingsSourcesHint",
     SETTINGS_FIXED_HINT: "settingsFixedHint",

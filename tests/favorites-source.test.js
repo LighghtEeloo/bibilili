@@ -24,6 +24,8 @@ function fixture(t, pages = {}) {
     const url = new URL(href);
     requests.push({ url, signal });
     if (url.pathname.endsWith("/nav")) return data.account;
+    if (url.pathname.endsWith("/favoured")) return data.favorite ?? { code: 0, data: { favoured: false } };
+    if (url.pathname === "/x/web-interface/view") return data.video ?? { code: 0, data: { aid: 123 } };
     if (url.pathname.endsWith("/list-all")) return { code: 0, data: { list: data.folders, count: data.folders.length } };
     if (url.pathname.endsWith("/resource/list")) {
       const key = `${url.searchParams.get("media_id")}:${url.searchParams.get("pn")}`;
@@ -189,6 +191,24 @@ test("settings cancel directory requests before folder data can load", async (t)
   assert.equal(store.currentSource(F), null);
 });
 
+test("folder metadata survives hiding Favorites and cancels when both consumers are disabled", async (t) => {
+  const { store, data, requests } = fixture(t);
+  store.setFavoriteActionsEnabled(true);
+  const pending = deferred();
+  const account = data.account;
+  data.account = pending.promise;
+  const loading = store.loadFavoriteFolderDirectory();
+  store.setEnabledKinds([SourceKind.WATCH_LATER, SourceKind.HISTORY]);
+  assert.equal(requests[0].signal.aborted, false);
+  store.setFavoriteActionsEnabled(false);
+  assert.equal(requests[0].signal.aborted, true);
+  pending.resolve(account);
+  await loading;
+  assert.equal(requests.length, 1);
+  assert.equal(store.favoriteFolders.accountId, null);
+  assert.equal(store.currentFavoriteFolderId(), null);
+});
+
 test("settings cancel per-folder requests and prevent late publication", async (t) => {
   const pending = deferred();
   const { store, resources } = fixture(t, { "101:1": pending.promise });
@@ -242,4 +262,92 @@ test("refresh and card origins retain validated folder identity", (t) => {
   assert.deepEqual(CardNavigationOriginStore.take("video:av2:p1"), route);
   CardNavigationOriginStore.write({ ...route, folderId: "../bad" }, "video:av2:p1");
   assert.equal(CardNavigationOriginStore.take("video:av2:p1"), null);
+});
+
+test("direct favorites resolve BV ids and submit only an addition with the existing CSRF helper", async (t) => {
+  const { store, requests, resources } = fixture(t);
+  await store.loadFavoriteFolders();
+  await store.selectFavoriteFolder("101");
+  t.mock.method(AccountSourceStore, "csrfToken", () => "test-csrf");
+  const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => ({ code: 0 }));
+  const result = await store.addFavoriteItem("https://www.bilibili.com/video/BV1aa411c7mD", "101", () => true, new AbortController().signal);
+  await new Promise(setImmediate);
+  assert.deepEqual(result, { aid: "123", accountId: "77", alreadySaved: false });
+  const [url, body] = post.mock.calls[0].arguments;
+  assert.equal(url, "https://api.bilibili.com/x/v3/fav/resource/deal");
+  assert.deepEqual(Object.fromEntries(body), {
+    csrf: "test-csrf", rid: "123", type: "2", add_media_ids: "101", del_media_ids: "", platform: "web"
+  });
+  assert.equal(requests.find(({ url }) => url.pathname.endsWith("/favoured")).url.searchParams.get("aid"), "123");
+  assert.equal(resources().length, 2);
+  assert.equal(requests.filter(({ url }) => url.pathname.endsWith("/list-all")).length, 2);
+});
+
+test("an already favored archive does not post even when the native star is stale", async (t) => {
+  const { store, data, requests } = fixture(t);
+  await store.loadFavoriteFolders();
+  data.favorite = { code: 0, data: { favoured: true } };
+  const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => { throw new Error("unexpected save"); });
+  const result = await store.addFavoriteItem("https://www.bilibili.com/video/av123", "101", () => true, new AbortController().signal);
+  assert.deepEqual(result, { aid: "123", accountId: "77", alreadySaved: true });
+  assert.equal(post.mock.callCount(), 0);
+  assert.equal(requests.some(({ url }) => url.pathname === "/x/web-interface/view"), false);
+});
+
+test("a pending save retains and refreshes its captured folder after the rail switches", async (t) => {
+  const { store, data, resources } = fixture(t);
+  await store.loadFavoriteFolders();
+  await store.selectFavoriteFolder("101");
+  const pending = deferred();
+  data.favorite = pending.promise;
+  t.mock.method(AccountSourceStore, "csrfToken", () => "test-csrf");
+  const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => ({ code: 0 }));
+  const saving = store.addFavoriteItem("https://www.bilibili.com/video/av123", "101", () => true, new AbortController().signal);
+  await store.selectFavoriteFolder("202");
+  pending.resolve({ code: 0, data: { favoured: false } });
+  await saving;
+  await new Promise(setImmediate);
+  assert.equal(post.mock.calls[0].arguments[1].get("add_media_ids"), "101");
+  assert.equal(store.currentSource(F).folderId, "202");
+  assert.deepEqual(resources().map(({ url }) => url.searchParams.get("media_id")), ["101", "202", "101"]);
+});
+
+test("preflight checks stop writes after navigation, activation, or native state changes", async (t) => {
+  const { store, data } = fixture(t);
+  await store.loadFavoriteFolders();
+  const pending = deferred();
+  data.favorite = pending.promise;
+  let allowed = true;
+  const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => { throw new Error("unexpected save"); });
+  const saving = store.addFavoriteItem("https://www.bilibili.com/video/av123", "101", () => allowed, new AbortController().signal);
+  await new Promise(setImmediate);
+  allowed = false;
+  pending.resolve({ code: 0, data: { favoured: false } });
+  assert.equal(await saving, null);
+  assert.equal(post.mock.callCount(), 0);
+});
+
+test("unowned folders, account changes, and unreadable favorite state cannot cause a save", async (t) => {
+  const { store, data } = fixture(t);
+  await store.loadFavoriteFolders();
+  const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => { throw new Error("unexpected save"); });
+  const save = (folderId = "101") => store.addFavoriteItem("https://www.bilibili.com/video/av123", folderId, () => true, new AbortController().signal);
+  await assert.rejects(save("999"), /No selected favorite folder/);
+  data.favorite = { code: 0, data: {} };
+  await assert.rejects(save(), /Favorite state unavailable/);
+  data.account = { code: 0, data: { mid: 88, isLogin: true } };
+  await assert.rejects(save(), /Favorite account changed/);
+  assert.equal(store.favoriteFolders.accountId, null);
+  assert.equal(post.mock.callCount(), 0);
+});
+
+test("a rejected favorite addition retains the existing folder cache", async (t) => {
+  const { store, resources } = fixture(t, { "101:1": page([media(1)]) });
+  await store.loadFavoriteFolders();
+  await store.selectFavoriteFolder("101");
+  t.mock.method(AccountSourceStore, "csrfToken", () => "test-csrf");
+  t.mock.method(AccountSourceStore, "postApiPayload", async () => ({ code: -403 }));
+  await assert.rejects(store.addFavoriteItem("https://www.bilibili.com/video/av123", "101", () => true, new AbortController().signal), /Favorite addition failed/);
+  assert.equal(resources().length, 1);
+  assert.equal(store.currentSource(F).items[0].title, "Video 1");
 });

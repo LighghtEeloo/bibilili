@@ -253,6 +253,14 @@
     "message": "Fill missing thumbnails",
     "description": "Switch for fetching missing video covers."
   },
+  "settingsFavoriteFolderLabel": {
+    "message": "Save favorites to selected folder",
+    "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
+  },
+  "settingsFavoriteFolderHint": {
+    "message": "Unlit Favorite buttons save to the current folder even when the Favorites rail is hidden. Lit buttons open Bilibili’s controls.",
+    "description": "Explains the selected-folder shortcut and native handling for existing favorites."
+  },
   "settingsSourcesLabel": {
     "message": "Video sources",
     "description": "Heading for source availability preferences."

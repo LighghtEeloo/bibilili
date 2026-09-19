@@ -76,6 +76,8 @@
   const ACCOUNT_NAV_URL = "https://api.bilibili.com/x/web-interface/nav";
   const FAVORITE_FOLDERS_URL = "https://api.bilibili.com/x/v3/fav/folder/created/list-all";
   const FAVORITES_SOURCE_URL = "https://api.bilibili.com/x/v3/fav/resource/list";
+  const FAVORITE_ADD_URL = "https://api.bilibili.com/x/v3/fav/resource/deal";
+  const FAVORITE_STATUS_URL = "https://api.bilibili.com/x/v2/fav/video/favoured";
   const HISTORY_SOURCE_URL =
     `https://api.bilibili.com/x/web-interface/history/cursor?type=archive&ps=${ACCOUNT_HISTORY_PAGE_SIZE}`;
   const WATCH_LATER_SOURCE_URL = "https://api.bilibili.com/x/v2/history/toview";
@@ -3607,6 +3609,8 @@
       /** @type {Map<string, AccountSourceRecord>} */
       this.records = new Map();
       this.enabledKinds = new Set(ACCOUNT_SOURCE_ORDER);
+      /** Direct saves retain access to folder metadata when the Favorites source is disabled. */
+      this.favoriteActionsEnabled = false;
       /** @type {Map<string, AccountSourceRecord>} Cached records keyed by folder id. */
       this.favoriteRecords = new Map();
       /** @type {FavoriteFolderDirectory | null} Owned folders and directory request state. */
@@ -3623,6 +3627,11 @@
     currentSources() {
       return ACCOUNT_SOURCE_ORDER.map((kind) => this.currentSource(kind))
         .filter(Boolean);
+    }
+
+    /** @returns {string | null} Current folder selection, independent of rail availability. */
+    currentFavoriteFolderId() {
+      return this.records.get(SourceKind.FAVORITES).folderId;
     }
 
     /**
@@ -3719,15 +3728,27 @@
           record.loaded = false;
           record.status = AccountSourceStatus.READY;
         }
-        if (kind === SourceKind.FAVORITES) {
-          this.favoriteFolders.controller?.abort();
-          this.favoriteFolders.controller = null;
-          this.favoriteFolders.promise = null;
-          this.favoriteFolders.loaded = false;
-          this.favoriteFolders.status = AccountSourceStatus.READY;
-        }
+        if (kind === SourceKind.FAVORITES && !this.favoriteActionsEnabled) this.cancelFavoriteFolderRequest();
       }
       this.enabledKinds = enabled;
+    }
+
+    /**
+     * Keeps folder metadata available to the star independently of the Favorites source.
+     * @param {boolean} enabled
+     */
+    setFavoriteActionsEnabled(enabled) {
+      this.favoriteActionsEnabled = enabled;
+      if (!enabled && !this.enabledKinds.has(SourceKind.FAVORITES)) this.cancelFavoriteFolderRequest();
+    }
+
+    /** Cancels directory work when neither favorite consumer needs it. */
+    cancelFavoriteFolderRequest() {
+      this.favoriteFolders.controller?.abort();
+      this.favoriteFolders.controller = null;
+      this.favoriteFolders.promise = null;
+      this.favoriteFolders.loaded = false;
+      this.favoriteFolders.status = AccountSourceStatus.READY;
     }
 
     /**
@@ -3862,6 +3883,16 @@
         await this.loadFavoriteFolders(true);
         return;
       }
+      await this.refreshRecord(record);
+    }
+
+    /**
+     * Refreshes a retained source instance even if another folder is selected.
+     * @param {AccountSourceRecord} record
+     */
+    async refreshRecord(record) {
+      const kind = record.kind;
+      if (!this.enabledKinds.has(kind)) return;
       const controller = this.beginRequest(record);
       const url = AccountSourceStore.sourceUrl(record);
 
@@ -4051,7 +4082,7 @@
     }
 
     /**
-     * Loads owned folders on demand and validates remembered selection against the account.
+     * Loads the folder picker and the selected rail's cards on demand.
      * @param {boolean} [force] Refreshes the directory, including account identity.
      * @returns {Promise<void>}
      */
@@ -4059,12 +4090,22 @@
       if (!this.enabledKinds.has(SourceKind.FAVORITES)) return;
       const directory = this.favoriteFolders;
       directory.requested = true;
+      await this.loadFavoriteFolderDirectory(force);
+      if (this.favoriteFolders !== directory || !directory.loaded) return;
+      const record = this.records.get(SourceKind.FAVORITES);
+      if (record.folderId && !record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
+    }
+
+    /**
+     * Restores the account's selected or default folder without loading or opening a rail.
+     * @param {boolean} [force] Refreshes folder metadata and account identity.
+     * @returns {Promise<void>}
+     */
+    async loadFavoriteFolderDirectory(force = false) {
+      if (!this.enabledKinds.has(SourceKind.FAVORITES) && !this.favoriteActionsEnabled) return;
+      const directory = this.favoriteFolders;
       if (directory.promise) return directory.promise;
-      if (directory.loaded && !force) {
-        const record = this.records.get(SourceKind.FAVORITES);
-        if (record.folderId && !record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
-        return;
-      }
+      if (directory.loaded && !force) return;
       const controller = new AbortController();
       directory.controller = controller;
       directory.status = AccountSourceStatus.LOADING;
@@ -4115,7 +4156,7 @@
           directory.loaded = true;
           directory.status = AccountSourceStatus.READY;
           if (selected) {
-            await this.selectFavoriteFolder(selected.id);
+            this.setFavoriteFolderSelection(selected.id);
           } else {
             this.records.set(SourceKind.FAVORITES, AccountSourceStore.createRecord(SourceKind.FAVORITES));
             FavoriteFolderPreference.write(accountId, null);
@@ -4135,8 +4176,18 @@
 
     /** Selects a validated folder and reuses its retained cards and continuation. */
     async selectFavoriteFolder(folderId) {
-      if (!this.enabledKinds.has(SourceKind.FAVORITES) ||
-          !this.favoriteFolders.items.some((folder) => folder.id === folderId)) return;
+      if (!this.enabledKinds.has(SourceKind.FAVORITES)) return;
+      const record = this.setFavoriteFolderSelection(folderId);
+      if (record && !record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
+    }
+
+    /**
+     * Shares one validated selection between the rail and direct saves.
+     * @param {string} folderId
+     * @returns {AccountSourceRecord | null}
+     */
+    setFavoriteFolderSelection(folderId) {
+      if (!this.favoriteFolders.items.some((folder) => folder.id === folderId)) return null;
       let record = this.favoriteRecords.get(folderId);
       if (!record) {
         record = AccountSourceStore.createRecord(SourceKind.FAVORITES, folderId);
@@ -4146,7 +4197,7 @@
       this.records.set(SourceKind.FAVORITES, record);
       FavoriteFolderPreference.write(this.favoriteFolders.accountId, folderId);
       this.onChange();
-      if (!record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
+      return record;
     }
 
     /** Validates a navigation or refresh hint before fetching the requested folder. */
@@ -4156,6 +4207,92 @@
         this.favoriteFolders.requestedFolderId = id;
         void this.loadFavoriteFolders(true);
       }
+    }
+
+    /**
+     * Adds an archive to the folder captured at click time, after account and favorite checks.
+     * The guard cancels preparatory work when the page or feature state changes.
+     * @param {string} targetUrl
+     * @param {string | null} folderId Current selection, or null to restore it on demand.
+     * @param {() => boolean} canAdd
+     * @param {AbortSignal} signal Cancels reads; a submitted save finishes independently.
+     * @returns {Promise<{ aid: string, accountId: string, alreadySaved: boolean } | null>}
+     */
+    async addFavoriteItem(targetUrl, folderId, canAdd, signal) {
+      const identity = SourceAdapter.archiveIdentityForUrl(targetUrl);
+      const directory = this.favoriteFolders;
+      if (!identity) throw new Error("Archive identity unavailable");
+      if (signal.aborted || !canAdd()) return null;
+      if (!directory.loaded) await this.loadFavoriteFolderDirectory();
+      if (this.favoriteFolders !== directory || signal.aborted || !canAdd()) return null;
+      folderId ??= this.currentFavoriteFolderId();
+      const accountId = directory.accountId;
+      const current = () => this.favoriteFolders === directory && directory.accountId === accountId &&
+        directory.items.some((folder) => folder.id === folderId) &&
+        !signal.aborted && canAdd();
+      if (!accountId || !directory.items.some((folder) => folder.id === folderId)) {
+        throw new Error("No selected favorite folder");
+      }
+      if (!current()) return null;
+      const account = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, signal);
+      if (!current()) return null;
+      if (account.code !== 0 || account.data?.isLogin !== true ||
+          FavoriteFolderPreference.normalizeId(account.data.mid) !== accountId) {
+        if (account.code === -101 || account.code === 0) this.clearFavoriteAccount();
+        throw new Error("Favorite account changed");
+      }
+      const aid = identity.queryName === "aid" ? FavoriteFolderPreference.normalizeId(identity.queryValue) :
+        await AccountSourceStore.archiveAidForIdentity(identity, signal);
+      if (!aid) throw new Error("Archive identity unavailable");
+      if (!current()) return null;
+      const alreadySaved = await AccountSourceStore.isFavorite(aid, signal);
+      if (!current()) return null;
+      if (alreadySaved) return { aid, accountId, alreadySaved: true };
+
+      const body = AccountSourceStore.csrfApiBody();
+      body.set("rid", aid);
+      body.set("type", String(FAVORITE_ARCHIVE_TYPE));
+      body.set("add_media_ids", folderId);
+      body.set("del_media_ids", "");
+      body.set("platform", "web");
+      const result = await AccountSourceStore.postApiPayload(FAVORITE_ADD_URL, body);
+      if (!AccountSourceStore.isSuccessfulPayload(result)) throw new Error("Favorite addition failed");
+
+      if (this.favoriteFolders === directory && directory.accountId === accountId) {
+        const record = this.favoriteRecords.get(folderId);
+        if (record) {
+          const shouldRefresh = record.loaded || record.controller !== null;
+          record.loaded = false;
+          if (shouldRefresh) void this.refreshRecord(record);
+        }
+        void this.loadFavoriteFolderDirectory(true);
+      }
+      return { aid, accountId, alreadySaved: false };
+    }
+
+    /**
+     * Resolves a BV route through the same video metadata endpoint used by previews.
+     * Note: the favorite endpoint accepts an archive id rather than a BV id.
+     * @param {ArchiveVideoIdentity} identity
+     * @param {AbortSignal} signal
+     * @returns {Promise<string>}
+     */
+    static async archiveAidForIdentity(identity, signal) {
+      const payload = await AccountSourceStore.fetchApiPayload(VideoPreviewStore.sourceUrl(identity), signal);
+      const aid = FavoriteFolderPreference.normalizeId(payload?.data?.aid);
+      if (!AccountSourceStore.isSuccessfulPayload(payload) || !aid) throw new Error("Archive identity unavailable");
+      return aid;
+    }
+
+    /** @param {string} aid @param {AbortSignal} [signal] @returns {Promise<boolean>} Account favorite state. */
+    static async isFavorite(aid, signal) {
+      const url = new URL(FAVORITE_STATUS_URL);
+      url.searchParams.set("aid", aid);
+      const payload = await AccountSourceStore.fetchApiPayload(url.href, signal);
+      if (!AccountSourceStore.isSuccessfulPayload(payload) || typeof payload.data?.favoured !== "boolean") {
+        throw new Error("Favorite state unavailable");
+      }
+      return payload.data.favoured;
     }
 
     /**
@@ -4243,7 +4380,7 @@
      * @returns {Promise<void>}
      */
     static async addWatchLaterApiItem(identity) {
-      const body = AccountSourceStore.watchLaterApiBody();
+      const body = AccountSourceStore.csrfApiBody();
       body.set(identity.queryName, identity.queryValue);
 
       const payload = await AccountSourceStore.postApiPayload(
@@ -4266,7 +4403,7 @@
      * @returns {Promise<void>}
      */
     static async deleteWatchLaterApiItem(aid) {
-      const body = AccountSourceStore.watchLaterApiBody();
+      const body = AccountSourceStore.csrfApiBody();
       body.set("aid", aid);
 
       const payload = await AccountSourceStore.postApiPayload(
@@ -4284,7 +4421,7 @@
      *
      * @returns {URLSearchParams}
      */
-    static watchLaterApiBody() {
+    static csrfApiBody() {
       const csrfToken = AccountSourceStore.csrfToken();
 
       if (!csrfToken) {
@@ -5380,7 +5517,7 @@
           countSelectors: definition.countSelectors,
           countText: this.watchActionCountText(trigger, definition),
           labelPattern: definition.labelPattern,
-          isActive: this.isWatchActionActive(trigger, definition)
+          isActive: RegionDiscovery.isWatchActionActive(trigger, definition)
         };
       }
 
@@ -5557,7 +5694,7 @@
      * @param {WatchActionDefinition} definition
      * @returns {boolean}
      */
-    isWatchActionActive(trigger, definition) {
+    static isWatchActionActive(trigger, definition) {
       if (
         trigger.matches(WATCH_ACTION_ACTIVE_SELECTOR) ||
         Boolean(trigger.querySelector(WATCH_ACTION_ACTIVE_SELECTOR))
@@ -6233,6 +6370,9 @@
       this.watchLaterVisualSnapshotKey = "";
       this.onCommentReload = null;
       this.onWatchActionForward = null;
+      this.onFavoriteAction = null;
+      /** @type {FavoriteActionState | null} */
+      this.favoriteActionState = null;
       this.onWatchLaterAdd = null;
       this.onWatchLaterDelete = null;
       this.onVideoCardNavigate = null;
@@ -6279,6 +6419,7 @@
      * @param {() => VideoListSource | null} onWatchLaterReveal
      * @param {() => VideoListSource | null} onWatchLaterSearchSource
      * @param {(source: VideoListSource) => Promise<void>} onRailRefresh
+     * @param {(action: WatchAction) => boolean} onFavoriteAction True consumes the click.
      */
     render(
       regions,
@@ -6296,12 +6437,14 @@
       onSourceMore,
       onWatchLaterReveal,
       onWatchLaterSearchSource,
-      onRailRefresh
+      onRailRefresh,
+      onFavoriteAction
     ) {
       this.ensure();
       this.document.documentElement.classList.add(HTML_MOUNTED_CLASS);
       this.onCommentReload = onCommentReload;
       this.onWatchActionForward = onWatchActionForward;
+      this.onFavoriteAction = onFavoriteAction;
       this.setLanguage(language);
       this.watchLaterAccountCount = watchLaterAccountCount;
       this.setPlayer(regions.player);
@@ -8196,7 +8339,7 @@
 
     /**
      * Hides stale counts and pressed state from accessibility during navigation.
-     * Watch-later mutations retain their independent disabled state after reveal.
+     * Account mutations retain their independent disabled state after reveal.
      *
      * @param {HTMLButtonElement} button
      * @param {WatchAction | undefined} [action] Freshly discovered action state.
@@ -8204,10 +8347,13 @@
     syncWatchActionButtonState(button, action) {
       const kind = button.dataset.watchActionKind;
       const key = button.dataset.bibililiWatchLaterAddKey;
+      const favorite = kind === WatchActionKind.FAVORITE &&
+        this.favoriteActionState?.pageKey === SourceAdapter.currentWatchRouteKey()
+        ? this.favoriteActionState : null;
       button.disabled = this.isVideoLoading || (
         kind === WatchActionKind.WATCH_LATER && (!key || this.pendingWatchLaterAddKeys.has(key))
-      );
-      button.setAttribute("aria-busy", String(this.isVideoLoading));
+      ) || Boolean(favorite?.pending);
+      button.setAttribute("aria-busy", String(Boolean(this.isVideoLoading || favorite?.pending)));
       const count = button.querySelector(".bibilili-action-count");
       UiControl.setLabel(button, UiStrings.watchActionButtonLabel(
         kind,
@@ -8216,7 +8362,7 @@
       ));
       if (!this.isVideoLoading && WATCH_ACTION_STATEFUL_KINDS.has(kind)) {
         const current = action ?? this.currentActions.find((candidate) => candidate.kind === kind);
-        button.setAttribute("aria-pressed", String(Boolean(current?.isActive)));
+        button.setAttribute("aria-pressed", String(Boolean(current?.isActive || favorite?.saved)));
       } else {
         button.removeAttribute("aria-pressed");
       }
@@ -8480,8 +8626,17 @@
         return;
       }
 
+      if (kind === WatchActionKind.FAVORITE && this.onFavoriteAction?.(action)) return;
+      this.forwardWatchAction(action);
+    }
+
+    /**
+     * Forwards a watch action through the shared native click and overlay handling.
+     * @param {WatchAction} action
+     */
+    forwardWatchAction(action) {
       LayoutRoot.clickNativeTrigger(action.trigger);
-      LayoutRoot.liftNativeWatchActionOverlay(kind, action.trigger);
+      LayoutRoot.liftNativeWatchActionOverlay(action.kind, action.trigger);
       this.onWatchActionForward?.();
     }
 
@@ -10865,6 +11020,8 @@
       });
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
+      /** @type {FavoriteActionState | null} */
+      this.favoriteActionState = null;
       this.favoritesView = new FavoritesView(document, {
         statuses: AccountSourceStatus,
         onOpen: (choose) => this.openFavoriteFolders(choose),
@@ -11012,6 +11169,7 @@
      * Clears rendered page state without changing observers or activation.
      */
     clearRenderedPageState() {
+      this.clearFavoriteActionState();
       this.navigation.cancel();
       this.videoLoading.cancel();
       this.cancelPlayerRecovery();
@@ -11138,6 +11296,7 @@
       this.pendingSourceRouteReset ||= resetSourceRoute;
       const language = this.resolveUiLanguage();
       const regions = this.discovery.discover();
+      this.reconcileFavoriteAction(regions.actions);
       if (this.nextPageSourceRouteState?.sourceKind === SourceKind.FAVORITES) {
         this.accountSources.restoreFavoriteFolder(this.nextPageSourceRouteState.folderId);
       }
@@ -11203,7 +11362,8 @@
         (sourceKind) => this.loadMoreAccountSource(sourceKind),
         () => this.accountSources.revealWatchLaterItem(window.location.href),
         () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
-        (source) => this.refreshRail(source)
+        (source) => this.refreshRail(source),
+        (action) => this.handleFavoriteAction(action)
       );
       this.settingsView.update(this.preferences, this.enabled, language);
       this.nextPageSourceRouteState = null;
@@ -11318,6 +11478,7 @@
       }
 
       this.lazyPrimer.stop(false);
+      this.clearFavoriteActionState();
       this.cancelPlayerRecovery();
       this.cancelSettlingReconciles();
       this.videoPreviews.stop();
@@ -11526,9 +11687,151 @@
     /** Shares one preference snapshot with layout and demand-driven stores. */
     applyFeaturePreferences() {
       this.layout.preferences = this.preferences;
+      if (this.favoriteActionState?.pending && !this.preferences.features.favoriteToSelectedFolder) {
+        this.clearFavoriteActionState();
+      }
       if (!this.preferences.sources[SourceKind.FAVORITES]) this.favoritesView.panel.close();
       this.videoPreviews.setEnabled(this.preferences.features.thumbnails);
+      this.accountSources.setFavoriteActionsEnabled(this.preferences.features.favoriteToSelectedFolder);
       this.accountSources.setEnabledKinds(ACCOUNT_SOURCE_ORDER.filter((kind) => this.preferences.sources[kind]));
+    }
+
+    /**
+     * Routes an inactive star to the selected account folder when enabled.
+     * Active stars retain the native dialog, including after a direct save.
+     * @param {WatchAction} action
+     * @returns {boolean} Whether the direct-save path consumed the click.
+     */
+    handleFavoriteAction(action) {
+      if (this.favoriteActionState && (!this.isFavoriteActionCurrent(this.favoriteActionState) ||
+          (this.favoriteActionState.accountId && this.favoriteActionState.accountId !== this.accountSources.favoriteFolders.accountId))) {
+        this.clearFavoriteActionState();
+      }
+      const previous = this.favoriteActionState;
+      if (previous?.pending) return true;
+      if (previous?.saved || BibililiController.isFavoriteActionActive(action)) {
+        if (previous?.saved) this.expectNativeFavoriteDialog(previous);
+        return false;
+      }
+      const targetUrl = window.location.href;
+      const folderId = this.accountSources.currentFavoriteFolderId();
+      if (!this.enabled || this.layout.isVideoLoading || !this.preferences.features.favoriteToSelectedFolder ||
+          !SourceAdapter.archiveIdentityForUrl(targetUrl)) return false;
+
+      const state = {
+        pageKey: this.currentPageKey(), accountId: this.accountSources.favoriteFolders.accountId,
+        aid: null, pending: true, saved: false, controller: new AbortController(),
+        waitingForNative: false, nativeDialog: null, nativeRevision: 0
+      };
+      this.favoriteActionState = state;
+      this.updateFavoriteActionButton();
+      const canAdd = () => this.isFavoriteActionCurrent(state) &&
+        this.preferences.features.favoriteToSelectedFolder &&
+        !this.layout.isVideoLoading && action.trigger.isConnected && !BibililiController.isFavoriteActionActive(action);
+      void this.accountSources.addFavoriteItem(targetUrl, folderId, canAdd, state.controller.signal)
+        .then((result) => {
+          if (!this.isFavoriteActionCurrent(state) ||
+              (result && result.accountId !== this.accountSources.favoriteFolders.accountId)) return;
+          if (result) {
+            state.aid = result.aid;
+            state.accountId = result.accountId;
+            state.saved = true;
+          }
+          if (!this.layout.isVideoLoading && action.trigger.isConnected && (result?.alreadySaved || !result)) {
+            if (state.saved) this.expectNativeFavoriteDialog(state);
+            this.layout.forwardWatchAction(action);
+          }
+        })
+        .catch(() => {
+          if (this.isFavoriteActionCurrent(state) && !this.layout.isVideoLoading && action.trigger.isConnected) {
+            this.layout.forwardWatchAction(action);
+          }
+        })
+        .finally(() => {
+          if (this.favoriteActionState !== state) return;
+          state.pending = false;
+          if (!state.saved) this.clearFavoriteActionState();
+          this.updateFavoriteActionButton();
+          this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        });
+      return true;
+    }
+
+    /**
+     * Checks current native state again before a prepared save is submitted.
+     * @param {WatchAction} action
+     * @returns {boolean}
+     */
+    static isFavoriteActionActive(action) {
+      const definition = WATCH_ACTION_DEFINITIONS.find(({ kind }) => kind === WatchActionKind.FAVORITE);
+      return action.isActive || RegionDiscovery.isWatchActionActive(action.trigger, definition);
+    }
+
+    /** @param {FavoriteActionState} state @returns {boolean} The originating page is still mounted. */
+    isFavoriteActionCurrent(state) {
+      return this.favoriteActionState === state && !state.controller.signal.aborted && this.enabled &&
+        this.currentPageKey() === state.pageKey && Boolean(this.layout.root?.isConnected);
+    }
+
+    /** Publishes direct-save state through the existing counted-button renderer. */
+    updateFavoriteActionButton() {
+      this.layout.favoriteActionState = this.favoriteActionState;
+      const button = this.layout.actionButtons.get(WatchActionKind.FAVORITE);
+      if (button) this.layout.syncWatchActionButtonState(button);
+    }
+
+    /** Cancels preparatory reads and releases the current video's saved-state override. */
+    clearFavoriteActionState() {
+      this.favoriteActionState?.controller.abort();
+      this.favoriteActionState = null;
+      this.updateFavoriteActionButton();
+    }
+
+    /**
+     * Tracks the native dialog before refreshing a directly saved video's state.
+     * @param {FavoriteActionState} state
+     */
+    expectNativeFavoriteDialog(state) {
+      state.waitingForNative = true;
+      state.nativeDialog = null;
+      state.nativeRevision += 1;
+    }
+
+    /**
+     * Releases the saved override when native state catches up or a dialog removes it.
+     * Note: a direct API save does not update Bilibili's in-memory star state.
+     * @param {WatchAction[]} actions
+     */
+    reconcileFavoriteAction(actions) {
+      const state = this.favoriteActionState;
+      if (!state) return;
+      if (!this.isFavoriteActionCurrent(state) ||
+          (state.accountId && state.accountId !== this.accountSources.favoriteFolders.accountId)) {
+        this.clearFavoriteActionState();
+        return;
+      }
+      const action = actions.find(({ kind }) => kind === WatchActionKind.FAVORITE);
+      if (!state.pending && !state.waitingForNative && action?.isActive) {
+        this.clearFavoriteActionState();
+        return;
+      }
+      if (!state.waitingForNative) return;
+      const dialog = LayoutRoot.favoriteDialog(this.document);
+      if (dialog && DomProbe.hasBox(dialog)) {
+        state.nativeDialog = dialog;
+      } else if (state.nativeDialog) {
+        state.nativeDialog = null;
+        state.waitingForNative = false;
+        const revision = state.nativeRevision;
+        void AccountSourceStore.isFavorite(state.aid, state.controller.signal).then((saved) => {
+          if (!this.isFavoriteActionCurrent(state) || revision !== state.nativeRevision ||
+              state.accountId !== this.accountSources.favoriteFolders.accountId) return;
+          state.saved = saved;
+          if (!saved) this.clearFavoriteActionState();
+          this.updateFavoriteActionButton();
+          this.scheduleReconcile(false, ReconcilePriority.URGENT);
+        }).catch(() => {});
+      }
     }
 
     /** Opens owned folders and resumes the saved folder only for a source-label click. */
@@ -11765,6 +12068,19 @@
    */
 
   /**
+   * @typedef {object} FavoriteActionState
+   * @property {string} pageKey Originating watch route.
+   * @property {string | null} accountId Account owning the selection, pending initial restoration.
+   * @property {string | null} aid Resolved archive id after a successful check or save.
+   * @property {boolean} pending Disables duplicate direct saves.
+   * @property {boolean} saved Confirmed favorite state until native state catches up.
+   * @property {AbortController} controller Cancels preparatory and status reads.
+   * @property {boolean} waitingForNative A native dialog has been requested.
+   * @property {Element | null} nativeDialog Observed page-owned dialog.
+   * @property {number} nativeRevision Rejects status responses from an earlier dialog.
+   */
+
+  /**
    * @typedef {object} WatchAction
    * @property {string} kind Closed watch action kind.
    * @property {Element | null} trigger Page-owned native action trigger when present.
@@ -11797,7 +12113,7 @@
    * @typedef {object} FavoriteFolderDirectory
    * @property {string | null} accountId Authenticated account that owns these folders.
    * @property {FavoriteFolder[]} items Folders in Bilibili's returned order.
-   * @property {boolean} requested Folder loading has been requested during this session.
+   * @property {boolean} requested The Favorites source has requested folder loading this session.
    * @property {string | null} requestedFolderId Navigation hint awaiting membership validation.
    * @property {boolean} loaded The directory has loaded successfully.
    * @property {string} status Closed AccountSourceStatus value.

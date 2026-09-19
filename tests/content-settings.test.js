@@ -39,18 +39,20 @@ function settingsFixture(t) {
   return { ...fixture, controller, layout, anchor, view: controller.settingsView };
 }
 
-test("settings enable every feature and pin by default and validate saved values", () => {
+test("settings enable every feature, source, and pin by default and validate saved values", () => {
   const defaults = SettingsPreference.defaults();
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of Object.values(defaults)) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
+  assert.deepEqual(defaults.features, { description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true });
   const value = SettingsPreference.normalize({
     features: { description: false, thumbnails: "false", unknown: true },
     sources: { collection: false, history: 0 }, pinnedActions: { like: false, unknown: true }
   });
   assert.equal(value.features.description, false);
   assert.equal(value.features.thumbnails, true);
+  assert.equal(value.features.favoriteToSelectedFolder, true);
   assert.equal(value.sources.collection, false);
   assert.equal(value.sources.history, true);
   assert.equal(value.pinnedActions.like, false);
@@ -65,6 +67,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new FakeStorage();
   const value = SettingsPreference.defaults();
   value.features.thumbnails = false;
+  value.features.favoriteToSelectedFolder = false;
   value.pinnedActions.coin = false;
   assert.equal(SettingsPreference.write(value), true);
   assert.deepEqual(SettingsPreference.read(), value);
@@ -73,6 +76,21 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new ThrowingStorage();
   assert.equal(SettingsPreference.write(value), false);
   assert.deepEqual(SettingsPreference.read(), SettingsPreference.defaults());
+});
+
+test("the direct-favorite switch uses the shared settings row and persistence", (t) => {
+  const { view, controller } = settingsFixture(t);
+  view.ensure();
+  view.render();
+  const input = [...view.inputs.keys()].find((input) => input.name === "favoriteToSelectedFolder");
+  assert.equal(input.checked, true);
+  assert.ok(view.panels.get("features").contains(input));
+  input.checked = false;
+  input.dispatch("change");
+  assert.equal(controller.preferences.features.favoriteToSelectedFolder, false);
+  assert.equal(SettingsPreference.read().features.favoriteToSelectedFolder, false);
+  controller.setPreferences(SettingsPreference.defaults());
+  assert.equal(input.checked, true);
 });
 
 test("More reuses counted action nodes and preserves their identity across reconciles", (t) => {

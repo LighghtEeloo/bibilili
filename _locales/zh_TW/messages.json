@@ -253,6 +253,14 @@
     "message": "補齊缺失封面",
     "description": "Switch for fetching missing video covers."
   },
+  "settingsFavoriteFolderLabel": {
+    "message": "直接收藏到選取的收藏夾",
+    "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
+  },
+  "settingsFavoriteFolderHint": {
+    "message": "收藏按鈕未點亮時直接儲存到目前的收藏夾，無需顯示收藏清單；已點亮時仍開啟嗶哩嗶哩的收藏管理。",
+    "description": "Explains the selected-folder shortcut and native handling for existing favorites."
+  },
   "settingsSourcesLabel": {
     "message": "影片來源",
     "description": "Heading for source availability preferences."

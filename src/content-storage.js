@@ -8,7 +8,9 @@
   const FAVORITE_FOLDER_STORAGE_PREFIX = "bibilili:favorite-folder:";
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
-  const FEATURE_DEFAULTS = Object.freeze({ description: true, thumbnails: true, moreButton: true });
+  const FEATURE_DEFAULTS = Object.freeze({
+    description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true
+  });
   const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
 
   let storageConfig = Object.freeze({
@@ -470,7 +472,7 @@
 
   /**
    * @typedef {object} SettingsPreferenceRecord
-   * @property {{ description: boolean, thumbnails: boolean, moreButton: boolean }} features Optional presentations.
+   * @property {{ description: boolean, thumbnails: boolean, favoriteToSelectedFolder: boolean, moreButton: boolean }} features Optional presentations and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
    */

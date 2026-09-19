@@ -75,17 +75,18 @@ account list API records into extension-owned cards without modifying native
 account list DOM.
 
 Bibilili may add and remove watch-later account records through Bilibili's
-account API. These operations are account-list mutations. They do not activate
-native watch-later controls or replace Bilibili navigation behavior.
+account API. It may add an unsaved archive to the selected favorite folder when
+the direct-save setting is enabled. These operations are account-list mutations.
 
 Bibilili hands archive card navigation to Bilibili's native player API. The
 player and watch page own video resolution, playback, metadata, comments, and
 browser history.
 
-Bibilili mirrors native watch action state with extension-owned buttons. Like,
-coin, and favorite forward clicks to Bilibili's page-owned triggers. Coin and
-favorite dialogs remain page-owned overlays. Share copies the current watch
-URL. The watch-later action adds the current archive through the account API.
+Bibilili mirrors native watch action state with extension-owned buttons. Like
+and coin forward clicks to Bilibili's page-owned triggers. Active favorite
+buttons also forward clicks. Coin and favorite dialogs remain page-owned
+overlays. Share copies the current watch URL. The watch-later action adds the
+current archive through the account API.
 
 Bibilili forwards current-user comment avatar activation to the page-owned
 account control when that control is available. Account menus, login prompts,
@@ -164,16 +165,18 @@ the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
 with Features and Action bar tabs.
 
-Features controls the description and tags, missing-thumbnail enrichment, and
-each video source. All features and sources default to enabled. Disabling the
-description restores its native node and removes its extension presentation.
+Features controls the description and tags, missing-thumbnail enrichment,
+direct favorite saves, and each video source. All features and sources default
+to enabled. Disabling the description restores its native node and removes its
+extension presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails. Disabling a source removes it from routing and source
 root marking. A disabled account source cancels outstanding list requests and
 retains its cached items and expansion for a refresh when re-enabled. Favorites
 appears before Watch later in Features, as it does in the dock. Disabling
-Favorites closes its picker and cancels directory and folder requests. The
-current-video favorite action retains its independent Action bar preference.
+Favorites closes its picker and cancels folder video requests. Folder metadata
+remains available to direct saves while that feature is enabled. The current-video
+favorite action retains its independent behavior and Action bar preferences.
 
 Action bar controls whether each watch action or list tool appears on the bar
 or in More. All actions default to the bar. Show More button defaults to enabled
@@ -436,8 +439,10 @@ query and restores the button; an empty field collapses on blur. Opening the
 picker focuses the selected or first visible folder unless a search query is
 active. Zero-count folders remain selectable.
 
-The directory loads when Favorites is first opened or a stored folder route
-needs restoration. Opening the picker rechecks the account and folder directory.
+The directory loads when Favorites is first opened, a stored folder route
+needs restoration, or a direct save needs the current selection. Loading the
+directory for a direct save leaves the rail route and visibility unchanged and
+does not fetch folder videos. Opening the picker rechecks the account and directory.
 The first source-label click resumes a saved folder after this check. Without a
 valid saved selection, it opens Bilibili's default folder. If that folder is
 unavailable, the picker stays open. Selecting a folder loads its cards on demand
@@ -457,8 +462,10 @@ updates the directory; rail Refresh reloads the selected folder from its first
 page. Favorites uses the existing current-card highlight, Locate, pagination,
 and add-to-watch-later controls.
 
-The current-video star remains a native favorite action. Bilibili owns saving,
-removing, renaming, and organizing favorites through its existing controls.
+The selected folder is also the destination for optional direct saves from the
+current-video star. Its selection remains current when the rail is closed,
+another source is shown, or the Favorites source is disabled. Native favorite
+controls own removals and folder management.
 
 ## Video Item
 
@@ -528,10 +535,23 @@ the current watch URL is not an addable archive target or no native
 watch-later visual has been captured.
 
 The like, coin, and favorite buttons present sanitized clones of native visual
-content and dispatch clicks to their native triggers. Bibilili does not call
-their action APIs directly or replace native action dialogs or account logic.
-The coin action may open Bilibili's native coin dialog. The favorite action may
-open Bilibili's native collection dialog.
+content. Like and coin dispatch clicks to their native triggers. The coin action
+may open Bilibili's native coin dialog.
+
+The favorite action always forwards to Bilibili when the star is active or Save
+favorites to selected folder is disabled. With the setting enabled, an inactive
+star adds the current archive to the current favorite-folder selection. The
+destination is captured at click time. On a fresh page, the account store restores
+the saved selection or default folder on demand. It validates the account and checks
+existing favorite state before submitting the addition. An already saved
+archive, unavailable selection, or failed request uses native handling.
+
+A direct save disables repeated clicks while pending and lights the star after
+success. Its count continues to mirror Bilibili. The saved state remains until
+native state catches up; closing a native favorite dialog rechecks it for
+removals. Success refreshes the directory and any loaded destination folder.
+Navigation or disabling direct saving cancels the pending action. A submitted save may finish,
+but its completion does not update a different page.
 
 The share button presents the native share count and copies a clean current
 watch URL when activated. The copied URL drops tracking parameters and keeps the
