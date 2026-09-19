@@ -3,7 +3,7 @@ const test = require("node:test");
 
 const { FakeStorage, loadContentRuntime, TEST_WATCH_HREF } = require("./helpers/content-runtime.js");
 const { RailElement } = require("./helpers/rail-dom.js");
-const { BibililiController, LayoutRoot } = loadContentRuntime();
+const { BibililiController, LayoutRoot, WatchActionKind } = loadContentRuntime();
 const { ReconcilePriority } = global.__bibililiScheduler;
 const { LanguageResolver, UiStrings } = global.__bibililiI18n;
 const { DomProbe } = global.__bibililiDom;
@@ -173,6 +173,32 @@ function commentNavigationFixture(t) {
   return { ...fixture, layout, root, nativeRoot, player, comments };
 }
 
+/** Adds real counted controls while stubbing only native icon cloning. */
+function watchActionLoadingFixture(t) {
+  const fixture = commentNavigationFixture(t);
+  const { controller, layout, document, root, nativeRoot, regions } = fixture;
+  layout.sourceBar = document.createElement("div");
+  layout.actionGroup = document.createElement("div");
+  const sourceButton = document.createElement("button");
+  sourceButton.disabled = false;
+  layout.sourceBar.append(sourceButton);
+  root.append(layout.sourceBar);
+  regions.actions = Object.values(WatchActionKind).map((kind) => {
+    const trigger = document.createElement("button");
+    nativeRoot.append(trigger);
+    return { kind, trigger, countText: "123", isActive: false };
+  });
+  t.mock.method(layout, "updateWatchActionNativeVisual", () => {});
+  t.mock.method(layout, "updateCurrentWatchLaterActionVisual", () => true);
+  t.mock.method(layout.commentPane, "getBoundingClientRect", () => ({ width: 399 }));
+  t.mock.method(controller.accountSources, "currentWatchLaterCount", () => 77);
+  t.mock.method(UiStrings, "watchActionButtonLabel", (kind, count) => count ? `${kind}: ${count}` : kind);
+  t.mock.method(layout, "setSources", () =>
+    layout.renderWatchActionGroup(layout.currentActions, sourceButton));
+  controller.reconcile(false);
+  return { ...fixture, sourceButton };
+}
+
 test("same-document navigation preserves the comment reload and native restore points", (t) => {
   const { controller, layout, root, comments, player } = commentNavigationFixture(t);
   const connections = comments.connections;
@@ -233,7 +259,7 @@ test("card navigation dims comments before the native request and preserves thei
   t.mock.method(controller.navigation, "navigate", () => {
     assert.equal(layout.commentPane.inert, true);
     assert.equal(layout.commentPane.getAttribute("aria-busy"), "true");
-    assert.equal(root.classList.contains("bibilili-comments-loading"), true);
+    assert.equal(root.classList.contains("bibilili-video-loading"), true);
     assert.equal(comments.connections, connections);
     assert.equal(comments.parentElement, layout.commentPane);
     return true;
@@ -243,14 +269,102 @@ test("card navigation dims comments before the native request and preserves thei
   assert.equal(layout.commentLoadingView.getAttribute("role"), "status");
   assert.equal(layout.commentLoadingView.getAttribute("aria-hidden"), "false");
   controller.stop();
-  assert.equal(controller.commentLoading.active, false);
+  assert.equal(controller.videoLoading.active, false);
+});
+
+test("counted buttons stay covered until refreshed data and comments can paint together", (t) => {
+  const f = watchActionLoadingFixture(t);
+  const { controller, layout, document, player, comments, regions, sourceButton, paintFrame, runTimers } = f;
+  const buttons = [...layout.actionButtons.values()];
+  assert.equal(buttons.length, 5);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  t.mock.method(controller.navigation, "navigate", () => {
+    for (const button of buttons) {
+      assert.equal(button.disabled, true, "controls are blocked before the native request");
+      assert.equal(button.getAttribute("aria-busy"), "true");
+      assert.equal(button.getAttribute("aria-label"), button.dataset.watchActionKind);
+      assert.equal(button.getAttribute("aria-pressed"), null);
+      assert.equal(button.querySelectorAll(".bibilili-loading-view").length, 1);
+    }
+    assert.equal(sourceButton.disabled, false, "source controls remain available");
+    return true;
+  });
+  controller.navigateVideoCard("watch_later", "/video/BVnext", { preventDefault() {} });
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  controller.videoLoading.handleMediaEvent({ type: "loadeddata", target: video });
+  paintFrame();
+  paintFrame();
+  assert.ok(buttons.every((button) => button.disabled));
+  for (const action of regions.actions) {
+    action.countText = "987";
+    action.isActive = true;
+  }
+  comments.readyRouteKey = controller.currentPageKey();
+  runTimers(100);
+  assert.equal(buttons[0].querySelector(".bibilili-action-count").textContent, "987",
+    "the destination counts reconcile before reveal frames are queued");
+  assert.ok(buttons.every((button) => button.disabled));
+  paintFrame();
+  paintFrame();
+  assert.deepEqual([...layout.actionButtons.values()], buttons, "button identities stay stable");
+  for (const button of buttons) {
+    const kind = button.dataset.watchActionKind;
+    assert.equal(button.disabled, false);
+    assert.equal(button.getAttribute("aria-busy"), "false");
+    assert.equal(button.getAttribute("aria-label"), `${kind}: ${kind === WatchActionKind.WATCH_LATER ? "77" : "987"}`);
+    assert.equal(button.querySelectorAll(".bibilili-loading-view").length, 1);
+  }
+  assert.equal(buttons[0].getAttribute("aria-pressed"), "true");
+  controller.stop();
+});
+
+test("covered action handlers cannot activate native controls or account mutations", (t) => {
+  const { controller, layout } = watchActionLoadingFixture(t);
+  t.mock.method(LayoutRoot, "clickNativeTrigger", () => {});
+  t.mock.method(layout, "copyCurrentWatchUrl", () => {});
+  layout.onWatchLaterAdd = t.mock.fn(() => Promise.resolve());
+  controller.videoLoading.begin();
+  for (const kind of Object.values(WatchActionKind)) layout.handleWatchActionButtonClick(kind);
+  layout.handleCurrentWatchLaterAddClick();
+  assert.equal(LayoutRoot.clickNativeTrigger.mock.callCount(), 0);
+  assert.equal(layout.copyCurrentWatchUrl.mock.callCount(), 0);
+  assert.equal(layout.onWatchLaterAdd.mock.callCount(), 0);
+  controller.videoLoading.cancel();
+  assert.ok([...layout.actionButtons.values()].every((button) => !button.disabled));
+  controller.stop();
+});
+
+test("a watch-later request settling during navigation cannot uncover its button", async (t) => {
+  const { controller, layout } = watchActionLoadingFixture(t);
+  const button = layout.actionButtons.get(WatchActionKind.WATCH_LATER);
+  let reject;
+  layout.onWatchLaterAdd = () => new Promise((_resolve, fail) => { reject = fail; });
+  layout.handleCurrentWatchLaterAddClick();
+  controller.videoLoading.begin();
+  reject(new Error("request failed"));
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(button.disabled, true);
+  assert.equal(button.getAttribute("aria-busy"), "true");
+  controller.videoLoading.cancel();
+  assert.equal(button.disabled, false);
+
+  const key = button.dataset.bibililiWatchLaterAddKey;
+  layout.pendingWatchLaterAddKeys.add(key);
+  controller.videoLoading.begin();
+  controller.videoLoading.cancel();
+  assert.equal(button.disabled, true, "an independent pending mutation remains disabled");
+  assert.equal(button.getAttribute("aria-busy"), "false");
+  controller.stop();
 });
 
 test("ready video frames keep old comments dim until the destination thread renders", (t) => {
   const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
   const video = document.createElement("video");
   player.append(video);
-  const loading = controller.commentLoading;
+  const loading = controller.videoLoading;
   loading.begin("video:BVnext:p1");
   video.readyState = 4;
   loading.handleMediaEvent({ type: "canplay", target: video });
@@ -262,20 +376,20 @@ test("ready video frames keep old comments dim until the destination thread rend
   video.readyState = 1;
   loading.handleMediaEvent({ type: "loadstart", target: video });
   controller.handlePotentialNavigation();
-  assert.equal(layout.commentsLoading, true, "a URL change is not a ready video frame");
+  assert.equal(layout.isVideoLoading, true, "a URL change is not a ready video frame");
   video.readyState = 2;
   loading.handleMediaEvent({ type: "loadeddata", target: video });
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, true, "video readiness does not finish a comment load");
+  assert.equal(layout.isVideoLoading, true, "video readiness does not finish a comment load");
   for (let pass = 0; pass < 110; pass += 1) runTimers(100);
-  assert.equal(layout.commentsLoading, true, "elapsed time cannot reveal a stale thread");
+  assert.equal(layout.isVideoLoading, true, "elapsed time cannot reveal a stale thread");
   comments.readyRouteKey = controller.currentPageKey();
   runTimers(100);
   paintFrame();
-  assert.equal(layout.commentsLoading, true);
+  assert.equal(layout.isVideoLoading, true);
   paintFrame();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   assert.equal(layout.commentPane.inert, false);
   assert.equal(layout.commentPane.getAttribute("aria-busy"), "false");
   assert.equal(layout.commentLoadingView.getAttribute("aria-hidden"), "true");
@@ -294,25 +408,25 @@ test("native player loads use the same comment state and a later URL poll does n
     handlers.set(name, handler);
   };
   document.removeEventListener = (name) => handlers.delete(name);
-  const loading = controller.commentLoading;
+  const loading = controller.videoLoading;
   loading.start();
   assert.equal(handlers.has("waiting"), false, "buffering does not dim the pane");
   handlers.get("loadstart")({ type: "loadstart", target: unrelated });
   assert.equal(loading.active, false);
   handlers.get("loadstart")({ type: "loadstart", target: video });
-  assert.equal(layout.commentsLoading, true);
+  assert.equal(layout.isVideoLoading, true);
   global.location = new URL("https://www.bilibili.com/video/BVnext");
   comments.readyRouteKey = controller.currentPageKey();
   loading.revealWhenReady();
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, true, "comments alone cannot reveal before the video");
+  assert.equal(layout.isVideoLoading, true, "comments alone cannot reveal before the video");
   video.readyState = 2;
   handlers.get("loadeddata")({ type: "loadeddata", target: video });
   paintFrame();
   paintFrame();
   controller.handlePotentialNavigation();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   controller.stop();
   assert.equal(handlers.size, 0);
 });
@@ -321,7 +435,7 @@ test("a second switch cancels the previous frame's queued comment reveal", (t) =
   const { controller, layout, player, comments, document, paintFrame, runTimers } = commentNavigationFixture(t);
   const video = document.createElement("video");
   player.append(video);
-  const loading = controller.commentLoading;
+  const loading = controller.videoLoading;
   loading.begin("video:BVnext:p1");
   global.location = new URL("https://www.bilibili.com/video/BVnext");
   comments.readyRouteKey = controller.currentPageKey();
@@ -330,17 +444,17 @@ test("a second switch cancels the previous frame's queued comment reveal", (t) =
   paintFrame();
   loading.begin("video:BVthird:p1");
   paintFrame();
-  assert.equal(layout.commentsLoading, true);
+  assert.equal(layout.isVideoLoading, true);
   global.location = new URL("https://www.bilibili.com/video/BVthird");
   loading.handleMediaEvent({ type: "loadeddata", target: video });
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, true, "the earlier video's completion cannot reveal this one");
+  assert.equal(layout.isVideoLoading, true, "the earlier video's completion cannot reveal this one");
   comments.readyRouteKey = controller.currentPageKey();
   runTimers(100);
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   controller.stop();
 });
 
@@ -349,13 +463,13 @@ test("confirmed AV redirects reveal ready media under its canonical route", (t) 
   const video = document.createElement("video");
   video.readyState = 2;
   player.append(video);
-  controller.commentLoading.begin("video:av222:p1");
+  controller.videoLoading.begin("video:av222:p1");
   global.location = new URL("https://www.bilibili.com/video/BVnext");
   comments.readyRouteKey = controller.currentPageKey();
-  controller.commentLoading.confirm(global.location.href);
+  controller.videoLoading.confirm(global.location.href);
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   controller.stop();
 });
 
@@ -364,7 +478,7 @@ test("playback errors still wait for current comments; disabling cancels pending
   const pane = layout.commentPane;
   const video = document.createElement("video");
   player.append(video);
-  const loading = controller.commentLoading;
+  const loading = controller.videoLoading;
   loading.begin();
   video.readyState = 0;
   video.error = { code: 2 };
@@ -384,7 +498,7 @@ test("playback errors still wait for current comments; disabling cancels pending
   paintFrame();
   assert.equal(timers.has(pendingCheck), false);
   assert.equal(pane.inert, false);
-  assert.equal(root.classList.contains("bibilili-comments-loading"), false);
+  assert.equal(root.classList.contains("bibilili-video-loading"), false);
   assert.equal(loading.active, false);
   controller.stop();
 });
@@ -394,18 +508,18 @@ test("a comment reload between paint frames defers the reveal again", (t) => {
   const video = document.createElement("video");
   video.readyState = 2;
   player.append(video);
-  controller.commentLoading.begin();
+  controller.videoLoading.begin();
   comments.readyRouteKey = controller.currentPageKey();
-  controller.commentLoading.handleMediaEvent({ type: "loadeddata", target: video });
+  controller.videoLoading.handleMediaEvent({ type: "loadeddata", target: video });
   paintFrame();
   comments.readyRouteKey = null;
   paintFrame();
-  assert.equal(layout.commentsLoading, true);
+  assert.equal(layout.isVideoLoading, true);
   comments.readyRouteKey = controller.currentPageKey();
   runTimers(100);
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   controller.stop();
 });
 
@@ -414,18 +528,18 @@ test("a native URL commit after the media event still waits for its destination 
   const video = document.createElement("video");
   video.readyState = 2;
   player.append(video);
-  controller.commentLoading.handleMediaEvent({ type: "loadstart", target: video });
-  controller.commentLoading.handleMediaEvent({ type: "loadeddata", target: video });
+  controller.videoLoading.handleMediaEvent({ type: "loadstart", target: video });
+  controller.videoLoading.handleMediaEvent({ type: "loadeddata", target: video });
   global.location = new URL("https://www.bilibili.com/video/BVnext");
   controller.handlePotentialNavigation();
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, true);
+  assert.equal(layout.isVideoLoading, true);
   comments.readyRouteKey = controller.currentPageKey();
   runTimers(100);
   paintFrame();
   paintFrame();
-  assert.equal(layout.commentsLoading, false);
+  assert.equal(layout.isVideoLoading, false);
   controller.stop();
 });
 

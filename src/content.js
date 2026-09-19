@@ -34,10 +34,10 @@
     "data-bibilili-native-overlay-positioned";
   const HTML_MOUNTED_CLASS = "bibilili-mounted";
   const LOADING_COVER_TIMEOUT_MS = 5000;
-  const LOADING_COVER_FADE_MS = 240;
+  const LOADING_FADE_MS = 240;
   const PLAYER_RECOVERY_TIMEOUT_MS = 5000;
-  const COMMENT_LOADING_CHECK_INTERVAL_MS = 100;
-  const COMMENT_LOADING_CLASS = "bibilili-comments-loading";
+  const VIDEO_LOADING_CHECK_INTERVAL_MS = 100;
+  const VIDEO_LOADING_CLASS = "bibilili-video-loading";
   const PLAYER_MEDIA_SELECTOR = "video, bwp-video";
   const PLAYER_LOAD_EVENTS = ["loadstart", "loadeddata", "canplay", "error"];
   const LOGO_ASSET_PATH = "assets/bibilili-logo-white.svg";
@@ -1114,6 +1114,39 @@
   }
 
   /**
+   * Shared loading presentation for startup, comments, and counted actions.
+   * Callers supply text slots and placement; one indicator owns bar markup.
+   */
+  class LoadingView {
+    /**
+     * Creates a loading view with optional content before its decorative bar.
+     * Status announcements and busy state belong to the containing surface.
+     *
+     * @param {Document} document
+     * @param {{ className?: string, content?: Node[], inline?: boolean }} options
+     * @returns {HTMLElement}
+     */
+    static create(document, { className = "", content = [], inline = false } = {}) {
+      const view = document.createElement(inline ? "span" : "div");
+      view.className = `bibilili-loading-view ${className}`.trim();
+      const indicator = document.createElement("span");
+      indicator.className = "bibilili-loading-indicator";
+      indicator.setAttribute("aria-hidden", "true");
+      view.append(...content, indicator);
+      return view;
+    }
+
+    /**
+     * Shares fade timing between CSS surfaces and startup-cover removal.
+     *
+     * @param {HTMLElement} surface
+     */
+    static prepareSurface(surface) {
+      surface.style.setProperty("--bibilili-loading-fade-duration", `${LOADING_FADE_MS}ms`);
+    }
+  }
+
+  /**
    * Covers the viewport until the transformed layout is ready to paint.
    *
    * Note: The cover mounts under the document root because Bilibili can paint
@@ -1194,12 +1227,7 @@
         this.root.setAttribute("role", "status");
         this.root.setAttribute("aria-live", "polite");
         this.root.setAttribute("aria-atomic", "true");
-        this.root.style.setProperty(
-          "--bibilili-loading-fade-duration", `${LOADING_COVER_FADE_MS}ms`
-        );
-
-        const content = this.document.createElement("div");
-        content.className = "bibilili-loading-content";
+        LoadingView.prepareSurface(this.root);
         const brand = this.document.createElement("div");
         brand.className = "bibilili-loading-brand";
         brand.textContent = "bibilili";
@@ -1208,10 +1236,10 @@
         this.title.className = "bibilili-loading-title";
         this.uploader = this.document.createElement("div");
         this.uploader.className = "bibilili-loading-uploader";
-        const indicator = this.document.createElement("div");
-        indicator.className = "bibilili-loading-indicator";
-        indicator.setAttribute("aria-hidden", "true");
-        content.append(brand, this.title, this.uploader, indicator);
+        const content = LoadingView.create(this.document, {
+          className: "bibilili-loading-content",
+          content: [brand, this.title, this.uploader]
+        });
         if (this.geometry) {
           this.mountShell(content);
         } else {
@@ -1310,7 +1338,7 @@
           this.stopObserving();
           this.root.dataset.bibililiLoadingState = "leaving";
           this.root.setAttribute("aria-hidden", "true");
-          this.fadeTimer = window.setTimeout(() => this.stop(), LOADING_COVER_FADE_MS);
+          this.fadeTimer = window.setTimeout(() => this.stop(), LOADING_FADE_MS);
         });
       });
     }
@@ -1344,15 +1372,16 @@
   }
 
   /**
-   * Mutes stale comments until the destination video and comment thread render.
+   * Covers stale comments and counted watch actions during a video switch.
+   * Destination playback and comments must be ready before refreshed data paints.
    * Native media events also cover player recommendations and browser history.
    */
-  class CommentLoadingState {
+  class VideoLoadingState {
     /**
      * @param {Document} document
      * @param {LayoutRoot} layout
      * @param {NativeVideoNavigation} navigation Reads native comment readiness.
-     * @param {() => void} onReady Reconciles metadata before revealing the pane.
+     * @param {() => void} onReady Reconciles metadata and actions before reveal.
      */
     constructor(document, layout, navigation, onReady) {
       this.document = document;
@@ -1390,7 +1419,7 @@
       this.targetRouteKey = targetRouteKey;
       this.readyRouteKey = null;
       this.readyMedia = null;
-      this.layout.setCommentsLoading(true);
+      this.layout.setVideoLoading(true);
       this.scheduleCheck();
     }
 
@@ -1454,7 +1483,7 @@
       this.timer = window.setTimeout(() => {
         this.timer = null;
         this.revealWhenReady();
-      }, COMMENT_LOADING_CHECK_INTERVAL_MS);
+      }, VIDEO_LOADING_CHECK_INTERVAL_MS);
     }
 
     /**
@@ -1504,14 +1533,14 @@
       this.frame = null;
     }
 
-    /** Restores comment interaction after completion or cancellation. */
+    /** Restores covered controls after completion or cancellation. */
     cancel() {
       window.clearTimeout(this.timer);
       this.timer = null;
       this.cancelReveal();
       this.active = false;
       this.targetRouteKey = null;
-      this.layout.setCommentsLoading(false);
+      this.layout.setVideoLoading(false);
     }
 
     /** Removes all media listeners and pending presentation work. */
@@ -5922,7 +5951,7 @@
       this.stage = null;
       this.playerPane = null;
       this.commentPane = null;
-      this.commentsLoading = false;
+      this.isVideoLoading = false;
       this.commentLoadingView = null;
       this.commentLoadingLabel = null;
       this.commentResizeHandle = null;
@@ -6144,7 +6173,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
-      this.setCommentsLoading(false);
+      this.setVideoLoading(false);
       this.stopRailWindow();
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
@@ -6177,6 +6206,7 @@
 
       this.root = this.document.createElement("section");
       this.root.id = OWNED_ROOT_ID;
+      LoadingView.prepareSurface(this.root);
 
       this.stage = this.document.createElement("main");
       this.stage.className = "bibilili-stage";
@@ -6252,7 +6282,7 @@
       this.root.append(this.stage, this.dock);
       this.document.body.prepend(this.root);
       this.applyStoredCommentPaneWidth();
-      this.setCommentsLoading(this.commentsLoading);
+      this.setVideoLoading(this.isVideoLoading);
     }
 
     /**
@@ -6530,29 +6560,30 @@
     }
 
     /**
-     * Dims the complete comment pane and blocks stale comment controls in place.
-     * The status view shares its grid cell, so it stays centered while scrolled.
+     * Covers comments and counted watch actions for the same video transition.
+     * The comment status shares its grid cell and stays centered while scrolled.
      *
      * @param {boolean} loading
      */
-    setCommentsLoading(loading) {
-      this.commentsLoading = loading;
-      this.root?.classList.toggle(COMMENT_LOADING_CLASS, loading);
+    setVideoLoading(loading) {
+      this.isVideoLoading = loading;
+      this.root?.classList.toggle(VIDEO_LOADING_CLASS, loading);
+      for (const button of this.actionButtons.values()) {
+        this.syncWatchActionButtonState(button);
+      }
       if (this.commentPane) {
         this.commentPane.inert = loading;
         this.commentPane.setAttribute("aria-busy", String(loading));
       }
       if (loading && this.stage && !this.commentLoadingView?.isConnected) {
         this.commentLoadingView = this.document.createElement("div");
-        this.commentLoadingView.className = "bibilili-comment-loading";
+        this.commentLoadingView.className = "bibilili-comment-loading bibilili-loading-overlay";
         this.commentLoadingView.setAttribute("role", "status");
-        const content = this.document.createElement("div");
         this.commentLoadingLabel = this.document.createElement("div");
         this.commentLoadingLabel.className = "bibilili-comment-loading-label";
-        const indicator = this.document.createElement("div");
-        indicator.className = "bibilili-loading-indicator";
-        indicator.setAttribute("aria-hidden", "true");
-        content.append(this.commentLoadingLabel, indicator);
+        const content = LoadingView.create(this.document, {
+          content: [this.commentLoadingLabel]
+        });
         this.commentLoadingView.append(content);
         this.stage.append(this.commentLoadingView);
         this.updateCommentLoadingLabel();
@@ -7773,6 +7804,12 @@
       button.dataset.watchActionKind = kind;
       button.append(this.watchActionNativeVisualNode());
       button.append(this.watchActionCountNode());
+      const loading = LoadingView.create(this.document, {
+        className: "bibilili-action-loading bibilili-loading-overlay",
+        inline: true
+      });
+      loading.setAttribute("aria-hidden", "true");
+      button.append(loading);
       this.actionButtons.set(kind, button);
       return button;
     }
@@ -7812,25 +7849,41 @@
         return;
       }
 
-      const label = UiStrings.watchActionButtonLabel(
-        action.kind,
-        action.countText,
-        this.language
-      );
       const visual = button.querySelector(".bibilili-action-native-visual");
       const count = button.querySelector(".bibilili-action-count");
 
       this.updateWatchActionNativeVisual(visual, action);
-      UiControl.setLabel(button, label);
+      count.textContent = action.countText ?? "";
+      count.hidden = !action.countText;
+      this.syncWatchActionButtonState(button, action);
+    }
 
-      if (WATCH_ACTION_STATEFUL_KINDS.has(action.kind)) {
-        button.setAttribute("aria-pressed", String(action.isActive));
+    /**
+     * Hides stale counts and pressed state from accessibility during navigation.
+     * Watch-later mutations retain their independent disabled state after reveal.
+     *
+     * @param {HTMLButtonElement} button
+     * @param {WatchAction | undefined} [action] Freshly discovered action state.
+     */
+    syncWatchActionButtonState(button, action) {
+      const kind = button.dataset.watchActionKind;
+      const key = button.dataset.bibililiWatchLaterAddKey;
+      button.disabled = this.isVideoLoading || (
+        kind === WatchActionKind.WATCH_LATER && (!key || this.pendingWatchLaterAddKeys.has(key))
+      );
+      button.setAttribute("aria-busy", String(this.isVideoLoading));
+      const count = button.querySelector(".bibilili-action-count");
+      UiControl.setLabel(button, UiStrings.watchActionButtonLabel(
+        kind,
+        this.isVideoLoading ? null : count?.textContent,
+        this.language
+      ));
+      if (!this.isVideoLoading && WATCH_ACTION_STATEFUL_KINDS.has(kind)) {
+        const current = action ?? this.currentActions.find((candidate) => candidate.kind === kind);
+        button.setAttribute("aria-pressed", String(Boolean(current?.isActive)));
       } else {
         button.removeAttribute("aria-pressed");
       }
-
-      count.textContent = action.countText ?? "";
-      count.hidden = !action.countText;
     }
 
     /**
@@ -7845,16 +7898,6 @@
       const key = action.watchLaterAddKey ?? "";
       const countText = action.countText ?? "";
 
-      UiControl.setLabel(
-        button,
-        UiStrings.watchActionButtonLabel(
-          action.kind,
-          action.countText,
-          this.language
-        )
-      );
-      button.removeAttribute("aria-pressed");
-      button.disabled = key ? this.pendingWatchLaterAddKeys.has(key) : true;
       button.dataset.bibililiWatchLaterAction = WatchLaterCardAction.ADD;
       button.dataset.bibililiWatchLaterAddKey = key;
       button.dataset.bibililiWatchLaterAddTargetUrl =
@@ -7863,6 +7906,7 @@
       button.hidden = !this.updateCurrentWatchLaterActionVisual(visual, action);
       count.textContent = countText;
       count.hidden = !countText;
+      this.syncWatchActionButtonState(button, action);
     }
 
     /**
@@ -8077,6 +8121,7 @@
      * @param {string} kind
      */
     handleWatchActionButtonClick(kind) {
+      if (this.isVideoLoading) return;
       const action = this.currentActions.find(
         (candidate) => candidate.kind === kind
       );
@@ -8108,7 +8153,7 @@
       const state = this.currentWatchLaterAddState();
 
       if (
-        !state ||
+        this.isVideoLoading || !state ||
         !this.onWatchLaterAdd ||
         this.pendingWatchLaterAddKeys.has(state.key)
       ) {
@@ -8131,7 +8176,7 @@
           this.pendingWatchLaterAddKeys.delete(state.key);
 
           if (button?.isConnected) {
-            button.disabled = false;
+            this.syncWatchActionButtonState(button);
           }
         });
     }
@@ -10392,8 +10437,8 @@
         this.layout.scheduleRailRender();
       });
       this.layout = new LayoutRoot(document, this.videoPreviews);
-      this.commentLoading = new CommentLoadingState(document, this.layout, this.navigation, () => {
-        this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      this.videoLoading = new VideoLoadingState(document, this.layout, this.navigation, () => {
+        this.reconcile(false);
       });
       this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
@@ -10438,7 +10483,7 @@
     start() {
       this.uiLanguage = LanguageResolver.resolve(this.document);
       this.navigation.start();
-      this.commentLoading.start();
+      this.videoLoading.start();
       this.pageKey = this.currentPageKey();
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       BilibiliThemeSync.sync(this.document);
@@ -10488,7 +10533,7 @@
       this.accountSources.stop();
       this.clearRenderedPageState();
       this.navigation.stop();
-      this.commentLoading.stop();
+      this.videoLoading.stop();
       this.activationControl.destroy();
     }
 
@@ -10497,7 +10542,7 @@
      */
     clearRenderedPageState() {
       this.navigation.cancel();
-      this.commentLoading.cancel();
+      this.videoLoading.cancel();
       this.cancelPlayerRecovery();
       this.loadingCover.stop();
       this.videoPreviews.stop();
@@ -10753,7 +10798,7 @@
     observeNavigation() {
       this.popstateHandler = () => {
         this.navigation.cancel();
-        this.commentLoading.cancel();
+        this.videoLoading.cancel();
         this.handlePotentialNavigation();
       };
       this.hashchangeHandler = () => this.handlePotentialNavigation();
@@ -10801,11 +10846,11 @@
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       if (this.isWatchPage()) {
-        this.commentLoading.followRoute(nextPageKey);
+        this.videoLoading.followRoute(nextPageKey);
         this.layout.resetPageSession();
       } else {
         this.navigation.cancel();
-        this.commentLoading.cancel();
+        this.videoLoading.cancel();
         this.layout.destroy();
       }
       this.prepareMount();
@@ -10835,14 +10880,14 @@
         return;
       }
       this.recordVideoCardNavigationSource(sourceKind, targetUrl);
-      this.commentLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
+      this.videoLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
       const accepted = this.navigation.navigate(target.href, (success, landedUrl) => {
         if (!this.enabled || !this.isWatchPage()) return;
         if (!success) {
           window.location.assign(target.href);
           return;
         }
-        this.commentLoading.confirm(landedUrl);
+        this.videoLoading.confirm(landedUrl);
         if (
           SourceAdapter.watchRouteKeyForUrl(landedUrl) !==
           SourceAdapter.watchRouteKeyForUrl(target.href)

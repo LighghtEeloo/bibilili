@@ -29,6 +29,7 @@
 }
 
 #bibilili-loading-cover .bibilili-loading-content {
+  --bibilili-loading-gap: 32px;
   width: min(640px, 100%);
   margin-block-end: 8vh;
   animation: bibilili-loading-enter 180ms ease-out both;
@@ -66,24 +67,46 @@
   white-space: nowrap;
 }
 
-#bibilili-loading-cover .bibilili-loading-indicator,
-#bibilili-layout-root .bibilili-loading-indicator {
+.bibilili-loading-view .bibilili-loading-indicator {
+  display: block;
   width: 48px;
   height: 2px;
-  margin: 32px auto 0;
+  margin: var(--bibilili-loading-gap, 0) auto 0;
   overflow: hidden;
   border-radius: 1px;
   background: var(--bibilili-loading-track);
 }
 
-#bibilili-loading-cover .bibilili-loading-indicator::after,
-#bibilili-layout-root .bibilili-loading-indicator::after {
+.bibilili-loading-view .bibilili-loading-indicator::after {
   display: block;
   width: 16px;
   height: 100%;
   background: var(--bibilili-loading-stroke);
   animation: bibilili-loading 1.4s ease-in-out infinite;
   content: "";
+}
+
+.bibilili-loading-overlay {
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--bibilili-loading-fade-duration) ease-out,
+    visibility var(--bibilili-loading-fade-duration);
+}
+
+.bibilili-loading-overlay .bibilili-loading-indicator::after {
+  animation-play-state: paused;
+}
+
+#bibilili-layout-root.bibilili-video-loading .bibilili-loading-overlay {
+  visibility: visible;
+  opacity: 1;
+}
+
+#bibilili-layout-root.bibilili-video-loading .bibilili-loading-overlay
+  .bibilili-loading-indicator::after {
+  animation-play-state: running;
 }
 
 #bibilili-loading-cover.bibilili-loading-shell {
@@ -171,18 +194,18 @@
 @media (prefers-reduced-motion: reduce) {
   #bibilili-loading-cover,
   #bibilili-layout-root .bibilili-comment-pane,
-  #bibilili-layout-root .bibilili-comment-loading {
+  #bibilili-layout-root .bibilili-action-native-visual,
+  #bibilili-layout-root .bibilili-action-count,
+  #bibilili-layout-root .bibilili-loading-overlay {
     transition: none;
   }
 
   #bibilili-loading-cover .bibilili-loading-content,
-  #bibilili-loading-cover .bibilili-loading-indicator::after,
-  #bibilili-layout-root .bibilili-loading-indicator::after {
+  .bibilili-loading-view .bibilili-loading-indicator::after {
     animation: none;
   }
 
-  #bibilili-loading-cover .bibilili-loading-indicator::after,
-  #bibilili-layout-root .bibilili-loading-indicator::after {
+  .bibilili-loading-view .bibilili-loading-indicator::after {
     transform: translateX(16px);
   }
 }
@@ -199,6 +222,9 @@
 
 #bibilili-layout-root,
 #bibilili-toggle-root {
+  --bibilili-loading-track: var(--Ga2, #f0f0f1);
+  --bibilili-loading-stroke: var(--Ga5, #a5a7ab);
+  --bibilili-loading-dimmed-opacity: 0.18;
   --bibilili-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.12);
   --bibilili-button-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.18);
   --bibilili-button-hover-border: rgba(var(--Ga10_rgb, 24, 25, 28), 0.34);
@@ -339,12 +365,11 @@
   background: var(--bibilili-comment-bg);
   overscroll-behavior: contain;
   opacity: 1;
-  transition: opacity 240ms ease-out;
+  transition: opacity var(--bibilili-loading-fade-duration) ease-out;
 }
 
 .bibilili-comment-loading {
-  --bibilili-loading-track: var(--Ga2, #f0f0f1);
-  --bibilili-loading-stroke: var(--Ga5, #a5a7ab);
+  --bibilili-loading-gap: 20px;
   grid-area: 1 / 3;
   z-index: 3;
   display: none;
@@ -354,10 +379,6 @@
   padding: 24px;
   color: var(--bibilili-muted);
   text-align: center;
-  pointer-events: none;
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity 240ms ease-out, visibility 240ms;
 }
 
 #bibilili-layout-root:is(.bibilili-has-comments, .bibilili-has-comment-retry, .bibilili-has-video-header)
@@ -371,18 +392,9 @@
   line-height: 1.5;
 }
 
-#bibilili-layout-root .bibilili-comment-loading .bibilili-loading-indicator {
-  margin-top: 20px;
-}
-
-#bibilili-layout-root.bibilili-comments-loading .bibilili-comment-pane {
-  opacity: 0.18;
+#bibilili-layout-root.bibilili-video-loading .bibilili-comment-pane {
+  opacity: var(--bibilili-loading-dimmed-opacity);
   pointer-events: none;
-}
-
-#bibilili-layout-root.bibilili-comments-loading .bibilili-comment-loading {
-  visibility: visible;
-  opacity: 1;
 }
 
 .bibilili-comment-resize-handle {
@@ -737,6 +749,7 @@
 }
 
 .bibilili-action-button {
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -880,6 +893,28 @@
   font: inherit;
   line-height: 1;
   white-space: nowrap;
+}
+
+.bibilili-action-native-visual,
+.bibilili-action-count {
+  transition: opacity var(--bibilili-loading-fade-duration) ease-out;
+}
+
+.bibilili-action-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+#bibilili-layout-root.bibilili-video-loading .bibilili-action-button {
+  opacity: 1;
+  pointer-events: none;
+}
+
+#bibilili-layout-root.bibilili-video-loading .bibilili-action-native-visual,
+#bibilili-layout-root.bibilili-video-loading .bibilili-action-count {
+  opacity: var(--bibilili-loading-dimmed-opacity);
 }
 
 .bibilili-toggle-button {

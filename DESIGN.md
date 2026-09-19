@@ -161,6 +161,12 @@ visible. The cover shows the current title and uploader as native metadata
 becomes available, with a localized loading title as fallback. It reads
 existing page data without requesting video metadata or images.
 
+The startup cover, comment overlay, and counted action overlays use one loading
+view component. It renders optional text content with the same thin animated
+bar. Indicator markup, fade timing, and reduced-motion rules are shared.
+Comment and button covers also share overlay visibility and video transition
+state. Each surface defines its placement and text.
+
 Card navigation carries the current comment width and dock height in its
 tab-scoped origin record. If the destination requires a new document, the
 loading cover reserves those pane dimensions with an empty player surface,
@@ -447,6 +453,13 @@ activation can move that archive to the top of the watch-later list.
 Watch action buttons are keyed by action kind. Reconciliation updates them in
 place, replaces cloned visuals from current native markup, and removes buttons
 for absent native triggers or unavailable account mutations.
+
+Video switches cover each watch action button with the comment pane's thin
+loading bar and dim its icon and count. Button dimensions stay fixed. Covered
+buttons are disabled and expose a busy state; accessible labels omit stale
+counts and pressed state. The buttons share the comment pane's loading period.
+Destination metadata and action controls reconcile before the covers fade out.
+Pending watch-later additions retain their disabled state after the transition.
 
 ## Video Header
 
