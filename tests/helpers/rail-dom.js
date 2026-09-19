@@ -7,8 +7,9 @@ class RailElement {
     this.children = [];
     this.parentElement = null;
     this.dataset = {};
-    this.style = {};
+    this.style = { setProperty: (name, value) => { this.style[name] = value; } };
     this.attributes = new Map();
+    this.listeners = new Map();
   }
 
   get classList() {
@@ -24,13 +25,21 @@ class RailElement {
 
   get firstChild() { return this.children[0] ?? null; }
   get firstElementChild() { return this.firstChild; }
+  get parentNode() { return this.parentElement; }
+  get lastChild() { return this.children.at(-1) ?? null; }
+  get childElementCount() { return this.children.length; }
   get nextSibling() {
     const siblings = this.parentElement?.children ?? [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }
 
   matches(selector) {
-    return selector.split(",").some((part) => this.classList.contains(part.trim().slice(1)));
+    return selector.split(",").some((part) => {
+      const value = part.trim();
+      if (value.startsWith(".")) return this.classList.contains(value.slice(1));
+      if (value.endsWith(":not(:disabled)")) return !this.disabled && this.tagName === value.split(":")[0];
+      return this.tagName === value;
+    });
   }
 
   closest(selector) {
@@ -45,7 +54,14 @@ class RailElement {
 
   querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
   contains(node) { return this === node || this.children.some((child) => child.contains(node)); }
-  addEventListener() {}
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(listener);
+  }
+  removeEventListener(type, listener) { this.listeners.get(type)?.delete(listener); }
+  dispatch(type, event = {}) {
+    for (const listener of this.listeners.get(type) ?? []) listener({ target: this, ...event });
+  }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   removeAttribute(name) { this.attributes.delete(name); }
@@ -84,6 +100,7 @@ function railFixture(LayoutRoot, count, kind = "history") {
   const document = {
     addEventListener() {}, removeEventListener() {},
     createElement: (tagName) => new RailElement(document, tagName),
+    createElementNS: (_namespace, tagName) => new RailElement(document, tagName),
     cardWidth: 190
   };
   document.body = document.createElement("body");

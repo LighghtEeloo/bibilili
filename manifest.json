@@ -47,6 +47,8 @@
         "src/content-state.js",
         "src/content-i18n.js",
         "src/content-storage.js",
+        "src/content-controls.js",
+        "src/content-settings.js",
         "src/content-theme.js",
         "src/content-scheduler.js",
         "src/content-navigation.js",

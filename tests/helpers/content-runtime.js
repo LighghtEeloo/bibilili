@@ -68,6 +68,8 @@ function loadContentRuntime() {
   require("../../src/content-state.js");
   require("../../src/content-i18n.js");
   require("../../src/content-storage.js");
+  require("../../src/content-controls.js");
+  require("../../src/content-settings.js");
   require("../../src/content-theme.js");
   require("../../src/content-scheduler.js");
   require("../../src/content-navigation.js");

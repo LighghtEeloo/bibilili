@@ -208,5 +208,81 @@
   "railSearchEmpty": {
     "message": "No matching videos",
     "description": "Rail heading when the search has no matches."
+  },
+  "settingsLabel": {
+    "message": "Settings",
+    "description": "Label for the settings popup and its launcher."
+  },
+  "closeLabel": {
+    "message": "Close",
+    "description": "Accessible label for closing a popup."
+  },
+  "moreActionsLabel": {
+    "message": "More actions",
+    "description": "Accessible label for the overflow action popup."
+  },
+  "settingsEnabledLabel": {
+    "message": "Enabled",
+    "description": "Label for the global activation switch."
+  },
+  "settingsFeaturesLabel": {
+    "message": "Features",
+    "description": "Settings tab for feature switches."
+  },
+  "settingsActionBarLabel": {
+    "message": "Action bar",
+    "description": "Settings tab for shortcut placement."
+  },
+  "settingsMoreButtonLabel": {
+    "message": "Show More button",
+    "description": "Controls the visibility of the action bar's More button."
+  },
+  "settingsWatchPageLabel": {
+    "message": "Watch page",
+    "description": "Heading for optional watch-page presentations."
+  },
+  "settingsDescriptionLabel": {
+    "message": "Description and tags",
+    "description": "Switch for the video description and tags above comments."
+  },
+  "settingsThumbnailsLabel": {
+    "message": "Fill missing thumbnails",
+    "description": "Switch for fetching missing video covers."
+  },
+  "settingsSourcesLabel": {
+    "message": "Video sources",
+    "description": "Heading for source availability preferences."
+  },
+  "settingsSourcesHint": {
+    "message": "Enabled sources appear when available.",
+    "description": "Explains that a source preference does not imply available items."
+  },
+  "settingsFixedHint": {
+    "message": "Power and Settings always stay available.",
+    "description": "Explains which controls cannot be unpinned."
+  },
+  "settingsOnBarLabel": {
+    "message": "On bar",
+    "description": "Placement label for a pinned action."
+  },
+  "settingsInMoreLabel": {
+    "message": "In More",
+    "description": "Placement label for an unpinned action."
+  },
+  "settingsRestoreLabel": {
+    "message": "Restore defaults",
+    "description": "Resets feature and placement preferences."
+  },
+  "settingsAutosaveLabel": {
+    "message": "Changes apply immediately",
+    "description": "Initial settings footer text."
+  },
+  "settingsSavedLabel": {
+    "message": "Saved",
+    "description": "Status after settings are persisted."
+  },
+  "settingsPageOnlyLabel": {
+    "message": "Applied for this page; could not save.",
+    "description": "Status when persistent storage is unavailable."
   }
 }

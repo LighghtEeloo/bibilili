@@ -2,6 +2,8 @@
   "use strict";
 
   const { DomProbe } = window.__bibililiDom;
+  const { UiControl, PopupPanel } = window.__bibililiControls;
+  const { SettingsView } = window.__bibililiSettings;
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
   const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = window.__bibililiRoute;
@@ -21,6 +23,7 @@
     CardNavigationOriginStore,
     CommentPaneWidthPreference,
     SourceRouteStateStore,
+    SettingsPreference,
     configure: configureStorageState
   } = window.__bibililiStorageState;
 
@@ -795,12 +798,6 @@
     ERROR: "error"
   });
 
-  configureStorageState({
-    sourceOrder: SOURCE_ORDER,
-    commentPaneMinWidth: COMMENT_PANE_MIN_WIDTH,
-    commentPaneMaxWidth: COMMENT_PANE_MAX_WIDTH
-  });
-
   const WATCH_ACTION_ORDER = Object.freeze([
     WatchActionKind.LIKE,
     WatchActionKind.COIN,
@@ -808,6 +805,26 @@
     WatchActionKind.SHARE,
     WatchActionKind.WATCH_LATER
   ]);
+
+  /** Closed list-tool actions sharing placement preferences with watch actions. */
+  const RailActionKind = Object.freeze({
+    LOCATE: "locate", START: "start", REFRESH: "refresh", SEARCH: "search"
+  });
+  const RAIL_ACTION_MESSAGES = Object.freeze({
+    [RailActionKind.LOCATE]: UiMessage.RAIL_LOCATE_LABEL,
+    [RailActionKind.START]: UiMessage.RAIL_START_LABEL,
+    [RailActionKind.REFRESH]: UiMessage.RAIL_REFRESH_LABEL,
+    [RailActionKind.SEARCH]: UiMessage.RAIL_SEARCH_LABEL
+  });
+  const RAIL_ACTION_ORDER = Object.freeze(Object.values(RailActionKind));
+
+  configureStorageState({
+    sourceOrder: SOURCE_ORDER,
+    actionDefaults: Object.fromEntries([...WATCH_ACTION_ORDER, ...RAIL_ACTION_ORDER]
+      .map((kind) => [kind, true])),
+    commentPaneMinWidth: COMMENT_PANE_MIN_WIDTH,
+    commentPaneMaxWidth: COMMENT_PANE_MAX_WIDTH
+  });
 
   const WATCH_ACTION_STATEFUL_KINDS = new Set([
     WatchActionKind.LIKE,
@@ -1052,66 +1069,6 @@
       activePattern: /(?:\bon\b|\bactive\b|\bis-active\b|\bselected\b|已添加|已加入)/iu
     }
   ]);
-
-  /**
-   * Utility methods for extension-owned interactive controls.
-   */
-  class UiControl {
-    /**
-     * Creates a button with the extension's standard button setup.
-     *
-     * @param {Document} document
-     * @param {string} className
-     * @param {(event: MouseEvent) => void} onClick
-     * @returns {HTMLButtonElement}
-     */
-    static button(document, className, onClick) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = className;
-      button.addEventListener("click", onClick);
-      return button;
-    }
-
-    /**
-     * Applies the same label to the hover title and accessible name.
-     *
-     * @param {HTMLElement} element
-     * @param {string} label
-     */
-    static setLabel(element, label) {
-      element.title = label;
-      element.setAttribute("aria-label", label);
-    }
-
-    /**
-     * Applies a visible text label and matching accessible name.
-     *
-     * @param {HTMLButtonElement} button
-     * @param {string} label
-     */
-    static setTextButtonLabel(button, label) {
-      button.textContent = label;
-      UiControl.setLabel(button, label);
-    }
-
-    /**
-     * Removes keyed buttons whose keys are absent from the latest render pass.
-     *
-     * @param {Map<string, HTMLButtonElement>} buttons
-     * @param {Set<string>} availableKeys
-     */
-    static removeStaleButtons(buttons, availableKeys) {
-      for (const [key, button] of buttons) {
-        if (availableKeys.has(key)) {
-          continue;
-        }
-
-        button.remove();
-        buttons.delete(key);
-      }
-    }
-  }
 
   /**
    * Shared loading presentation for startup, comments, and counted actions.
@@ -3625,6 +3582,7 @@
       this.onChange = onChange;
       /** @type {Map<string, AccountSourceRecord>} */
       this.records = new Map();
+      this.enabledKinds = new Set(ACCOUNT_SOURCE_ORDER);
       this.language = null;
       this.stop();
     }
@@ -3651,6 +3609,7 @@
       if (!record) {
         throw new Error("Unknown account source kind");
       }
+      if (!this.enabledKinds.has(kind)) return null;
       const items = record.items.slice(0, includeAll ? undefined : record.visibleCount);
       return items.length > 0
         ? {
@@ -3701,7 +3660,26 @@
      * @returns {number | null}
      */
     currentWatchLaterCount() {
+      if (!this.enabledKinds.has(SourceKind.WATCH_LATER)) return null;
       return this.records.get(SourceKind.WATCH_LATER).watchLaterCount;
+    }
+
+    /**
+     * Cancels disabled source requests while retaining their items and expansion.
+     * Re-enabling refreshes the retained source on the next account pass.
+     * @param {string[]} kinds Enabled account source kinds.
+     */
+    setEnabledKinds(kinds) {
+      const enabled = new Set(kinds);
+      for (const kind of ACCOUNT_SOURCE_ORDER) {
+        if (enabled.has(kind) || !this.enabledKinds.has(kind)) continue;
+        const record = this.records.get(kind);
+        record.controller?.abort();
+        record.controller = null;
+        record.loaded = false;
+        record.status = AccountSourceStatus.READY;
+      }
+      this.enabledKinds = enabled;
     }
 
     /**
@@ -3827,6 +3805,7 @@
      * @returns {Promise<void>}
      */
     async refreshSource(kind) {
+      if (!this.enabledKinds.has(kind)) return;
       const record = this.records.get(kind);
       const controller = this.beginRequest(record);
       const url = kind === SourceKind.WATCH_LATER
@@ -3867,6 +3846,7 @@
       if (!record) {
         throw new Error("Unknown account source kind");
       }
+      if (!this.enabledKinds.has(kind)) return;
 
       if (record.controller || !AccountSourceStore.hasMore(record)) {
         return;
@@ -4230,6 +4210,7 @@
      */
     constructor(onChange) {
       this.onChange = onChange;
+      this.enabled = true;
       /** @type {Map<string, VideoPreviewRecord>} */
       this.records = new Map();
       this.queue = [];
@@ -4245,7 +4226,7 @@
      */
     setDemand(items) {
       const wanted = new Map();
-      for (const item of items) {
+      for (const item of this.enabled ? items : []) {
         const identity = this.previewIdentityForItem(item);
         if (identity) {
           wanted.set(identity.key, identity);
@@ -4283,6 +4264,7 @@
      * @returns {VideoItem}
      */
     hydrateItem(item) {
+      if (!this.enabled) return item;
       if (SourceAdapter.usableThumbnailUrl(item.thumbnailUrl)) {
         return item;
       }
@@ -4301,6 +4283,12 @@
       }
 
       return item;
+    }
+
+    /** Cancels pending enrichment when disabled; native thumbnails remain intact. */
+    setEnabled(enabled) {
+      this.enabled = enabled;
+      if (!enabled) this.setDemand([]);
     }
 
     /**
@@ -5938,6 +5926,8 @@
     constructor(document, videoPreviews) {
       this.document = document;
       this.videoPreviews = videoPreviews;
+      this.preferences = SettingsPreference.read();
+      this.settingsView = null;
       this.movedPageNodes = new MovedPageNodeStore(this.document);
       this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
       this.resetLayoutState();
@@ -5976,6 +5966,12 @@
       this.dock = null;
       this.sourceBar = null;
       this.railActionGroup = null;
+      this.morePanel = null;
+      this.moreWatchGroup = null;
+      this.moreRailGroup = null;
+      this.dockUtilityGroup = null;
+      this.moreButton = null;
+      this.settingsButton = null;
       this.railLocateButton = null;
       this.railStartButton = null;
       /** Logical current-video index in the displayed rail, or -1 when absent. */
@@ -6129,6 +6125,7 @@
      * attribute, which can still identify the previous video.
      */
     resetPageSession() {
+      this.morePanel?.close(true);
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
       this.railPointerCard = null;
@@ -6173,6 +6170,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
+      this.morePanel?.destroy();
       this.setVideoLoading(false);
       this.stopRailWindow();
       LayoutRoot.clearNativeOverlayLift(this.document);
@@ -6270,6 +6268,7 @@
       this.rail = this.document.createElement("div");
       this.rail.id = LIST_RAIL_ID;
       this.createRailControls();
+      this.createDockUtilities();
       this.rail.className = "bibilili-list-rail";
       this.observeRailWindow();
 
@@ -6666,7 +6665,7 @@
         return;
       }
 
-      if (!LayoutRoot.hasVideoDescriptionRegion(
+      if (!this.preferences.features.description || !LayoutRoot.hasVideoDescriptionRegion(
         this.currentVideoDescription,
         this.currentVideoTags
       )) {
@@ -7300,6 +7299,7 @@
         return;
       }
 
+      sources = sources.filter((source) => this.preferences.sources[source.kind]);
       this.currentSources = sources;
       this.watchLaterArchiveKeys = LayoutRoot.watchLaterArchiveKeysFor(sources);
       this.currentActivationControl = activationControl;
@@ -7310,6 +7310,9 @@
         this.setPendingSourceRouteState(sourceRouteState);
       } else if (sourceRouteState) {
         this.setPendingSourceRouteState(sourceRouteState);
+      }
+      if (this.pendingSourceRouteHint && !this.preferences.sources[this.pendingSourceRouteHint]) {
+        this.setPendingSourceRouteState(null);
       }
 
       const previousSourceKind = this.selectedSourceKind;
@@ -7330,7 +7333,7 @@
      * @param {SourceRouteState | null} state
      */
     setPendingSourceRouteState(state) {
-      if (!state || !SOURCE_ORDER.includes(state.sourceKind)) {
+      if (!state || !SOURCE_ORDER.includes(state.sourceKind) || !this.preferences.sources[state.sourceKind]) {
         this.pendingSourceRouteHint = null;
         this.pendingSourceRouteOpenState = null;
         return;
@@ -7386,6 +7389,7 @@
       this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
       this.renderRailSearch(hasOpenRail);
+      this.renderControlPlacement();
 
       if (hasOpenRail) {
         this.renderRail(this.searchRailSource(selectedSource), resetScroll);
@@ -7419,12 +7423,125 @@
       );
     }
 
+    /** Creates the fixed Settings entry and a popup for unpinned action nodes. */
+    createDockUtilities() {
+      this.morePanel = new PopupPanel(this.document, "bibilili-more-popup");
+      this.morePanel.ensure();
+      LoadingView.prepareSurface(this.morePanel.root);
+      this.morePanel.root.id = "bibilili-more-actions";
+      this.moreWatchGroup = this.document.createElement("div");
+      this.moreRailGroup = this.document.createElement("div");
+      for (const group of [this.moreWatchGroup, this.moreRailGroup]) {
+        group.className = "bibilili-more-group";
+        group.setAttribute("role", "group");
+      }
+      this.morePanel.root.append(this.moreWatchGroup, this.moreRailGroup);
+      this.morePanel.root.addEventListener("click", (event) => {
+        if (event.target.closest("button") && !event.target.closest(".bibilili-rail-search")) {
+          // Restore focus before forwarding a click that may open a native dialog.
+          this.morePanel.close(true);
+        }
+      }, true);
+      this.dockUtilityGroup = this.document.createElement("div");
+      this.dockUtilityGroup.className = "bibilili-dock-utilities";
+      this.moreButton = UiControl.button(this.document, "bibilili-action-button", () => {
+        this.morePanel.toggle(this.moreButton);
+      });
+      this.moreButton.append(UiControl.icon(this.document, "more"));
+      this.moreButton.setAttribute("aria-haspopup", "dialog");
+      this.moreButton.setAttribute("aria-expanded", "false");
+      this.moreButton.setAttribute("aria-controls", "bibilili-more-actions");
+      this.settingsButton = this.settingsView.launcher();
+      this.dockUtilityGroup.append(this.moreButton, this.settingsButton);
+      for (const [kind, control] of this.railControls()) {
+        const label = this.document.createElement("span");
+        label.className = "bibilili-action-label";
+        (kind === RailActionKind.SEARCH ? this.railSearchButton : control).append(label);
+      }
+    }
+
+    /** @returns {Map<string, HTMLElement>} The actual list-tool nodes in canonical order. */
+    railControls() {
+      return new Map([
+        [RailActionKind.LOCATE, this.railLocateButton],
+        [RailActionKind.START, this.railStartButton],
+        [RailActionKind.REFRESH, this.railRefreshButton],
+        [RailActionKind.SEARCH, this.railSearch]
+      ]);
+    }
+
+    /** Places each existing tool on the bar or in More without replacing handlers. */
+    renderControlPlacement() {
+      if (!this.morePanel || !this.dockUtilityGroup) return;
+      let pinnedPrevious = null;
+      let morePrevious = null;
+      for (const [kind, control] of this.railControls()) {
+        // An active search stays visible until cleared, even when its shortcut is unpinned.
+        const pinned = this.preferences.pinnedActions[kind] ||
+          (kind === RailActionKind.SEARCH && !this.railSearchInput.hidden);
+        const parent = pinned ? this.railActionGroup : this.moreRailGroup;
+        UiControl.place(parent, control, pinned ? pinnedPrevious : morePrevious);
+        if (pinned) pinnedPrevious = control;
+        else morePrevious = control;
+        control.querySelector(".bibilili-action-label").textContent = this.actionLabel(kind);
+      }
+      const hasPinnedTools = [...this.railActionGroup.children].some((control) => !control.hidden);
+      const hasMoreTools = [...this.moreRailGroup.children].some((control) => !control.hidden);
+      this.railActionGroup.hidden = !hasPinnedTools;
+      this.moreRailGroup.hidden = !hasMoreTools;
+      const label = UiStrings.message(UiMessage.MORE_ACTIONS_LABEL, this.language);
+      UiControl.setLabel(this.moreButton, label);
+      this.morePanel.root.setAttribute("aria-label", label);
+      this.moreWatchGroup.setAttribute("aria-label", UiStrings.message(UiMessage.WATCH_ACTIONS_LABEL, this.language));
+      this.moreRailGroup.setAttribute("aria-label", UiStrings.message(UiMessage.RAIL_ACTIONS_LABEL, this.language));
+      UiControl.setLabel(this.settingsButton, UiStrings.message(UiMessage.SETTINGS_LABEL, this.language));
+      const moreHasFocus = this.document.activeElement === this.moreButton ||
+        this.morePanel.root.contains(this.document.activeElement);
+      this.moreButton.hidden = !this.preferences.features.moreButton ||
+        (!this.moreWatchGroup.childElementCount && !hasMoreTools);
+      if (this.moreButton.hidden) {
+        this.morePanel.close();
+        if (moreHasFocus) this.settingsButton.focus();
+      }
+      if (this.railActionGroup.nextSibling !== this.dockUtilityGroup ||
+          this.sourceBar.lastChild !== this.dockUtilityGroup) {
+        this.sourceBar.append(this.railActionGroup, this.dockUtilityGroup);
+      }
+      this.morePanel.position();
+    }
+
+    /** @param {string} kind @returns {string} The same explicit action label on every surface. */
+    actionLabel(kind) {
+      const message = RAIL_ACTION_MESSAGES[kind] ?? (kind === WatchActionKind.SHARE
+        ? UiMessage.WATCH_ACTION_COPY_LINK_LABEL : WATCH_ACTION_LABEL_MESSAGE_NAMES[kind]);
+      return UiStrings.message(message, this.language);
+    }
+
+    /**
+     * Uses the dock's native visual path for settings, including watch-later snapshots.
+     * Missing native actions keep a labeled settings row with an empty icon slot.
+     * @param {string} kind
+     * @param {Element} visual
+     */
+    renderSettingsIcon(kind, visual) {
+      if (RAIL_ACTION_ORDER.includes(kind)) {
+        if (visual.dataset.iconKind !== kind) {
+          visual.replaceChildren(UiControl.icon(this.document, kind));
+          visual.dataset.iconKind = kind;
+        }
+        return;
+      }
+      const action = this.orderedWatchActions(this.currentActions).find((item) => item.kind === kind);
+      if (action) this.updateActionVisual(visual, action);
+      else visual.replaceChildren();
+    }
+
     /** Creates the first control in the rail action group. */
     createRailLocate() {
       this.railLocateButton = this.document.createElement("button");
       this.railLocateButton.type = "button";
       this.railLocateButton.className = "bibilili-action-button bibilili-rail-locate";
-      this.railLocateButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>';
+      this.railLocateButton.append(UiControl.icon(this.document, RailActionKind.LOCATE));
       this.railLocateButton.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railLocateButton.disabled = true;
       this.railLocateButton.addEventListener("click", () => this.locateCurrentRailItem());
@@ -7449,7 +7566,7 @@
       this.railStartButton = this.document.createElement("button");
       this.railStartButton.type = "button";
       this.railStartButton.className = "bibilili-action-button bibilili-rail-start";
-      this.railStartButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14M17 6l-6 6 6 6"/></svg>';
+      this.railStartButton.append(UiControl.icon(this.document, RailActionKind.START));
       this.railStartButton.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railStartButton.disabled = true;
       this.railStartButton.addEventListener("click", () => this.scrollRailToStart());
@@ -7474,7 +7591,7 @@
       this.railRefreshButton = this.document.createElement("button");
       this.railRefreshButton.type = "button";
       this.railRefreshButton.className = "bibilili-action-button bibilili-rail-refresh";
-      this.railRefreshButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4v6h-6M20 10a8 8 0 1 0-1.1 6"/></svg>';
+      this.railRefreshButton.append(UiControl.icon(this.document, RailActionKind.REFRESH));
       this.railRefreshButton.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railRefreshButton.disabled = true;
       this.railRefreshButton.addEventListener("click", () => this.refreshCurrentRail());
@@ -7513,7 +7630,7 @@
       this.railSearchButton = this.document.createElement("button");
       this.railSearchButton.type = "button";
       this.railSearchButton.className = "bibilili-action-button";
-      this.railSearchButton.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>';
+      this.railSearchButton.append(UiControl.icon(this.document, RailActionKind.SEARCH));
       this.railSearchButton.setAttribute("aria-controls", "bibilili-rail-search-input");
       this.railSearchInput = this.document.createElement("input");
       this.railSearchInput.id = "bibilili-rail-search-input";
@@ -7522,6 +7639,7 @@
       this.railSearchInput.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railSearchInput.value = this.railSearchQuery;
       this.railSearchButton.addEventListener("click", () => {
+        this.morePanel?.close(false);
         this.setRailSearchExpanded(true);
         this.railSearchInput.focus();
       });
@@ -7537,7 +7655,8 @@
           this.railSearchInput.value = "";
           this.refreshRailSearch();
           this.setRailSearchExpanded(false);
-          this.railSearchButton.focus();
+          (this.preferences.pinnedActions[RailActionKind.SEARCH]
+            ? this.railSearchButton : this.moreButton?.hidden ? this.settingsButton : this.moreButton)?.focus();
         }
       });
       this.railSearchInput.addEventListener("blur", () => {
@@ -7553,14 +7672,12 @@
       this.railSearchInput.hidden = !expanded;
       this.railSearchButton.hidden = expanded;
       this.railSearchButton.setAttribute("aria-expanded", String(expanded));
+      this.renderControlPlacement();
     }
 
     /** @param {boolean} available Whether a rail is open for searching. */
     renderRailSearch(available) {
       if (!this.railActionGroup) return;
-      if (this.sourceBar.lastChild !== this.railActionGroup) {
-        this.sourceBar.append(this.railActionGroup);
-      }
       this.railActionGroup.setAttribute("aria-label",
         UiStrings.message(UiMessage.RAIL_ACTIONS_LABEL, this.language));
       this.renderRailLocate();
@@ -7663,6 +7780,7 @@
       if (orderedActions.length === 0) {
         this.actionGroup.remove();
         UiControl.removeStaleButtons(this.actionButtons, availableKinds);
+        this.moreWatchGroup.hidden = true;
         return null;
       }
 
@@ -7677,22 +7795,24 @@
       }
 
       let previous = null;
+      let morePrevious = null;
       for (const action of orderedActions) {
         const button = this.watchActionButtonFor(action.kind);
         availableKinds.add(action.kind);
         this.updateWatchActionButton(button, action);
 
-        const reference = previous
-          ? previous.nextSibling
-          : this.actionGroup.firstChild;
-        if (reference !== button) {
-          this.actionGroup.insertBefore(button, reference);
+        if (this.preferences.pinnedActions[action.kind]) {
+          UiControl.place(this.actionGroup, button, previous);
+          previous = button;
+        } else {
+          UiControl.place(this.moreWatchGroup, button, morePrevious);
+          morePrevious = button;
         }
-
-        previous = button;
       }
 
       UiControl.removeStaleButtons(this.actionButtons, availableKinds);
+      this.actionGroup.hidden = !previous;
+      this.moreWatchGroup.hidden = !morePrevious;
       return this.actionGroup;
     }
 
@@ -7804,6 +7924,9 @@
       button.dataset.watchActionKind = kind;
       button.append(this.watchActionNativeVisualNode());
       button.append(this.watchActionCountNode());
+      const label = this.document.createElement("span");
+      label.className = "bibilili-action-label";
+      button.append(label);
       const loading = LoadingView.create(this.document, {
         className: "bibilili-action-loading bibilili-loading-overlay",
         inline: true
@@ -7820,10 +7943,7 @@
      * @returns {HTMLSpanElement}
      */
     watchActionNativeVisualNode() {
-      const visual = this.document.createElement("span");
-      visual.className = "bibilili-action-native-visual";
-      visual.setAttribute("aria-hidden", "true");
-      return visual;
+      return UiControl.actionVisual(this.document);
     }
 
     /**
@@ -7844,6 +7964,7 @@
      * @param {WatchAction} action
      */
     updateWatchActionButton(button, action) {
+      button.querySelector(".bibilili-action-label").textContent = this.actionLabel(action.kind);
       if (action.kind === WatchActionKind.WATCH_LATER) {
         this.updateCurrentWatchLaterActionButton(button, action);
         return;
@@ -7852,7 +7973,7 @@
       const visual = button.querySelector(".bibilili-action-native-visual");
       const count = button.querySelector(".bibilili-action-count");
 
-      this.updateWatchActionNativeVisual(visual, action);
+      this.updateActionVisual(visual, action);
       count.textContent = action.countText ?? "";
       count.hidden = !action.countText;
       this.syncWatchActionButtonState(button, action);
@@ -7903,7 +8024,7 @@
       button.dataset.bibililiWatchLaterAddTargetUrl =
         action.watchLaterAddTargetUrl ?? "";
 
-      button.hidden = !this.updateCurrentWatchLaterActionVisual(visual, action);
+      button.hidden = !this.updateActionVisual(visual, action);
       count.textContent = countText;
       count.hidden = !countText;
       this.syncWatchActionButtonState(button, action);
@@ -8092,7 +8213,10 @@
      * @param {Element} visual
      * @param {WatchAction} action
      */
-    updateWatchActionNativeVisual(visual, action) {
+    updateActionVisual(visual, action) {
+      if (action.kind === WatchActionKind.WATCH_LATER) {
+        return this.updateCurrentWatchLaterActionVisual(visual, action);
+      }
       visual.replaceChildren();
       visual.removeAttribute("data-bibilili-fallback");
 
@@ -8113,6 +8237,7 @@
       if (action.kind === WatchActionKind.SHARE) {
         LayoutRoot.insertWatchActionCopyIcon(this.document, visual);
       }
+      return true;
     }
 
     /**
@@ -10445,6 +10570,36 @@
         this.scheduleReconcile(false, ReconcilePriority.LAZY);
       });
       this.enabled = ActivationPreference.readEnabled();
+      this.preferences = SettingsPreference.read();
+      this.settingsView = new SettingsView(document, {
+        sources: SOURCE_ORDER.map((kind) => ({ kind, message: SOURCE_LABEL_MESSAGE_NAMES[kind] })),
+        actionGroups: [
+          { message: UiMessage.WATCH_ACTIONS_LABEL, actions: WATCH_ACTION_ORDER.map((kind) => ({
+            kind, message: kind === WatchActionKind.SHARE
+              ? UiMessage.WATCH_ACTION_COPY_LINK_LABEL : WATCH_ACTION_LABEL_MESSAGE_NAMES[kind]
+          })) },
+          { message: UiMessage.RAIL_ACTIONS_LABEL, actions: RAIL_ACTION_ORDER.map((kind) => ({
+            kind, message: RAIL_ACTION_MESSAGES[kind]
+          })) }
+        ],
+        onChange: (preferences) => this.setPreferences(preferences),
+        onEnabledChange: (enabled) => this.setEnabled(enabled),
+        onOpen: () => this.layout.morePanel?.close(),
+        renderIcon: (kind, visual) => this.layout.renderSettingsIcon(kind, visual)
+      });
+      this.layout.settingsView = this.settingsView;
+      this.applyFeaturePreferences();
+      this.storageHandler = null;
+      this.onStorageChange = (event) => {
+        if (event.storageArea !== window.localStorage) return;
+        if (event.key === null || event.key === SettingsPreference.key) {
+          this.setPreferences(SettingsPreference.read(), false);
+        }
+        if (event.key === null || event.key === ActivationPreference.key) {
+          const enabled = ActivationPreference.readEnabled();
+          if (enabled !== this.enabled) this.setEnabled(enabled, false);
+        }
+      };
       this.activationControl = new ActivationControl(document, (enabled) => {
         this.setEnabled(enabled);
       });
@@ -10490,6 +10645,8 @@
       this.observeMutations();
       this.observeNavigation();
       this.observeThemePreference();
+      this.storageHandler = this.onStorageChange;
+      window.addEventListener("storage", this.storageHandler);
       this.renderFloatingActivation();
       this.startPageReconciliation(false);
     }
@@ -10498,6 +10655,11 @@
      * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
+      if (this.storageHandler) {
+        window.removeEventListener("storage", this.storageHandler);
+        this.storageHandler = null;
+      }
+      this.settingsView.destroy();
       if (this.readyHandler) {
         this.document.removeEventListener("DOMContentLoaded", this.readyHandler);
         this.readyHandler = null;
@@ -10652,6 +10814,7 @@
       BilibiliThemeSync.sync(this.document);
 
       if (!this.isWatchPage()) {
+        this.settingsView.panel.close();
         this.clearRenderedPageState();
         this.activationControl.destroy();
         return;
@@ -10728,6 +10891,7 @@
         () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
         (source) => this.refreshRail(source)
       );
+      this.settingsView.update(this.preferences, this.enabled, language);
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
       if (this.lazyPrimer.timer === null) {
@@ -10998,10 +11162,11 @@
      * Persists and applies the global activation state.
      *
      * @param {boolean} enabled
+     * @param {boolean} [persist] False applies another tab's activation state.
      */
-    setEnabled(enabled) {
+    setEnabled(enabled, persist = true) {
       this.enabled = enabled;
-      ActivationPreference.writeEnabled(enabled);
+      if (persist) this.settingsView.showSaveResult(ActivationPreference.writeEnabled(enabled));
       this.reconcileScheduler.cancel();
 
       if (!enabled) {
@@ -11014,7 +11179,30 @@
       }
 
       this.prepareMount();
+      this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
       this.startPageReconciliation(true);
+    }
+
+    /**
+     * Applies saved preferences through the existing stores and reconciliation path.
+     * @param {SettingsPreferenceRecord} preferences
+     * @param {boolean} [persist] False applies another tab's storage event.
+     */
+    setPreferences(preferences, persist = true) {
+      this.preferences = SettingsPreference.normalize(preferences);
+      const saved = !persist || SettingsPreference.write(this.preferences);
+      this.applyFeaturePreferences();
+      this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
+      if (persist) this.settingsView.showSaveResult(saved);
+      this.refreshAccountSources();
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
+    }
+
+    /** Shares one preference snapshot with layout and demand-driven stores. */
+    applyFeaturePreferences() {
+      this.layout.preferences = this.preferences;
+      this.videoPreviews.setEnabled(this.preferences.features.thumbnails);
+      this.accountSources.setEnabledKinds(ACCOUNT_SOURCE_ORDER.filter((kind) => this.preferences.sources[kind]));
     }
 
     /**
@@ -11117,6 +11305,11 @@
 
       BilibiliThemeSync.sync(this.document);
       this.activationControl.mountFloating(this.resolveUiLanguage());
+      this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
+      const settingsButton = this.settingsView.launcher();
+      if (settingsButton.parentElement !== this.activationControl.floatingRoot) {
+        this.activationControl.floatingRoot.append(settingsButton);
+      }
     }
 
     /**

@@ -18,6 +18,27 @@
    * Extension i18n message names used by extension-owned UI surfaces.
    */
   const UiMessage = Object.freeze({
+    EXTENSION_NAME: "extensionName",
+    SETTINGS_LABEL: "settingsLabel",
+    CLOSE_LABEL: "closeLabel",
+    MORE_ACTIONS_LABEL: "moreActionsLabel",
+    SETTINGS_ENABLED_LABEL: "settingsEnabledLabel",
+    SETTINGS_FEATURES_LABEL: "settingsFeaturesLabel",
+    SETTINGS_ACTION_BAR_LABEL: "settingsActionBarLabel",
+    SETTINGS_MORE_BUTTON_LABEL: "settingsMoreButtonLabel",
+    SETTINGS_WATCH_PAGE_LABEL: "settingsWatchPageLabel",
+    SETTINGS_DESCRIPTION_LABEL: "settingsDescriptionLabel",
+    SETTINGS_THUMBNAILS_LABEL: "settingsThumbnailsLabel",
+    SETTINGS_SOURCES_LABEL: "settingsSourcesLabel",
+    SETTINGS_SOURCES_HINT: "settingsSourcesHint",
+    SETTINGS_FIXED_HINT: "settingsFixedHint",
+    SETTINGS_ON_BAR_LABEL: "settingsOnBarLabel",
+    SETTINGS_IN_MORE_LABEL: "settingsInMoreLabel",
+    SETTINGS_RESTORE_LABEL: "settingsRestoreLabel",
+    SETTINGS_AUTOSAVE_LABEL: "settingsAutosaveLabel",
+    SETTINGS_SAVED_LABEL: "settingsSavedLabel",
+    SETTINGS_PAGE_ONLY_LABEL: "settingsPageOnlyLabel",
+
     LAYOUT_LABEL: "layoutLabel",
     LAYOUT_LOADING_LABEL: "layoutLoadingLabel",
     PLAYER_LABEL: "playerLabel",

@@ -208,5 +208,81 @@
   "railSearchEmpty": {
     "message": "没有匹配的视频",
     "description": "Rail heading when the search has no matches."
+  },
+  "settingsLabel": {
+    "message": "设置",
+    "description": "Label for the settings popup and its launcher."
+  },
+  "closeLabel": {
+    "message": "关闭",
+    "description": "Accessible label for closing a popup."
+  },
+  "moreActionsLabel": {
+    "message": "更多操作",
+    "description": "Accessible label for the overflow action popup."
+  },
+  "settingsEnabledLabel": {
+    "message": "启用",
+    "description": "Label for the global activation switch."
+  },
+  "settingsFeaturesLabel": {
+    "message": "功能",
+    "description": "Settings tab for feature switches."
+  },
+  "settingsActionBarLabel": {
+    "message": "操作栏",
+    "description": "Settings tab for shortcut placement."
+  },
+  "settingsMoreButtonLabel": {
+    "message": "显示更多操作按钮",
+    "description": "Controls the visibility of the action bar's More button."
+  },
+  "settingsWatchPageLabel": {
+    "message": "播放页面",
+    "description": "Heading for optional watch-page presentations."
+  },
+  "settingsDescriptionLabel": {
+    "message": "简介和标签",
+    "description": "Switch for the video description and tags above comments."
+  },
+  "settingsThumbnailsLabel": {
+    "message": "补全缺失封面",
+    "description": "Switch for fetching missing video covers."
+  },
+  "settingsSourcesLabel": {
+    "message": "视频来源",
+    "description": "Heading for source availability preferences."
+  },
+  "settingsSourcesHint": {
+    "message": "启用的来源有内容时才会显示。",
+    "description": "Explains that a source preference does not imply available items."
+  },
+  "settingsFixedHint": {
+    "message": "启用开关和设置始终可用。",
+    "description": "Explains which controls cannot be unpinned."
+  },
+  "settingsOnBarLabel": {
+    "message": "操作栏",
+    "description": "Placement label for a pinned action."
+  },
+  "settingsInMoreLabel": {
+    "message": "更多操作",
+    "description": "Placement label for an unpinned action."
+  },
+  "settingsRestoreLabel": {
+    "message": "恢复默认",
+    "description": "Resets feature and placement preferences."
+  },
+  "settingsAutosaveLabel": {
+    "message": "更改立即生效",
+    "description": "Initial settings footer text."
+  },
+  "settingsSavedLabel": {
+    "message": "已保存",
+    "description": "Status after settings are persisted."
+  },
+  "settingsPageOnlyLabel": {
+    "message": "已在本页应用，但未能保存。",
+    "description": "Status when persistent storage is unavailable."
   }
 }

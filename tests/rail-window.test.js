@@ -144,6 +144,7 @@ test("Locate accepts a collection current marker and preserves control placement
   const actions = document.createElement("div");
   layout.sourceBar.append(actions);
   layout.createRailControls();
+  layout.sourceBar.append(layout.railActionGroup);
   source.items[90].isCurrent = true;
   layout.renderSourceDock([source], null);
   const button = layout.railLocateButton;

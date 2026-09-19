@@ -17,8 +17,11 @@ route model used by source extraction, source routing, and preview hydration.
 helpers for moved page nodes and marked source roots. `src/content-i18n.js` is
 the i18n prelude. It defines message catalog loading, formatting, and UI
 language resolution. `src/content-storage.js` is the storage prelude. It
-defines persisted activation, comment width, navigation-origin, and source-route
-state. `src/content-theme.js` is the theme prelude. It defines browser
+defines persisted activation, feature preferences, action placement, comment
+width, navigation-origin, and source-route state. `src/content-controls.js`
+defines shared controls, extension icon paths, and popup positioning and focus.
+`src/content-settings.js` renders the settings view from ordered definitions and
+the controller's preference snapshot. `src/content-theme.js` defines browser
 color-scheme resolution and Bilibili native theme synchronization.
 `src/content-scheduler.js` is the scheduling prelude. It defines urgent and
 lazy reconciliation request coalescing. `src/content-navigation.js` coordinates
@@ -57,7 +60,8 @@ into the bottom dock.
 Bibilili owns the loading cover, layout root, stage, panes, video header, list dock,
 source bar, video description presentation, watch action group,
 current-video watch-later control, list rail, video cards,
-watch-later mutation controls, extension classes, and bookkeeping attributes.
+watch-later mutation controls, Settings and More popups, extension classes, and
+bookkeeping attributes.
 Bilibili owns the player, comments, source roots, links, native watch metadata,
 native uploader card, watch action triggers, account controls, account lists,
 and network-backed content.
@@ -149,7 +153,45 @@ of lazy reconciliation and page priming.
 
 The activation state is a Bilibili-page preference recording the requested
 state. It persists across same-tab navigation and page reloads when browser
-storage is available.
+storage is available. Storage events apply changes to other open Bilibili tabs.
+
+## Settings
+
+Settings manages extension preferences on the watch page. Its button follows
+the activation control onto the native page when the layout is disabled and
+sits at the end of the dock when enabled. The same button opens a nonmodal popup
+with Features and Action bar tabs.
+
+Features controls the description and tags, missing-thumbnail enrichment, and
+each video source. All features and sources default to enabled. Disabling the
+description restores its native node and removes its extension presentation.
+Disabling thumbnail enrichment cancels pending cover requests and uses
+page-provided thumbnails. Disabling a source removes it from routing and source
+root marking. A disabled account source cancels outstanding list requests and
+retains its cached items and expansion for a refresh when re-enabled.
+
+Action bar controls whether each watch action or list tool appears on the bar
+or in More. All actions default to the bar. Show More button defaults to enabled
+and displays the launcher when More contains available actions. Disabling it
+hides the launcher and closes its popup while retaining action placements.
+Source order and the Power and Settings entry points have fixed placement.
+
+Preferences use a validated record of feature, source, and action booleans in
+Bilibili origin-local storage. Changes apply immediately, persist across videos
+and reloads, and propagate through storage events to other Bilibili tabs.
+Unavailable storage leaves the current page's choices active and displays a
+save-failure status. Restore defaults resets feature and placement preferences
+while retaining the activation state and pane dimensions.
+
+Settings rows keep their control identity through reconciliation. Native watch
+icons use the same sanitized visual renderer and watch-later snapshot as dock
+buttons. List tools use the shared extension icon renderer. An unavailable
+native action retains its preference row with an empty icon slot.
+
+Settings and More share viewport-clamped positioning, outside-click dismissal,
+Escape handling, and focus return to their launcher. Their keyboard events stay
+within extension controls. The settings popup remains available while the
+layout is disabled. Popups are excluded from native DOM discovery.
 
 ## Startup
 
@@ -421,7 +463,7 @@ height minus the source bar height.
 
 A watch action control is an extension-owned dock control for the current watch
 video. The action kinds are like, coin, favorite, share, and watch later. The
-action kind is a closed set with that stable order.
+action kind is a closed set with that stable order within each placement.
 
 Bibilili discovers native watch action triggers from the page toolbar. It reads
 the displayed count text and active state when Bilibili exposes them. Missing
@@ -541,7 +583,7 @@ after their fetch completes.
 
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
-kind, then contains the watch action group when native watch actions are
+kind, then contains the pinned watch action group when native watch actions are
 available. Source buttons represent parts, collection, recommendations, watch
 later, and history when those sources are available. Their labels use the
 current UI language.
@@ -561,8 +603,15 @@ removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 The rail action group follows the watch action group, separated by a vertical
-border. It contains Locate, Start, Refresh, and Search in that order and has a
-localized accessible name.
+border. Pinned tools retain Locate, Start, Refresh, Search order. More and
+Settings remain at the trailing edge of the bar. The bar uses equal horizontal
+edge padding before the activation control and after Settings, including while
+its contents scroll.
+
+More contains unpinned watch actions followed by unpinned list tools, with
+visible action labels. Each action keeps one button node, count, loading state,
+and click handler as it moves between the bar and popup. Reconciliation retains
+the placement preference. Opening a native action dialog dismisses More first.
 
 ## Rail Locate
 
@@ -580,17 +629,15 @@ window through the existing rail positioning path.
 
 ## Rail Start
 
-The Start button follows Locate and returns the rail to its beginning. It
-presents a left chevron and vertical bar with a localized tooltip and
-accessible name. It is disabled when the rail is closed. Activation renders
+The Start button returns the rail to its beginning. It presents a left chevron
+and vertical bar with a localized tooltip and accessible name. It is disabled when the rail is closed. Activation renders
 the first rail window and preserves the selected source, search query, and
 account expansion depth.
 
 ## Rail Refresh
 
-The Refresh button sits between Start and Search and reloads the selected rail
-source. It presents a circular-arrow icon with a localized tooltip and
-accessible name. It is disabled while the rail is closed or a refresh is
+The Refresh button reloads the selected rail source. It presents a circular-arrow
+icon with a localized tooltip and accessible name. It is disabled while the rail is closed or a refresh is
 pending. Refresh preserves the search query and selected route while that
 source remains available. Scroll position is retained within the updated
 rail's bounds.
@@ -604,10 +651,11 @@ and comments.
 
 ## Rail Search
 
-The search control follows Refresh. It is available while a rail is open.
-Activation replaces the icon button with a focused search input. Escape clears
-the query and returns focus to the button. An empty input collapses when focus
-leaves it.
+The search control is available while a rail is open. Activation presents a
+focused search input on the bar, including when the shortcut was in More.
+An expanded search remains on the bar until collapsed. Escape clears the query
+and returns focus to the pinned button, the More launcher, or Settings when
+More is hidden. An empty input collapses when focus leaves it.
 
 Search filters the selected source by title or author using a case-insensitive,
 Unicode-normalized substring. Watch later searches the full retained account

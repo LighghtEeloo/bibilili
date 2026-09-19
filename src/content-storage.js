@@ -6,10 +6,13 @@
     "bibilili:card-navigation-origin";
   const SOURCE_ROUTE_STATE_STORAGE_KEY = "bibilili:source-route-state";
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
+  const SETTINGS_STORAGE_KEY = "bibilili:settings";
+  const FEATURE_DEFAULTS = Object.freeze({ description: true, thumbnails: true, moreButton: true });
   const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
 
   let storageConfig = Object.freeze({
     sourceOrder: Object.freeze([]),
+    actionDefaults: Object.freeze({}),
     commentPaneMinWidth: 0,
     commentPaneMaxWidth: Number.MAX_SAFE_INTEGER
   });
@@ -22,6 +25,7 @@
   function configure(config) {
     storageConfig = Object.freeze({
       sourceOrder: Object.freeze([...(config.sourceOrder ?? [])]),
+      actionDefaults: Object.freeze({ ...(config.actionDefaults ?? {}) }),
       commentPaneMinWidth: config.commentPaneMinWidth ?? 0,
       commentPaneMaxWidth:
         config.commentPaneMaxWidth ?? Number.MAX_SAFE_INTEGER
@@ -32,6 +36,8 @@
    * Stores the global activation preference for Bilibili pages.
    */
   class ActivationPreference {
+    /** @returns {string} Origin-local key observed across Bilibili tabs. */
+    static get key() { return ENABLED_STORAGE_KEY; }
     /**
      * Returns true when the transformed layout should start enabled.
      *
@@ -49,12 +55,68 @@
      * Persists the transformed layout activation state.
      *
      * @param {boolean} enabled
+     * @returns {boolean} Whether the requested state was persisted.
      */
     static writeEnabled(enabled) {
       try {
         window.localStorage.setItem(ENABLED_STORAGE_KEY, enabled ? "on" : "off");
+        return true;
       } catch (_error) {
-        return;
+        return false;
+      }
+    }
+  }
+
+  /** Persists feature switches, enabled sources, and action placement on Bilibili. */
+  class SettingsPreference {
+    /** @returns {string} Origin-local key observed across Bilibili tabs. */
+    static get key() { return SETTINGS_STORAGE_KEY; }
+
+    /** @returns {SettingsPreferenceRecord} Fresh defaults in canonical key order. */
+    static defaults() {
+      return {
+        features: { ...FEATURE_DEFAULTS },
+        sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
+        pinnedActions: { ...storageConfig.actionDefaults }
+      };
+    }
+
+    /**
+     * Keeps booleans from known keys and supplies defaults for missing values.
+     * @param {unknown} value
+     * @returns {SettingsPreferenceRecord}
+     */
+    static normalize(value) {
+      const result = SettingsPreference.defaults();
+      for (const [group, defaults] of Object.entries(result)) {
+        for (const key of Object.keys(defaults)) {
+          if (typeof value?.[group]?.[key] === "boolean") defaults[key] = value[group][key];
+        }
+      }
+      return result;
+    }
+
+    /** @returns {SettingsPreferenceRecord} Saved preferences or defaults when unavailable. */
+    static read() {
+      try {
+        return SettingsPreference.normalize(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY)));
+      } catch (_error) {
+        return SettingsPreference.defaults();
+      }
+    }
+
+    /**
+     * Writes validated preferences; false means the caller must retain page-only state.
+     * @param {SettingsPreferenceRecord} preferences
+     * @returns {boolean}
+     */
+    static write(preferences) {
+      try {
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY,
+          JSON.stringify(SettingsPreference.normalize(preferences)));
+        return true;
+      } catch (_error) {
+        return false;
       }
     }
   }
@@ -343,6 +405,7 @@
   /**
    * @typedef {object} StorageStateConfig
    * @property {string[]} [sourceOrder] Closed source kind order.
+   * @property {Record<string, boolean>} [actionDefaults] Default placement for each action kind.
    * @property {number} [commentPaneMinWidth] Minimum stored comment pane width.
    * @property {number} [commentPaneMaxWidth] Maximum stored comment pane width.
    */
@@ -368,6 +431,13 @@
    */
 
   /**
+   * @typedef {object} SettingsPreferenceRecord
+   * @property {{ description: boolean, thumbnails: boolean, moreButton: boolean }} features Optional presentations.
+   * @property {Record<string, boolean>} sources Enabled source kinds.
+   * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
+   */
+
+  /**
    * Stable storage helpers loaded before the main content-script runtime.
    */
   window.__bibililiStorageState = Object.freeze({
@@ -375,6 +445,7 @@
     CardNavigationOriginStore,
     CommentPaneWidthPreference,
     SourceRouteStateStore,
+    SettingsPreference,
     configure
   });
 })();

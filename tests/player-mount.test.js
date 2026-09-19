@@ -179,6 +179,8 @@ function watchActionLoadingFixture(t) {
   const { controller, layout, document, root, nativeRoot, regions } = fixture;
   layout.sourceBar = document.createElement("div");
   layout.actionGroup = document.createElement("div");
+  layout.moreWatchGroup = document.createElement("div");
+  root.append(layout.moreWatchGroup);
   const sourceButton = document.createElement("button");
   sourceButton.disabled = false;
   layout.sourceBar.append(sourceButton);
@@ -188,8 +190,7 @@ function watchActionLoadingFixture(t) {
     nativeRoot.append(trigger);
     return { kind, trigger, countText: "123", isActive: false };
   });
-  t.mock.method(layout, "updateWatchActionNativeVisual", () => {});
-  t.mock.method(layout, "updateCurrentWatchLaterActionVisual", () => true);
+  t.mock.method(layout, "updateActionVisual", () => true);
   t.mock.method(layout.commentPane, "getBoundingClientRect", () => ({ width: 399 }));
   t.mock.method(controller.accountSources, "currentWatchLaterCount", () => 77);
   t.mock.method(UiStrings, "watchActionButtonLabel", (kind, count) => count ? `${kind}: ${count}` : kind);
