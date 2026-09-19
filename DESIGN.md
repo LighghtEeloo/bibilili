@@ -22,6 +22,8 @@ width, navigation-origin, source-route state, and the last favorite folder per
 account. `src/content-controls.js` defines shared controls, expandable search,
 extension icon paths, and popup positioning and focus.
 `src/content-favorites.js` owns the favorite-folder picker.
+`src/content-performance.js` aggregates runtime measurements in fixed-size
+records for each document.
 `src/content-settings.js` renders the settings view from ordered definitions and
 the controller's preference snapshot. `src/content-theme.js` defines browser
 color-scheme resolution and Bilibili native theme synchronization.
