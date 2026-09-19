@@ -70,6 +70,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   const value = SettingsPreference.defaults();
   value.features.thumbnails = false;
   value.features.favoriteToSelectedFolder = false;
+  value.features.performance = true;
   value.pinnedActions.coin = false;
   value.language = UiLanguage.TRADITIONAL_CHINESE;
   assert.equal(SettingsPreference.write(value), true);
@@ -79,6 +80,105 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new ThrowingStorage();
   assert.equal(SettingsPreference.write(value), false);
   assert.deepEqual(SettingsPreference.read(), SettingsPreference.defaults());
+});
+
+test("performance toggles recording without reconciliation and snapshots refresh only on demand", (t) => {
+  const { controller, view } = settingsFixture(t);
+  view.ensure();
+  const snapshots = t.mock.method(controller, "performanceSnapshot");
+  assert.equal(view.performanceView.status, undefined, "other tabs do not allocate statistics DOM");
+  const input = [...view.inputs.keys()].find((input) => input.name === "performance");
+  view.render();
+  assert.equal(input.checked, false);
+  input.checked = true;
+  input.dispatch("change");
+  assert.equal(controller.performance.enabled, true);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  assert.equal(SettingsPreference.read().features.performance, true);
+  view.selectTab("performance");
+  const performance = view.performanceView;
+  const retained = performance.snapshot;
+  controller.performance.count("navigationTicks");
+  view.update(controller.preferences, true, "en");
+  view.render();
+  assert.equal(snapshots.mock.callCount(), 1);
+  assert.equal(performance.snapshot, retained);
+  assert.equal(retained.states.visible.counters.navigationTicks, 0);
+  performance.refresh();
+  assert.equal(performance.snapshot.states.visible.counters.navigationTicks, 1);
+  const reset = [...performance.labels].find(([, key]) => key === UiMessage.PERFORMANCE_RESET)[0];
+  reset.dispatch("click");
+  assert.equal(performance.snapshot.states.visible.counters.navigationTicks, 0);
+  assert.equal(controller.performance.enabled, true);
+  input.checked = false;
+  input.dispatch("change");
+  assert.equal(controller.performance.enabled, false);
+});
+
+test("all three settings tabs support roving keyboard focus and persisted selection", (t) => {
+  const { view, document } = settingsFixture(t);
+  view.ensure();
+  view.selectTab("features");
+  const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
+  key("ArrowRight");
+  assert.equal(view.tab, "actions");
+  key("ArrowRight");
+  assert.equal(view.tab, "performance");
+  assert.equal(document.activeElement, view.tabs.get("performance"));
+  assert.equal(view.tabs.get("performance").getAttribute("aria-selected"), "true");
+  assert.equal(view.panels.get("features").hidden, true);
+  assert.equal(global.__bibililiStorageState.SettingsTabPreference.read(), "performance");
+  key("ArrowRight");
+  assert.equal(view.tab, "features");
+  key("End");
+  assert.equal(view.tab, "performance");
+  key("Home");
+  assert.equal(view.tab, "features");
+  key("ArrowLeft");
+  assert.equal(view.tab, "performance");
+});
+
+test("copy exports the displayed snapshot and reports clipboard failures", async (t) => {
+  const { controller, view } = settingsFixture(t);
+  view.ensure();
+  view.selectTab("performance");
+  const performance = view.performanceView;
+  let copied;
+  performance.options.onCopy = async (json) => { copied = JSON.parse(json); };
+  controller.performance.setEnabled(true);
+  controller.performance.count("navigationTicks");
+  await performance.copy();
+  assert.deepEqual(copied, performance.snapshot);
+  assert.equal(copied.states.visible.counters.navigationTicks, 0);
+  assert.equal(performance.copyMessage, UiMessage.PERFORMANCE_COPIED);
+  performance.options.onCopy = async () => { throw new Error("clipboard blocked"); };
+  await performance.copy();
+  assert.equal(performance.copyMessage, UiMessage.PERFORMANCE_COPY_FAILED);
+  assert.equal(performance.copyButton.disabled, false);
+});
+
+test("report clipboard fallback stays inside settings and restores focus even on failure", (t) => {
+  const { view, document } = settingsFixture(t);
+  view.ensure();
+  view.selectTab("performance");
+  document.body.append(view.panel.root);
+  const button = view.performanceView.copyButton;
+  button.focus();
+  const create = document.createElement;
+  t.mock.method(document, "createElement", (tag) => {
+    const element = create(tag);
+    element.select = () => element.focus();
+    element.setSelectionRange = () => {};
+    return element;
+  });
+  document.execCommand = () => {
+    assert.equal(document.activeElement.parentElement, view.panel.root);
+    throw new Error("copy denied");
+  };
+  assert.throws(() => LayoutRoot.copyTextWithTextarea(document, "{}", view.panel.root), /copy denied/);
+  assert.equal(view.panel.root.querySelector("textarea"), null);
+  assert.equal(document.activeElement, button);
 });
 
 test("language preferences accept only packaged languages and default to automatic", () => {

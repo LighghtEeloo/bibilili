@@ -351,5 +351,173 @@
   },
   "favoritesEmptyMessage": {
     "message": "此收藏夹中没有可播放的视频。"
+  },
+  "performanceLabel": {
+    "message": "性能"
+  },
+  "performanceToggle": {
+    "message": "记录性能数据"
+  },
+  "performanceToggleHint": {
+    "message": "记录当前页面中的扩展运行情况。关闭记录后保留统计，重新加载页面后清空。数据不会上传。"
+  },
+  "performanceHint": {
+    "message": "仅统计当前页面。点击刷新获取最新快照。在功能中启用“记录性能数据”以开始记录。"
+  },
+  "performanceVisible": {
+    "message": "可见"
+  },
+  "performanceHidden": {
+    "message": "隐藏"
+  },
+  "performanceOff": {
+    "message": "关闭"
+  },
+  "performanceRecording": {
+    "message": "记录中 · 手动更新统计"
+  },
+  "performancePaused": {
+    "message": "记录已关闭 · 保留统计"
+  },
+  "performanceRefresh": {
+    "message": "刷新"
+  },
+  "performanceReset": {
+    "message": "重置"
+  },
+  "performanceCopy": {
+    "message": "复制报告"
+  },
+  "performanceCopied": {
+    "message": "已复制报告。"
+  },
+  "performanceCopyFailed": {
+    "message": "无法复制。请允许剪贴板访问后重试。"
+  },
+  "performanceTimestamp": {
+    "message": "快照时间：$1"
+  },
+  "performanceActivity": {
+    "message": "已记录的活动"
+  },
+  "performanceMetric": {
+    "message": "指标"
+  },
+  "performanceElapsed": {
+    "message": "记录时长（秒）"
+  },
+  "performanceReconcile": {
+    "message": "页面更新"
+  },
+  "performanceReconcileTime": {
+    "message": "页面更新时间（毫秒）"
+  },
+  "performanceRequests": {
+    "message": "更新请求"
+  },
+  "performanceMutations": {
+    "message": "页面变动批次"
+  },
+  "performanceNavigation": {
+    "message": "导航轮询"
+  },
+  "performanceLoading": {
+    "message": "快速加载检查"
+  },
+  "performanceApi": {
+    "message": "已发起 API 请求"
+  },
+  "performanceApiErrors": {
+    "message": "API 失败"
+  },
+  "performanceApiAborts": {
+    "message": "API 取消"
+  },
+  "performanceCache": {
+    "message": "缩略图缓存使用次数"
+  },
+  "performanceStateHint": {
+    "message": "可见和隐藏均指 Bibilili 已启用。关闭包含两种页面状态。API 仅统计扩展请求；结果归入请求发起时的状态，且需连续记录。"
+  },
+  "performanceTimings": {
+    "message": "执行时间"
+  },
+  "performanceTimingHint": {
+    "message": "所有状态下同步工作的耗时。嵌套阶段有重叠，请勿相加。数据反映运行时间，不代表 CPU 占用率或能耗。"
+  },
+  "performanceCount": {
+    "message": "次数"
+  },
+  "performanceTotal": {
+    "message": "总毫秒"
+  },
+  "performanceMax": {
+    "message": "最大毫秒"
+  },
+  "performanceDiscovery": {
+    "message": "区域查找"
+  },
+  "performanceLayout": {
+    "message": "布局渲染"
+  },
+  "performanceRail": {
+    "message": "视频卡片渲染"
+  },
+  "performanceCauses": {
+    "message": "更新触发来源"
+  },
+  "performanceCauseHint": {
+    "message": "请求可被合并、延后或取消。原生媒体就绪也可直接更新页面。"
+  },
+  "performanceCausePage": {
+    "message": "启动／导航"
+  },
+  "performanceCauseSettling": {
+    "message": "页面加载稳定"
+  },
+  "performanceCauseAccount": {
+    "message": "账号列表"
+  },
+  "performanceCauseVisibility": {
+    "message": "标签页可见状态"
+  },
+  "performanceCauseTheme": {
+    "message": "主题变更"
+  },
+  "performanceCauseRecovery": {
+    "message": "播放器恢复"
+  },
+  "performanceCauseCatalog": {
+    "message": "语言资源"
+  },
+  "performanceCauseAction": {
+    "message": "用户操作"
+  },
+  "performanceResources": {
+    "message": "快照中的资源状态"
+  },
+  "performanceObserver": {
+    "message": "页面观察器"
+  },
+  "performanceActive": {
+    "message": "运行中"
+  },
+  "performanceStopped": {
+    "message": "已停止"
+  },
+  "performanceRendered": {
+    "message": "已渲染卡片"
+  },
+  "performanceItems": {
+    "message": "当前列表条目"
+  },
+  "performancePreviewRequests": {
+    "message": "进行中的封面请求"
+  },
+  "performancePreviewQueue": {
+    "message": "排队中的封面"
+  },
+  "performancePreviewRecords": {
+    "message": "内存中的封面记录"
   }
 }

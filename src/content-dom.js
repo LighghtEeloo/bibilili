@@ -42,6 +42,25 @@
     }
 
     /**
+     * Recognizes owned edits, including a popup or layout root added to the native body.
+     * Moved native nodes remain page changes when their former parent is observed.
+     * @param {MutationRecord} mutation
+     * @returns {boolean}
+     */
+    static isOwnedMutation(mutation) {
+      if (DomProbe.isOwned(mutation.target)) return true;
+      if (mutation.type !== "childList") return false;
+      if (mutation.addedNodes.length + mutation.removedNodes.length === 0) return false;
+      for (const node of mutation.addedNodes) {
+        if (!node.matches?.(OWNED_SURFACE_SELECTOR)) return false;
+      }
+      for (const node of mutation.removedNodes) {
+        if (!node.matches?.(OWNED_SURFACE_SELECTOR)) return false;
+      }
+      return true;
+    }
+
+    /**
      * Queries all elements matching a selector.
      *
      * @param {ParentNode} root

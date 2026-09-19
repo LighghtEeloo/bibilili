@@ -3,6 +3,7 @@
 
   const { UiControl, PopupPanel } = window.__bibililiControls;
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
+  const { PerformanceView } = window.__bibililiPerformanceView;
   const { SettingsPreference, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
 
   /**
@@ -14,6 +15,7 @@
     constructor(document, options) {
       this.document = document;
       this.options = options;
+      this.performanceView = new PerformanceView(document, options.performance);
       this.panel = new PopupPanel(document, "bibilili-settings");
       this.tab = SettingsTabPreference.read();
       this.preferences = SettingsPreference.defaults();
@@ -48,6 +50,7 @@
     /** @param {HTMLElement} anchor */
     toggle(anchor) {
       this.ensure();
+      if (!this.panel.isOpen && this.tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
       this.render();
       if (!this.panel.isOpen) this.options.onOpen();
       this.panel.toggle(anchor);
@@ -75,7 +78,8 @@
       tabs.setAttribute("role", "tablist");
       for (const [key, message] of [
         [SettingsTab.FEATURES, UiMessage.SETTINGS_FEATURES_LABEL],
-        [SettingsTab.ACTIONS, UiMessage.SETTINGS_ACTION_BAR_LABEL]
+        [SettingsTab.ACTIONS, UiMessage.SETTINGS_ACTION_BAR_LABEL],
+        [SettingsTab.PERFORMANCE, UiMessage.PERFORMANCE_LABEL]
       ]) {
         const button = UiControl.button(this.document, "bibilili-settings-tab", () => this.selectTab(key));
         this.labels.set(button, message);
@@ -85,8 +89,10 @@
         button.addEventListener("keydown", (event) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault();
-          this.selectTab(event.key === "Home" ? SettingsTab.FEATURES : event.key === "End"
-            ? SettingsTab.ACTIONS : this.tab === SettingsTab.FEATURES ? SettingsTab.ACTIONS : SettingsTab.FEATURES);
+          const order = [...this.tabs.keys()];
+          const index = order.indexOf(this.tab);
+          this.selectTab(event.key === "Home" ? order[0] : event.key === "End" ? order.at(-1)
+            : order[(index + (event.key === "ArrowRight" ? 1 : -1) + order.length) % order.length]);
           this.tabs.get(this.tab).focus();
         });
         this.tabs.set(key, button);
@@ -110,6 +116,8 @@
         this.addPreferenceSwitch(features, "sources", source.kind, source.message);
       }
       features.append(this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint"));
+      features.append(this.text("h3", UiMessage.PERFORMANCE_LABEL, "bibilili-settings-performance-heading"));
+      this.addPreferenceSwitch(features, "features", "performance", UiMessage.PERFORMANCE_TOGGLE, UiMessage.PERFORMANCE_TOGGLE_HINT);
 
       const actions = this.panels.get(SettingsTab.ACTIONS);
       this.addPreferenceSwitch(actions, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
@@ -227,8 +235,10 @@
 
     /** Selects and remembers a tab without changing extension feature preferences. @param {string} tab */
     selectTab(tab) {
+      if (!this.tabs.has(tab)) return;
       this.tab = tab;
       SettingsTabPreference.write(tab);
+      if (tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
       this.render();
       this.panel.position();
     }
@@ -240,14 +250,22 @@
      * @param {string} language
      */
     update(preferences, enabled, language) {
+      const recordingChanged = this.preferences.features.performance !== preferences.features.performance;
       this.preferences = preferences;
       this.enabled = enabled;
       this.language = language;
       if (this.button) UiControl.setLabel(this.button, UiStrings.message(UiMessage.SETTINGS_LABEL, language));
       if (this.panel.isOpen) {
+        if (recordingChanged && this.tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
         this.render();
         this.panel.position();
       }
+    }
+
+    /** Allocates statistics DOM on first use and captures an explicitly requested snapshot. */
+    refreshPerformance() {
+      this.performanceView.mount(this.panels.get(SettingsTab.PERFORMANCE));
+      this.performanceView.refresh();
     }
 
     /** Reports persistence failure without undoing the current page's choices. */
@@ -293,6 +311,7 @@
         this.options.renderIcon(kind, visual);
       }
       this.status.textContent = message(this.statusKey);
+      this.performanceView.render(this.language);
     }
 
     /** Releases panel listeners and DOM when the content runtime stops. */
@@ -310,6 +329,7 @@
    * @property {(enabled: boolean) => void} onEnabledChange Changes global activation.
    * @property {() => void} onOpen Dismisses another action popup before opening settings.
    * @property {(kind: string, visual: Element) => void} renderIcon Shared action visual renderer.
+   * @property {PerformanceViewOptions} performance On-demand diagnostics operations.
    */
 
   window.__bibililiSettings = Object.freeze({ SettingsView });

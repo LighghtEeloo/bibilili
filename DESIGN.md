@@ -23,7 +23,8 @@ account. `src/content-controls.js` defines shared controls, expandable search,
 extension icon paths, and popup positioning and focus.
 `src/content-favorites.js` owns the favorite-folder picker.
 `src/content-performance.js` aggregates runtime measurements in fixed-size
-records for each document.
+records for each document. `src/content-performance-view.js` presents manual
+snapshots in Settings.
 `src/content-settings.js` renders the settings view from ordered definitions and
 the controller's preference snapshot. `src/content-theme.js` defines browser
 color-scheme resolution and Bilibili native theme synchronization.
@@ -170,15 +171,16 @@ storage is available. Storage events apply changes to other open Bilibili tabs.
 Settings manages extension preferences on the watch page. Its button follows
 the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
-with Features and Action bar tabs. It remembers the last selected tab across
-videos and page reloads in origin-local storage. Features is the initial tab
+with Features, Action bar, and Performance tabs. It remembers the last selected
+tab across videos and page reloads in origin-local storage. Features is the initial tab
 when no valid selection is saved. Tab selection is stored independently of
 feature preferences and is retained when restoring defaults.
 
 Features begins with the UI language selector. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
-enrichment, direct favorite saves, and each video source. All features and
-sources default to enabled. Disabling the description restores its native node
+enrichment, direct favorite saves, each video source, and performance recording.
+Presentation features and sources default to enabled. Performance recording
+defaults to off. Disabling the description restores its native node
 and removes its extension presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails. Disabling a source removes it from routing and source
@@ -240,9 +242,26 @@ the request's starting state. Reset and recording changes discard unfinished
 samples. URLs, identifiers, response bodies, and individual event histories are
 not retained.
 
+Features exposes the Record performance switch. The Performance tab is available
+while recording or the extension is off. It shows a timestamped snapshot with
+state columns, then expandable work timings, update triggers, and current
+resource counts. Resource counts include page observation, navigation and
+loading timers, rendered and listed cards, and preview requests and records.
+
+The statistics view creates its tables when Performance is first opened.
+Opening or selecting Performance captures a snapshot. Refresh replaces it;
+ordinary reconciliation keeps the displayed values stable. Reset clears
+measurements in this document and captures a new snapshot without changing the
+recording preference. Copy report copies the displayed snapshot as JSON and
+reports clipboard failure in place. The preference synchronizes across tabs;
+measurements and resets belong to each document. Recording changes alone do
+not request reconciliation or refresh account lists.
+
 Recording uses existing runtime callbacks and fixed-size aggregate records.
 It installs no observer, timer, or network request. Disabled instrumentation
 returns before reading the clock or allocating samples.
+The page mutation handler excludes insertion and removal of extension-owned
+surfaces, so opening a settings popup does not request a page update.
 
 ## Startup
 

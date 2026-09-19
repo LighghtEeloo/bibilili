@@ -351,5 +351,173 @@
   },
   "favoritesEmptyMessage": {
     "message": "No playable videos in this folder."
+  },
+  "performanceLabel": {
+    "message": "Performance"
+  },
+  "performanceToggle": {
+    "message": "Record performance"
+  },
+  "performanceToggleHint": {
+    "message": "Collects extension work in this document. Turning recording off keeps totals; reload clears them. No data is uploaded."
+  },
+  "performanceHint": {
+    "message": "Current document only. Refresh for the latest snapshot. Enable Record performance in Features to collect data."
+  },
+  "performanceVisible": {
+    "message": "Visible"
+  },
+  "performanceHidden": {
+    "message": "Hidden"
+  },
+  "performanceOff": {
+    "message": "Off"
+  },
+  "performanceRecording": {
+    "message": "Recording · updates on demand"
+  },
+  "performancePaused": {
+    "message": "Recording off · totals retained"
+  },
+  "performanceRefresh": {
+    "message": "Refresh"
+  },
+  "performanceReset": {
+    "message": "Reset"
+  },
+  "performanceCopy": {
+    "message": "Copy report"
+  },
+  "performanceCopied": {
+    "message": "Report copied."
+  },
+  "performanceCopyFailed": {
+    "message": "Could not copy. Allow clipboard access and try again."
+  },
+  "performanceTimestamp": {
+    "message": "Snapshot at $1"
+  },
+  "performanceActivity": {
+    "message": "Recorded activity"
+  },
+  "performanceMetric": {
+    "message": "Metric"
+  },
+  "performanceElapsed": {
+    "message": "Recorded time (s)"
+  },
+  "performanceReconcile": {
+    "message": "Page updates"
+  },
+  "performanceReconcileTime": {
+    "message": "Page update time (ms)"
+  },
+  "performanceRequests": {
+    "message": "Update requests"
+  },
+  "performanceMutations": {
+    "message": "Page mutation batches"
+  },
+  "performanceNavigation": {
+    "message": "Navigation polls"
+  },
+  "performanceLoading": {
+    "message": "Fast loading checks"
+  },
+  "performanceApi": {
+    "message": "API requests started"
+  },
+  "performanceApiErrors": {
+    "message": "API failures"
+  },
+  "performanceApiAborts": {
+    "message": "API cancellations"
+  },
+  "performanceCache": {
+    "message": "Cached thumbnail uses"
+  },
+  "performanceStateHint": {
+    "message": "Visible and Hidden mean Bibilili is enabled. Off includes both. API counts cover extension requests; outcomes follow the starting state and require uninterrupted recording."
+  },
+  "performanceTimings": {
+    "message": "Work timings"
+  },
+  "performanceTimingHint": {
+    "message": "Elapsed synchronous work across all states. Nested phases overlap: do not add their totals. These are runtime measurements, not CPU percentages or energy readings."
+  },
+  "performanceCount": {
+    "message": "Count"
+  },
+  "performanceTotal": {
+    "message": "Total ms"
+  },
+  "performanceMax": {
+    "message": "Max ms"
+  },
+  "performanceDiscovery": {
+    "message": "Discovery"
+  },
+  "performanceLayout": {
+    "message": "Layout rendering"
+  },
+  "performanceRail": {
+    "message": "Video card rendering"
+  },
+  "performanceCauses": {
+    "message": "Update triggers"
+  },
+  "performanceCauseHint": {
+    "message": "Requests can be merged, deferred, or canceled. Native media readiness can also update the page directly."
+  },
+  "performanceCausePage": {
+    "message": "Startup / navigation"
+  },
+  "performanceCauseSettling": {
+    "message": "Page settling"
+  },
+  "performanceCauseAccount": {
+    "message": "Account lists"
+  },
+  "performanceCauseVisibility": {
+    "message": "Tab visibility"
+  },
+  "performanceCauseTheme": {
+    "message": "Theme change"
+  },
+  "performanceCauseRecovery": {
+    "message": "Player recovery"
+  },
+  "performanceCauseCatalog": {
+    "message": "Language catalog"
+  },
+  "performanceCauseAction": {
+    "message": "User actions"
+  },
+  "performanceResources": {
+    "message": "Resources at snapshot"
+  },
+  "performanceObserver": {
+    "message": "Page observer"
+  },
+  "performanceActive": {
+    "message": "Active"
+  },
+  "performanceStopped": {
+    "message": "Stopped"
+  },
+  "performanceRendered": {
+    "message": "Rendered cards"
+  },
+  "performanceItems": {
+    "message": "Items in selected list"
+  },
+  "performancePreviewRequests": {
+    "message": "Active preview requests"
+  },
+  "performancePreviewQueue": {
+    "message": "Queued previews"
+  },
+  "performancePreviewRecords": {
+    "message": "Preview records in memory"
   }
 }

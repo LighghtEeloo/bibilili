@@ -122,7 +122,7 @@
       else if (failed) this.states[sample.state].counters[PerformanceCounter.API_ERRORS] += 1;
     }
 
-    /** Returns detached, bounded records suitable for presentation and JSON export. */
+    /** @returns {PerformanceSnapshot} Detached, bounded records for presentation and export. */
     snapshot() {
       this.accrue();
       return {
@@ -134,6 +134,22 @@
       };
     }
   }
+
+  /**
+   * @typedef {object} PerformanceStateRecord
+   * @property {number} elapsedMs Time spent recording in this state.
+   * @property {Record<string, number>} counters Counts keyed by PerformanceCounter.
+   * @property {Record<string, number>} causes Request counts keyed by ReconcileCause.
+   * @property {Record<string, { count: number, totalMs: number, maxMs: number }>} work Inclusive timings keyed by PerformanceWork.
+   */
+
+  /**
+   * @typedef {object} PerformanceSnapshot
+   * @property {number} schemaVersion Export format version.
+   * @property {boolean} recording Whether new measurements are being collected.
+   * @property {string} state Current PerformanceState.
+   * @property {Record<string, PerformanceStateRecord>} states Independent aggregates by runtime state.
+   */
 
   /**
    * @typedef {object} PerformanceSample

@@ -73,6 +73,7 @@ function loadContentRuntime() {
   require("../../src/content-controls.js");
   require("../../src/content-favorites.js");
   require("../../src/content-performance.js");
+  require("../../src/content-performance-view.js");
   require("../../src/content-settings.js");
   require("../../src/content-theme.js");
   require("../../src/content-scheduler.js");

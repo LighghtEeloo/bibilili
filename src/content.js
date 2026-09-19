@@ -9151,9 +9151,10 @@
      *
      * @param {Document} document
      * @param {string} text
+     * @param {HTMLElement} [container] Keeps fallback edits inside the initiating surface.
      * @returns {Promise<void>}
      */
-    static async copyTextToClipboard(document, text) {
+    static async copyTextToClipboard(document, text, container = document.body) {
       if (navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(text);
@@ -9164,7 +9165,7 @@
         }
       }
 
-      LayoutRoot.copyTextWithTextarea(document, text);
+      LayoutRoot.copyTextWithTextarea(document, text, container);
     }
 
     /**
@@ -9172,8 +9173,9 @@
      *
      * @param {Document} document
      * @param {string} text
+     * @param {HTMLElement} [container]
      */
-    static copyTextWithTextarea(document, text) {
+    static copyTextWithTextarea(document, text, container = document.body) {
       const textarea = document.createElement("textarea");
       textarea.value = text;
       textarea.setAttribute("readonly", "true");
@@ -9182,17 +9184,17 @@
       textarea.style.width = "1px";
       textarea.style.height = "1px";
       textarea.style.opacity = "0";
-      document.body.append(textarea);
-      textarea.select();
-      textarea.setSelectionRange(0, text.length);
-
-      const didCopy =
-        typeof document.execCommand === "function" &&
-        document.execCommand("copy");
-      textarea.remove();
-
-      if (!didCopy) {
-        throw new Error("Copy command failed");
+      const focused = document.activeElement;
+      container.append(textarea);
+      try {
+        textarea.select();
+        textarea.setSelectionRange(0, text.length);
+        if (typeof document.execCommand !== "function" || !document.execCommand("copy")) {
+          throw new Error("Copy command failed");
+        }
+      } finally {
+        textarea.remove();
+        if (focused?.isConnected) focused.focus({ preventScroll: true });
       }
     }
 
@@ -11125,6 +11127,11 @@
         ],
         onChange: (preferences) => this.setPreferences(preferences),
         onEnabledChange: (enabled) => this.setEnabled(enabled),
+        performance: {
+          onSnapshot: () => this.performanceSnapshot(),
+          onReset: () => this.performance.reset(),
+          onCopy: (json) => LayoutRoot.copyTextToClipboard(this.document, json, this.settingsView.panel.root)
+        },
         onOpen: () => {
           this.layout.morePanel?.close();
           this.favoritesView.panel.close();
@@ -11523,7 +11530,7 @@
       if (this.observer) return;
       this.observer = new MutationObserver((mutations) => {
         if (!this.enabled || this.document.hidden) return;
-        const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwned(mutation.target));
+        const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwnedMutation(mutation));
 
         if (hasPageMutation) {
           this.performance.count(PerformanceCounter.MUTATIONS);
@@ -11573,6 +11580,23 @@
       this.performance.count(PerformanceCounter.NAVIGATION);
       this.handlePotentialNavigation();
       if (this.videoLoading.timer === null) this.videoLoading.revealWhenReady();
+    }
+
+    /** @returns {PerformanceReport} Aggregates and owned resources captured only on user request. */
+    performanceSnapshot() {
+      return {
+        ...this.performance.snapshot(), capturedAt: new Date().toISOString(),
+        resources: {
+          mutationObserver: this.observer !== null,
+          navigationTimer: this.urlTimer !== null,
+          loadingTimer: this.videoLoading.timer !== null,
+          renderedCards: this.layout.rail?.querySelectorAll(".bibilili-video-card").length ?? 0,
+          listItems: this.layout.railEntries.length,
+          previewRequests: this.videoPreviews.controllers.size,
+          previewQueue: this.videoPreviews.queue.length,
+          previewRecords: this.videoPreviews.records.size
+        }
+      };
     }
 
     /**

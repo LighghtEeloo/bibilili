@@ -12,7 +12,7 @@
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
   const SETTINGS_TAB_STORAGE_KEY = "bibilili:settings-tab";
   /** Closed settings tabs shared by the view and its persisted navigation state. */
-  const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions" });
+  const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions", PERFORMANCE: "performance" });
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true,
     performance: false

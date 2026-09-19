@@ -48,6 +48,8 @@ test("pause excludes elapsed time and late samples; resume retains totals; reset
   recorder.setEnabled(true);
   recorder.endRequest(beforePause, true);
   const beforeReset = recorder.beginRequest();
+  assert.equal(recorder.snapshot().states.visible.elapsedMs, 10);
+  assert.equal(recorder.snapshot().states.visible.counters.previewCacheHits, 1);
   recorder.reset();
   recorder.endRequest(beforeReset, true);
   now = 120;

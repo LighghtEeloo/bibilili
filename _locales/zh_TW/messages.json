@@ -351,5 +351,173 @@
   },
   "favoritesEmptyMessage": {
     "message": "此收藏夾中沒有可播放的影片。"
+  },
+  "performanceLabel": {
+    "message": "效能"
+  },
+  "performanceToggle": {
+    "message": "記錄效能資料"
+  },
+  "performanceToggleHint": {
+    "message": "記錄目前頁面中的擴充功能執行情況。關閉記錄後保留統計，重新載入頁面後清空。資料不會上傳。"
+  },
+  "performanceHint": {
+    "message": "僅統計目前頁面。點選重新整理取得最新快照。在功能中啟用「記錄效能資料」以開始記錄。"
+  },
+  "performanceVisible": {
+    "message": "可見"
+  },
+  "performanceHidden": {
+    "message": "隱藏"
+  },
+  "performanceOff": {
+    "message": "關閉"
+  },
+  "performanceRecording": {
+    "message": "記錄中 · 手動更新統計"
+  },
+  "performancePaused": {
+    "message": "記錄已關閉 · 保留統計"
+  },
+  "performanceRefresh": {
+    "message": "重新整理"
+  },
+  "performanceReset": {
+    "message": "重設"
+  },
+  "performanceCopy": {
+    "message": "複製報告"
+  },
+  "performanceCopied": {
+    "message": "已複製報告。"
+  },
+  "performanceCopyFailed": {
+    "message": "無法複製。請允許剪貼簿存取後重試。"
+  },
+  "performanceTimestamp": {
+    "message": "快照時間：$1"
+  },
+  "performanceActivity": {
+    "message": "已記錄的活動"
+  },
+  "performanceMetric": {
+    "message": "指標"
+  },
+  "performanceElapsed": {
+    "message": "記錄時間（秒）"
+  },
+  "performanceReconcile": {
+    "message": "頁面更新"
+  },
+  "performanceReconcileTime": {
+    "message": "頁面更新時間（毫秒）"
+  },
+  "performanceRequests": {
+    "message": "更新請求"
+  },
+  "performanceMutations": {
+    "message": "頁面變動批次"
+  },
+  "performanceNavigation": {
+    "message": "導覽輪詢"
+  },
+  "performanceLoading": {
+    "message": "快速載入檢查"
+  },
+  "performanceApi": {
+    "message": "已發起 API 請求"
+  },
+  "performanceApiErrors": {
+    "message": "API 失敗"
+  },
+  "performanceApiAborts": {
+    "message": "API 取消"
+  },
+  "performanceCache": {
+    "message": "縮圖快取使用次數"
+  },
+  "performanceStateHint": {
+    "message": "可見和隱藏均指 Bibilili 已啟用。關閉包含兩種頁面狀態。API 僅統計擴充功能請求；結果歸入請求發起時的狀態，且需連續記錄。"
+  },
+  "performanceTimings": {
+    "message": "執行時間"
+  },
+  "performanceTimingHint": {
+    "message": "所有狀態下同步工作的耗時。巢狀階段有重疊，請勿相加。資料反映執行時間，不代表 CPU 使用率或能耗。"
+  },
+  "performanceCount": {
+    "message": "次數"
+  },
+  "performanceTotal": {
+    "message": "總毫秒"
+  },
+  "performanceMax": {
+    "message": "最大毫秒"
+  },
+  "performanceDiscovery": {
+    "message": "區域尋找"
+  },
+  "performanceLayout": {
+    "message": "版面呈現"
+  },
+  "performanceRail": {
+    "message": "影片卡片呈現"
+  },
+  "performanceCauses": {
+    "message": "更新觸發來源"
+  },
+  "performanceCauseHint": {
+    "message": "請求可被合併、延後或取消。原生媒體就緒也可直接更新頁面。"
+  },
+  "performanceCausePage": {
+    "message": "啟動／導覽"
+  },
+  "performanceCauseSettling": {
+    "message": "頁面載入穩定"
+  },
+  "performanceCauseAccount": {
+    "message": "帳號清單"
+  },
+  "performanceCauseVisibility": {
+    "message": "分頁可見狀態"
+  },
+  "performanceCauseTheme": {
+    "message": "主題變更"
+  },
+  "performanceCauseRecovery": {
+    "message": "播放器復原"
+  },
+  "performanceCauseCatalog": {
+    "message": "語言資源"
+  },
+  "performanceCauseAction": {
+    "message": "使用者操作"
+  },
+  "performanceResources": {
+    "message": "快照中的資源狀態"
+  },
+  "performanceObserver": {
+    "message": "頁面觀察器"
+  },
+  "performanceActive": {
+    "message": "執行中"
+  },
+  "performanceStopped": {
+    "message": "已停止"
+  },
+  "performanceRendered": {
+    "message": "已呈現卡片"
+  },
+  "performanceItems": {
+    "message": "目前清單項目"
+  },
+  "performancePreviewRequests": {
+    "message": "進行中的封面請求"
+  },
+  "performancePreviewQueue": {
+    "message": "佇列中的封面"
+  },
+  "performancePreviewRecords": {
+    "message": "記憶體中的封面記錄"
   }
 }

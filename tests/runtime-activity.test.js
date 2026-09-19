@@ -221,3 +221,18 @@ test("recording distinguishes coalesced scheduling requests from executed work",
   assert.equal(state.causes.mutation, 1);
   assert.equal(state.causes.account, 1);
 });
+
+test("opening extension popups is excluded from page mutation work while native additions remain observable", (t) => {
+  const { controller } = activityFixture(t);
+  controller.start();
+  controller.performance.setEnabled(true);
+  const owned = { matches: () => true };
+  const native = { matches: () => false };
+  const mutation = { target: {}, type: "childList", addedNodes: [owned], removedNodes: [] };
+  controller.observer.callback([mutation]);
+  assert.equal(controller.performance.snapshot().states.visible.counters.mutationBatches, 0);
+  t.mock.method(controller.discovery, "findPlayerRegion", () => null);
+  controller.observer.callback([{ ...mutation, addedNodes: [owned, native] }]);
+  assert.equal(controller.performance.snapshot().states.visible.counters.mutationBatches, 1);
+  assert.equal(controller.performance.snapshot().states.visible.causes.mutation, 1);
+});
