@@ -444,8 +444,8 @@ test("ready video frames keep old comments dim until the destination thread rend
   controller.stop();
 });
 
-test("hidden loading pauses checks and retains media readiness for visibility", (t) => {
-  const { controller, layout, player, comments, document, timers, frames, paintFrame } = commentNavigationFixture(t);
+test("background loading finishes through the shared timer without fast checks or paint", (t) => {
+  const { controller, layout, player, comments, document, timers, frames } = commentNavigationFixture(t);
   const video = document.createElement("video");
   player.append(video);
   const loading = controller.videoLoading;
@@ -457,16 +457,74 @@ test("hidden loading pauses checks and retains media readiness for visibility", 
   assert.equal(loading.active, true);
   assert.equal(layout.isVideoLoadingPaused, true);
   video.readyState = 2;
-  comments.readyRouteKey = controller.currentPageKey();
   loading.handleMediaEvent({ type: "loadeddata", target: video });
   assert.equal(frames.size, 0);
   assert.ok([...timers.values()].every(({ delay }) => delay !== 100));
-  document.hidden = false;
-  loading.revealWhenReady();
-  paintFrame();
-  paintFrame();
+  assert.equal(layout.commentPane.inert, true, "stale comments stay covered in the background");
+  comments.readyRouteKey = controller.currentPageKey();
+  controller.pollPageState();
+  assert.equal(frames.size, 0);
+  assert.equal(loading.active, false);
   assert.equal(layout.isVideoLoading, false);
   assert.equal(layout.isVideoLoadingPaused, false);
+  assert.equal(layout.commentPane.inert, false);
+  controller.stop();
+});
+
+test("background media readiness reconciles destination actions without waiting for visibility", (t) => {
+  const { controller, layout, player, comments, document, regions, frames } = watchActionLoadingFixture(t);
+  document.hidden = true;
+  const video = document.createElement("video");
+  player.append(video);
+  const loading = controller.videoLoading;
+  loading.begin("video:BVnext:p1");
+  global.location = new URL("https://www.bilibili.com/video/BVnext");
+  video.readyState = 2;
+  comments.readyRouteKey = controller.currentPageKey();
+  for (const action of regions.actions) action.countText = "987";
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  assert.equal(loading.active, false);
+  assert.equal(frames.size, 0);
+  const like = layout.actionButtons.get(WatchActionKind.LIKE);
+  assert.equal(like.querySelector(".bibilili-action-count").textContent, "987");
+  assert.equal(like.disabled, false);
+  controller.stop();
+});
+
+test("hiding during a queued reveal finishes without leaving a pending paint", (t) => {
+  const { controller, layout, player, comments, document, frames } = commentNavigationFixture(t);
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  comments.readyRouteKey = controller.currentPageKey();
+  const loading = controller.videoLoading;
+  loading.begin(controller.currentPageKey());
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  assert.equal(frames.size, 1);
+  document.hidden = true;
+  loading.pause();
+  controller.handleVisibilityChange();
+  assert.equal(frames.size, 0);
+  assert.equal(loading.active, false);
+  assert.equal(layout.commentPane.inert, false);
+  controller.stop();
+});
+
+test("background reveal rechecks readiness after reconciliation", (t) => {
+  const { controller, layout, player, comments, document, frames } = commentNavigationFixture(t);
+  document.hidden = true;
+  const video = document.createElement("video");
+  video.readyState = 2;
+  player.append(video);
+  comments.readyRouteKey = controller.currentPageKey();
+  const loading = controller.videoLoading;
+  loading.begin(controller.currentPageKey());
+  t.mock.method(loading, "onReady", () => { comments.readyRouteKey = null; });
+  loading.handleMediaEvent({ type: "loadeddata", target: video });
+  assert.equal(loading.active, true);
+  assert.equal(loading.timer, null);
+  assert.equal(frames.size, 0);
+  assert.equal(layout.commentPane.inert, true);
   controller.stop();
 });
 

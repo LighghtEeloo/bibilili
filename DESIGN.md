@@ -376,18 +376,21 @@ and remains centered independently of comment scrolling.
 Card activation starts this state before requesting playback. Native media
 loads and watch-route changes use the same state; ordinary buffering does not.
 The destination route, a displayable video frame, and a rendered destination
-comment thread allow metadata reconciliation and two paint frames before the
-pane fades back over 240 ms. The page bridge checks the native comment host's
-live archive identity, loading state, and rendered content. Empty and closed
-threads count as completed loads. Readiness is checked again before reveal;
+comment thread allow metadata reconciliation. Visible documents wait two paint
+frames before the pane fades back over 240 ms. Hidden documents complete the
+transition after reconciliation without waiting for paint. The page bridge
+checks the native comment host's live archive identity, loading state, and
+rendered content. Empty and closed threads count as completed loads.
+Readiness is checked again before reveal;
 elapsed time alone does not restore stale comments. A playback error still
 waits for destination comments. New switches cancel queued reveals, and teardown
 restores interaction. Reduced motion removes the fade and bar motion.
 
-Readiness checks run every 100 ms for up to ten seconds after a media load
-starts. Longer waits pause the loading animation and share the existing 500 ms
-navigation check while the document is visible. Native media events can also
-complete the transition. A new media load starts a new fast-check interval.
+Visible documents check readiness every 100 ms for up to ten seconds after a
+media load starts. Longer waits and hidden documents pause the loading animation
+and share the existing 500 ms navigation check. Native media events can also
+complete the transition in either visibility state. A new media load starts a
+new fast-check interval.
 
 Activating comment reload runs a forced lazy-primer pass and then reconciles the
 current watch page. It does not reload the browser page or replace Bilibili

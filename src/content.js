@@ -1502,9 +1502,12 @@
       return !comments?.isConnected || this.navigation.commentsReady(comments);
     }
 
-    /** Reconciles and paints the destination, then rechecks before revealing it. */
+    /**
+     * Reconciles the destination and rechecks before revealing it.
+     * Visible pages wait for paint; hidden pages finish without animation frames.
+     */
     revealWhenReady() {
-      if (!this.active || this.document.hidden || this.frame !== null) return;
+      if (!this.active || this.frame !== null) return;
       const routeKey = SourceAdapter.currentWatchRouteKey();
       if (!this.isReady(routeKey)) {
         this.scheduleCheck();
@@ -1513,16 +1516,25 @@
       window.clearTimeout(this.timer);
       this.timer = null;
       this.onReady();
+      if (this.document.hidden) {
+        this.finishReveal(routeKey);
+        return;
+      }
       this.frame = window.requestAnimationFrame(() => {
         this.frame = window.requestAnimationFrame(() => {
           this.frame = null;
-          if (SourceAdapter.currentWatchRouteKey() === routeKey && this.isReady(routeKey)) {
-            this.cancel();
-          } else {
-            this.scheduleCheck();
-          }
+          this.finishReveal(routeKey);
         });
       });
+    }
+
+    /** Completes only while the reconciled route and native readiness still match. */
+    finishReveal(routeKey) {
+      if (SourceAdapter.currentWatchRouteKey() === routeKey && this.isReady(routeKey)) {
+        this.cancel();
+      } else {
+        this.scheduleCheck();
+      }
     }
 
     /** Cancels a queued reveal when another video begins loading. */
@@ -1531,7 +1543,7 @@
       this.frame = null;
     }
 
-    /** Pauses hidden-page readiness work while retaining native media state. */
+    /** Pauses fast checks and queued paint while media events and URL polling continue. */
     pause() {
       window.clearTimeout(this.timer);
       this.timer = null;
@@ -11632,11 +11644,10 @@
       this.videoLoading.stop();
     }
 
-    /** Reconciles the current route and native state after visibility returns. */
+    /** Updates loading presentation on visibility changes and resamples returning pages. */
     handleVisibilityChange() {
       this.updateRuntimeActivity();
-      if (this.document.hidden) return;
-      if (!this.handlePotentialNavigation()) {
+      if (!this.document.hidden && !this.handlePotentialNavigation()) {
         this.prepareMount();
         this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.VISIBILITY);
       }
