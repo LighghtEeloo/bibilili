@@ -11173,7 +11173,6 @@
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
-      this.pendingAccountRefresh = false;
       this.settlingTimers = [];
     }
 
@@ -11270,7 +11269,6 @@
       this.pendingVideoCardNavigationOrigin = null;
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
-      this.pendingAccountRefresh = false;
       this.layout.destroy();
     }
 
@@ -11290,7 +11288,7 @@
      *
      * @param {boolean} [resetSourceRoute]
      * @param {string} [priority]
-     * @param {string} [cause] Closed reason counted before scheduling or deferral.
+     * @param {string} [cause] Closed reason counted before scheduling.
      */
     scheduleReconcile(
       resetSourceRoute = false,
@@ -11299,7 +11297,6 @@
     ) {
       this.performance.request(cause);
       this.pendingSourceRouteReset ||= resetSourceRoute;
-      if (this.document.hidden) return;
       this.reconcileScheduler.request(resetSourceRoute, priority);
     }
 
@@ -11308,7 +11305,7 @@
      */
     scheduleSettlingReconciles() {
       this.cancelSettlingReconciles();
-      if (!this.enabled || this.document.hidden || !this.isWatchPage()) return;
+      if (!this.enabled || !this.isWatchPage()) return;
 
       for (const delay of LAZY_SETTLING_RECONCILE_DELAYS_MS) {
         const timer = window.setTimeout(() => {
@@ -11316,7 +11313,7 @@
             (candidate) => candidate !== timer
           );
 
-          if (!this.enabled || this.document.hidden || !this.isWatchPage()) {
+          if (!this.enabled || !this.isWatchPage()) {
             return;
           }
 
@@ -11378,7 +11375,6 @@
      */
     reconcile(resetSourceRoute) {
       this.pendingSourceRouteReset ||= resetSourceRoute;
-      if (this.document.hidden) return;
       const sample = this.performance.begin();
       try {
         this.reconcilePage();
@@ -11387,7 +11383,7 @@
       }
     }
 
-    /** Reconciles the visible page after pending source state has been captured. */
+    /** Reconciles the current page after pending source state has been captured. */
     reconcilePage() {
       BilibiliThemeSync.sync(this.document);
 
@@ -11529,7 +11525,7 @@
     observeMutations() {
       if (this.observer) return;
       this.observer = new MutationObserver((mutations) => {
-        if (!this.enabled || this.document.hidden) return;
+        if (!this.enabled) return;
         const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwnedMutation(mutation));
 
         if (hasPageMutation) {
@@ -11575,7 +11571,7 @@
       this.urlTimer = null;
     }
 
-    /** Shares one visible-page timer between navigation and slow loading checks. */
+    /** Shares one enabled-page timer between navigation and slow loading checks. */
     pollPageState() {
       this.performance.count(PerformanceCounter.NAVIGATION);
       this.handlePotentialNavigation();
@@ -11600,13 +11596,14 @@
     }
 
     /**
-     * Runs page observation only for an enabled, visible document.
+     * Keeps enabled pages synchronized through background navigation and hydration.
+     * Hidden documents pause loading presentation while page observation continues.
      * Settings, storage, history, and visibility events remain available while off.
      */
     updateRuntimeActivity() {
       this.performance.setState(this.enabled, this.document.hidden);
       if (!this.started) return;
-      if (this.enabled && !this.document.hidden) {
+      if (this.enabled) {
         this.navigation.start();
         this.videoLoading.start();
         this.observeMutations();
@@ -11614,6 +11611,10 @@
           this.urlTimer = window.setInterval(
             () => this.pollPageState(), URL_POLL_INTERVAL_MS
           );
+        }
+        if (this.document.hidden) {
+          this.loadingCover.stop();
+          this.videoLoading.pause();
         }
         return;
       }
@@ -11627,11 +11628,8 @@
       this.lazyPrimer.stop();
       this.loadingCover.stop();
       this.videoPreviews.setDemand([]);
-      this.videoLoading.pause();
-      if (!this.enabled) {
-        this.navigation.stop();
-        this.videoLoading.stop();
-      }
+      this.navigation.stop();
+      this.videoLoading.stop();
     }
 
     /** Reconciles the current route and native state after visibility returns. */
@@ -11640,8 +11638,7 @@
       if (this.document.hidden) return;
       if (!this.handlePotentialNavigation()) {
         this.prepareMount();
-        if (this.pendingAccountRefresh) this.startPageReconciliation(false);
-        else this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.VISIBILITY);
+        this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.VISIBILITY);
       }
       this.videoLoading.revealWhenReady();
     }
@@ -11669,7 +11666,6 @@
      * @returns {boolean} Whether a new page session was started.
      */
     handlePotentialNavigation() {
-      if (this.document.hidden) return false;
       const nextPageKey = this.currentPageKey();
 
       if (nextPageKey === this.pageKey) {
@@ -12078,8 +12074,6 @@
       if (!this.enabled || !this.isWatchPage()) {
         return;
       }
-      this.pendingAccountRefresh = Boolean(this.document.hidden);
-      if (this.pendingAccountRefresh) return;
       this.accountSources.refresh(this.resolveUiLanguage());
     }
 
@@ -12154,8 +12148,7 @@
         this.uiLanguage = nextLanguage;
 
         if (this.enabled && this.isWatchPage()) {
-          if (this.document.hidden) this.pendingAccountRefresh = true;
-          else this.accountSources.refresh(nextLanguage, true);
+          this.accountSources.refresh(nextLanguage, true);
         }
       }
 

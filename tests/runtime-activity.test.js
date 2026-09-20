@@ -105,65 +105,99 @@ test("switching off stops recurring work and reactivation samples the current ro
   assert.equal(listeners.get("loadstart").size, 1);
 });
 
-test("hidden pages coalesce work and reconcile missed navigation on return", (t) => {
+test("hidden pages reconcile mutations and detect navigation before returning", (t) => {
   const { controller, timers, intervals, visibility } = activityFixture(t);
+  const reconcile = t.mock.method(controller, "reconcilePage", () => {});
+  t.mock.method(controller.discovery, "findPlayerRegion", () => null);
   controller.start();
+  controller.reconcileScheduler.run();
   const observer = controller.observer;
+  const polling = controller.urlTimer;
+  const scheduled = [...timers.keys()];
   visibility(true);
-  assert.equal(observer.connected, false);
-  assert.equal(intervals.size, 0);
-  assert.equal(timers.size, 0);
+  assert.equal(observer.connected, true);
+  assert.equal(controller.urlTimer, polling);
+  assert.deepEqual([...timers.keys()], scheduled);
+  observer.callback([{ target: {} }]);
   controller.scheduleReconcile(true);
   controller.scheduleReconcile(false);
-  assert.equal(timers.size, 0);
-  assert.equal(controller.pendingSourceRouteReset, true);
+  assert.equal(timers.size, scheduled.length + 1, "hidden changes still coalesce");
+  assert.equal(controller.reconcileScheduler.pendingResetSourceRoute, true);
+  controller.reconcileScheduler.run();
+  assert.equal(reconcile.mock.callCount(), 2, "background reconciliation executes");
 
   global.location = new URL("https://www.bilibili.com/video/av333");
-  controller.handlePotentialNavigation();
-  assert.notEqual(controller.pageKey, "video:av333:p1");
-  visibility(false);
+  intervals.get(polling).callback();
   assert.equal(controller.pageKey, "video:av333:p1");
+  assert.equal(controller.layout.resetPageSession.mock.callCount(), 1);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 2);
+  assert.equal(controller.reconcileScheduler.pendingResetSourceRoute, true);
+  visibility(false);
   assert.equal(intervals.size, 1);
-  assert.equal(controller.observer.connected, true);
-  assert.equal(controller.reconcileScheduler.pending, true);
+  assert.equal(controller.observer, observer);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 2);
 });
 
 test("visibility alone reuses account results and does not restart settling timers", (t) => {
   const { controller, visibility } = activityFixture(t);
   controller.start();
   const requests = controller.accountSources.refresh.mock.callCount();
+  const settling = [...controller.settlingTimers];
   visibility(true);
   visibility(false);
   assert.equal(controller.accountSources.refresh.mock.callCount(), requests);
-  assert.equal(controller.settlingTimers.length, 0);
+  assert.deepEqual(controller.settlingTimers, settling);
   assert.equal(controller.reconcileScheduler.pending, true);
 });
 
-test("hidden startup defers account loading and observation until visible", (t) => {
-  const { controller, timers, intervals, visibility } = activityFixture(t, { hidden: true });
+test("hidden startup initializes navigation, account loading, and reconciliation", (t) => {
+  const { controller, intervals, listeners, visibility } = activityFixture(t, { hidden: true });
+  const reconcile = t.mock.method(controller, "reconcilePage", () => {});
   controller.start();
-  assert.equal(controller.observer, null);
-  assert.equal(timers.size, 0);
-  assert.equal(intervals.size, 0);
-  assert.equal(controller.accountSources.refresh.mock.callCount(), 0);
-  visibility(false);
   assert.equal(controller.accountSources.refresh.mock.callCount(), 1);
   assert.equal(controller.observer.connected, true);
   assert.equal(intervals.size, 1);
-  assert.equal(controller.pendingAccountRefresh, false);
+  assert.equal(listeners.get("loadstart").size, 1);
+  assert.equal(controller.navigation.start.mock.callCount(), 1);
+  assert.ok(controller.settlingTimers.length > 0);
+  controller.reconcileScheduler.run();
+  assert.equal(reconcile.mock.callCount(), 1);
+  visibility(false);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 1);
 });
 
-test("account refresh requested while hidden resumes once on visibility", (t) => {
+test("account refresh requested while hidden runs without a visibility replay", (t) => {
   const { controller, visibility } = activityFixture(t);
   controller.start();
   const requests = controller.accountSources.refresh.mock.callCount();
   visibility(true);
   controller.refreshAccountSources();
   controller.refreshAccountSources();
-  assert.equal(controller.accountSources.refresh.mock.callCount(), requests);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), requests + 2);
   visibility(false);
-  assert.equal(controller.accountSources.refresh.mock.callCount(), requests + 1);
-  assert.equal(controller.pendingAccountRefresh, false);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), requests + 2);
+});
+
+test("hidden activation still stops and restarts the extension runtime", (t) => {
+  const { controller, timers, intervals, listeners, visibility } = activityFixture(t, { hidden: true, enabled: false });
+  controller.start();
+  assert.equal(controller.observer, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 0);
+  global.location = new URL("https://www.bilibili.com/video/av222");
+  controller.setEnabled(true, false);
+  assert.equal(controller.pageKey, "video:av222:p1");
+  assert.equal(controller.observer.connected, true);
+  assert.equal(intervals.size, 1);
+  assert.equal(controller.accountSources.refresh.mock.callCount(), 1);
+  controller.setEnabled(false, false);
+  assert.equal(controller.observer, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(timers.size, 0);
+  assert.equal(listeners.get("loadstart").size, 0);
+  visibility(false);
+  assert.equal(intervals.size, 0);
+  assert.equal(controller.observer, null);
 });
 
 test("stopping removes lifecycle listeners and prevents visibility resumption", (t) => {
@@ -192,16 +226,19 @@ test("performance recording adds no scheduled work and accounts for hidden and o
   controller.pollPageState();
   now = 100;
   visibility(true);
+  controller.pollPageState();
+  t.mock.method(controller, "reconcilePage", () => {});
   controller.scheduleReconcile(false);
+  controller.reconcileScheduler.run();
   now = 300;
   controller.setEnabled(false, false);
   now = 600;
   const { states } = controller.performance.snapshot();
   assert.deepEqual(Object.values(states).map((state) => state.elapsedMs), [100, 200, 300]);
   assert.equal(states.visible.counters.navigationTicks, 1);
-  assert.equal(states.hidden.counters.navigationTicks, 0);
+  assert.equal(states.hidden.counters.navigationTicks, 1);
   assert.equal(states.hidden.counters.reconcileRequests, 1);
-  assert.equal(states.hidden.work.reconcile.count, 0);
+  assert.equal(states.hidden.work.reconcile.count, 1);
   assert.equal(states.off.counters.navigationTicks, 0);
   assert.equal(timers.size, 0);
   assert.equal(intervals.size, 0);

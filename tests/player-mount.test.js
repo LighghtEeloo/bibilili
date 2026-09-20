@@ -271,6 +271,32 @@ test("temporarily empty attached comments survive hydration and settling passes"
   controller.stop();
 });
 
+test("background navigation adopts a replacement player and preserves attached comments", (t) => {
+  const { controller, layout, root, comments, player, document, nativeRoot, regions } = commentNavigationFixture(t);
+  const connections = comments.connections;
+  document.hidden = true;
+  comments.archiveId = "222";
+  regions.title = "Background video";
+  const replacement = document.createElement("div");
+  nativeRoot.append(replacement);
+  regions.player = replacement;
+  global.location = new URL("https://www.bilibili.com/video/av222");
+
+  controller.handlePotentialNavigation();
+  controller.reconcile(true);
+
+  assert.equal(controller.pageKey, "video:av222:p1");
+  assert.equal(layout.root, root);
+  assert.equal(layout.playerNode, replacement);
+  assert.equal(replacement.parentElement, layout.playerPane);
+  assert.equal(player.parentElement, nativeRoot);
+  assert.equal(layout.currentTitle, "Background video");
+  assert.equal(comments.parentElement, layout.commentPane);
+  assert.equal(comments.archiveId, "222");
+  assert.equal(comments.connections, connections);
+  controller.stop();
+});
+
 test("card navigation dims comments before the native request and preserves their DOM", (t) => {
   const { controller, layout, root, comments, player, document } = commentNavigationFixture(t);
   t.mock.method(layout.commentPane, "getBoundingClientRect", () => ({ width: 399 }));

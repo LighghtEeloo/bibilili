@@ -14,7 +14,7 @@
   const PerformanceWork = Object.freeze({
     RECONCILE: "reconcile", DISCOVERY: "discovery", LAYOUT: "layout", RAIL: "rail"
   });
-  /** Causes count scheduling requests before coalescing, including hidden deferrals. */
+  /** Causes count scheduling requests before coalescing. */
   const ReconcileCause = Object.freeze({
     PAGE: "page", MUTATION: "mutation", SETTLING: "settling", ACCOUNT: "account",
     SETTINGS: "settings", VISIBILITY: "visibility", THEME: "theme", COMMENTS: "comments",

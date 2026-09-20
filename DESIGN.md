@@ -231,7 +231,7 @@ hidden, and extension off. Off includes visible and hidden documents. Elapsed
 recording time is accounted for at state changes and snapshots. Counters record
 reconciliation requests, relevant mutation batches, navigation and fast-loading
 timer callbacks, API starts and failures, cancellations, and cached thumbnail
-applications. Scheduling causes count requests before coalescing or deferral.
+applications. Scheduling causes count requests before coalescing.
 
 Synchronous timing records retain count, total duration, and maximum duration
 for reconciliation, discovery, layout rendering, and rail updates. Durations
@@ -939,11 +939,15 @@ watched video changes, it starts a new page session and reconciles discovered
 regions in the mounted layout. The comment scroll position and source-route
 interaction state reset for the destination video.
 
-Hidden documents suspend mutation observation, URL polling, preview demand,
-loading-readiness checks, and scheduled reconciliation. Native playback and
-attached page nodes remain in place. Media events retain loading state, and
-completed account requests retain their results. Visibility restores observation
-and reconciles the current route and page state before presentation resumes.
+Enabled documents retain mutation observation, URL polling, native navigation,
+account loading, preview demand, and scheduled reconciliation while hidden.
+Background route changes and replacement player regions follow the same
+reconciliation path as foreground changes. Bilibili retains playback ownership.
+
+Hidden documents dismiss the startup cover and pause loading animations and
+fast readiness checks. Visibility requests one current-state reconciliation
+without restarting account loading or the bounded settling passes. Disabling
+the extension stops page observation, polling, and scheduled runtime work.
 
 Same-document navigation preserves attached player and comment regions.
 Bilibili updates its comment component's video identity in place. Reconnecting
