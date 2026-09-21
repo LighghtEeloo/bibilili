@@ -828,8 +828,9 @@ one group for the selected source while the source route is open. Every group
 uses the same card layout; native Bilibili list styling has no role in the
 bottom presentation.
 
-The rail scrolls horizontally across the selected source's cards. Route changes
-replace the group in place and reopen the rail.
+The rail accepts horizontal gestures and translates unmodified vertical wheel
+input into horizontal scrolling. Modified wheel input retains browser handling.
+Route changes replace the group in place and reopen the rail.
 
 A rail window contains the visible cards and up to three neighbors on each
 side. The row retains the width of all revealed items while only window cards

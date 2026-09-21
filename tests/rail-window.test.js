@@ -9,6 +9,69 @@ global.getComputedStyle = (element) => ({
   getPropertyValue: (name) => name === "--bibilili-card-width"
     ? `${element.ownerDocument.cardWidth}px` : "10px"
 });
+global.WheelEvent = { DOM_DELTA_PIXEL: 0, DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2 };
+
+function wheelEvent(overrides = {}) {
+  return {
+    deltaX: 0, deltaY: 100, deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+    cancelable: true, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    ...overrides
+  };
+}
+
+test("vertical wheel input scrolls the rail in both directions and normalizes units", () => {
+  const { layout, source, rail } = railFixture(LayoutRoot, 80);
+  layout.renderRail(source, true);
+  for (const [deltaMode, deltaY, expected] of [
+    [WheelEvent.DOM_DELTA_PIXEL, 100, 100],
+    [WheelEvent.DOM_DELTA_PIXEL, -40, 60],
+    [WheelEvent.DOM_DELTA_LINE, 3, 108],
+    [WheelEvent.DOM_DELTA_PAGE, 1, 1108]
+  ]) {
+    const event = wheelEvent({ deltaMode, deltaY });
+    layout.handleRailWheel(event);
+    assert.equal(rail.scrollLeft, expected);
+    assert.equal(event.defaultPrevented, true);
+  }
+});
+
+test("wheel input preserves native horizontal gestures, modifiers, and handled events", () => {
+  const { layout, source, rail } = railFixture(LayoutRoot, 80);
+  layout.renderRail(source, true);
+  for (const overrides of [
+    { deltaX: 100, deltaY: 0 }, { deltaX: 1 }, { deltaY: 0 },
+    { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true },
+    { cancelable: false }, { defaultPrevented: true }
+  ]) {
+    const event = wheelEvent(overrides);
+    layout.handleRailWheel(event);
+    assert.equal(rail.scrollLeft, 0);
+    assert.equal(event.defaultPrevented, Boolean(overrides.defaultPrevented));
+  }
+});
+
+test("wheel input is consumed only when the rail can move", () => {
+  const { layout, source, rail } = railFixture(LayoutRoot, 80);
+  layout.renderRail(source, true);
+  const start = wheelEvent({ deltaY: -100 });
+  layout.handleRailWheel(start);
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(start.defaultPrevented, false);
+
+  rail.scrollLeft = 100000;
+  const endPosition = rail.scrollLeft;
+  const end = wheelEvent();
+  layout.handleRailWheel(end);
+  assert.equal(rail.scrollLeft, endPosition);
+  assert.equal(end.defaultPrevented, false);
+
+  layout.renderRail({ ...source, items: source.items.slice(0, 1) }, true);
+  const shortRail = wheelEvent();
+  layout.handleRailWheel(shortRail);
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(shortRail.defaultPrevented, false);
+});
 
 async function watchLaterRailFixture(t, targetIndex = 190) {
   const fixture = railFixture(LayoutRoot, 240, SourceKind.WATCH_LATER);

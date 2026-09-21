@@ -64,6 +64,7 @@
   const ACCOUNT_MORE_BATCH_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const RAIL_WINDOW_BUFFER = 3;
+  const RAIL_WHEEL_LINE_PX = 16;
   const COMMENT_PANE_WIDTH_PROPERTY = "--bibilili-comment-pane-width";
   const COMMENT_PANE_MIN_WIDTH = 240;
   const COMMENT_PANE_MAX_WIDTH = 640;
@@ -9749,6 +9750,9 @@
     observeRailWindow() {
       const schedule = () => this.scheduleRailRender();
       this.rail.addEventListener("scroll", schedule, { passive: true });
+      this.rail.addEventListener("wheel", (event) => {
+        this.handleRailWheel(event);
+      }, { passive: false });
       this.rail.addEventListener("focusin", schedule);
       this.rail.addEventListener("focusout", schedule);
       this.rail.addEventListener("keydown", (event) => {
@@ -9767,6 +9771,26 @@
       this.document.addEventListener("pointercancel", this.railPointerEndHandler, true);
       this.railResizeObserver = new ResizeObserver(schedule);
       this.railResizeObserver.observe(this.rail);
+    }
+
+    /**
+     * Maps unmodified vertical wheel input to the rail's horizontal scroll surface.
+     *
+     * @param {WheelEvent} event
+     */
+    handleRailWheel(event) {
+      if (event.defaultPrevented || !event.cancelable || event.ctrlKey ||
+          event.metaKey || event.altKey || event.shiftKey || event.deltaX !== 0 ||
+          event.deltaY === 0) {
+        return;
+      }
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? RAIL_WHEEL_LINE_PX
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.rail.clientWidth : 1;
+      const previous = this.rail.scrollLeft;
+      this.rail.scrollLeft += event.deltaY * unit;
+      if (this.rail.scrollLeft !== previous) {
+        event.preventDefault();
+      }
     }
 
     /**
