@@ -359,10 +359,46 @@
     "message": "Record performance"
   },
   "performanceToggleHint": {
-    "message": "Collects extension work in this document. Turning recording off keeps totals; reload clears them. No data is uploaded."
+    "message": "Shows a diagnostic indicator beside Settings. Amber or red marks a possible issue; click it to copy a report. Keeps a short trace across reloads in this tab for up to 30 minutes. No data is uploaded."
   },
   "performanceHint": {
-    "message": "Current document only. Refresh for the latest snapshot. Enable Record performance in Features to collect data."
+    "message": "These totals describe the current document. Refresh for the latest snapshot. Reports also include recent alerts, player state, and a retained trace from the previous page load when available. Alerts describe symptoms; they do not establish the cause."
+  },
+  "performanceWidgetQuiet": {
+    "message": "Performance: no warnings recorded. Click to copy diagnostics."
+  },
+  "performanceWidgetWarning": {
+    "message": "Performance: possible issue — $1. Click to copy diagnostics."
+  },
+  "performanceWidgetSevere": {
+    "message": "Performance: major interruption — $1. Click to copy diagnostics."
+  },
+  "performanceWidgetCopied": {
+    "message": "Diagnostics copied. Included alerts acknowledged."
+  },
+  "performanceWidgetCopyFailed": {
+    "message": "Could not copy diagnostics. Click to retry."
+  },
+  "performanceAlertWork": {
+    "message": "slow extension work"
+  },
+  "performanceAlertStall": {
+    "message": "page responsiveness dropped"
+  },
+  "performanceAlertBuffering": {
+    "message": "prolonged buffering"
+  },
+  "performanceAlertMedia": {
+    "message": "player media error"
+  },
+  "performanceAlertApi": {
+    "message": "extension API failure or request burst"
+  },
+  "performanceAlertNavigation": {
+    "message": "extension requested a full-page navigation"
+  },
+  "performanceAlertPlayer": {
+    "message": "native player did not return"
   },
   "performanceVisible": {
     "message": "Visible"

@@ -210,6 +210,23 @@ test("an unresponsive handoff has one bounded fallback", (t) => {
   assert.deepEqual(fallbacks, [NEXT_HREF]);
 });
 
+test("diagnostics checkpoint the fallback reason before full-page navigation", (t) => {
+  const f = navigationFixture(t);
+  f.controller.performance.setEnabled(true);
+  f.controller.performanceMonitor.setEnabled(true);
+  t.after(() => f.controller.performanceMonitor.stop());
+  f.player.reload = () => new Promise(() => {});
+  let report;
+  global.location.assign = () => {
+    report = JSON.parse(global.sessionStorage.getItem("bibilili-performance-trace"));
+  };
+  f.click(SourceKind.WATCH_LATER, NEXT_HREF);
+  f.runTimers(10000);
+  assert.equal(report.alert.type, "navigation_fallback");
+  assert.equal(report.alert.details.reason, "timeout");
+  assert.equal(report.context.route, "video:BV1aa411c7mD:p1");
+});
+
 test("clicking A while B is loading sends a newer request even before the URL changes", async (t) => {
   const f = navigationFixture(t);
   const requests = [];

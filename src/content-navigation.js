@@ -44,7 +44,7 @@
      * Starts a native handoff, returning whether the original link is consumed.
      *
      * @param {string} targetUrl
-     * @param {(success: boolean, landedUrl: string | null) => void} onResult
+     * @param {(success: boolean, landedUrl: string | null, reason: string | null) => void} onResult
      * @returns {boolean}
      */
     navigate(targetUrl, onResult) {
@@ -61,7 +61,7 @@
         onResult
       };
       this.pending = request;
-      request.timer = window.setTimeout(() => this.finish(false), NAVIGATION_TIMEOUT_MS);
+      request.timer = window.setTimeout(() => this.finish(false, null, "timeout"), NAVIGATION_TIMEOUT_MS);
 
       // Note: Firefox requires a string detail when crossing execution worlds.
       const event = new CustomEvent(REQUEST_EVENT, {
@@ -150,8 +150,9 @@
      *
      * @param {boolean} success
      * @param {string | null} [landedUrl]
+     * @param {string | null} [reason] Diagnostic failure cause; navigation behavior is unchanged.
      */
-    finish(success, landedUrl = null) {
+    finish(success, landedUrl = null, reason = success ? null : "native_failure") {
       const request = this.pending;
       if (!request) return;
       this.cancel();
@@ -160,7 +161,7 @@
         success || currentRouteKey === request.originRouteKey ||
         currentRouteKey === request.targetRouteKey
       ) {
-        request.onResult(success, landedUrl);
+        request.onResult(success, landedUrl, reason);
       }
     }
 
@@ -201,7 +202,7 @@
    * @property {string | null} originRouteKey Route allowed to initiate fallback.
    * @property {string | null} targetRouteKey Destination allowed to retry a failed handoff.
    * @property {number | null} timer Bounded native handoff deadline.
-   * @property {(success: boolean, landedUrl: string | null) => void} onResult
+   * @property {(success: boolean, landedUrl: string | null, reason: string | null) => void} onResult
    */
 
   window.__bibililiNavigation = Object.freeze({ NativeVideoNavigation });

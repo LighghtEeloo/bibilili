@@ -1433,17 +1433,68 @@
 }
 
 .bibilili-dock-utilities > button,
-.bibilili-settings-button {
+.bibilili-settings-button,
+.bibilili-performance-button {
   width: 32px;
 }
 
-.bibilili-settings-button {
+.bibilili-settings-button,
+.bibilili-performance-button {
   pointer-events: auto;
 }
 
-#bibilili-toggle-root > .bibilili-settings-button {
+#bibilili-toggle-root > .bibilili-settings-button,
+#bibilili-toggle-root > .bibilili-performance-button[data-level="quiet"] {
   background: var(--bibilili-panel-raised);
   border-color: var(--bibilili-border);
+}
+
+.bibilili-performance-button[data-level="warning"] {
+  color: #713b00;
+  background: #ffdc8a;
+  border-color: #b16c00;
+}
+
+.bibilili-performance-button[data-level="severe"] {
+  color: #fff;
+  background: #ae283e;
+  border-color: #ff9aa7;
+}
+
+.bibilili-performance-button:focus-visible {
+  outline: 2px solid var(--bibilili-text);
+  outline-offset: 2px;
+}
+
+.bibilili-performance-badge {
+  position: absolute;
+  right: 1px;
+  top: -2px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 12px;
+}
+
+.bibilili-performance-feedback {
+  position: fixed;
+  z-index: 2147483647;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: 6px 10px;
+  border: 1px solid var(--bibilili-border);
+  border-radius: 6px;
+  color: var(--bibilili-text);
+  background: var(--bibilili-panel-raised);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.bibilili-performance-feedback[hidden],
+.bibilili-performance-button:not(:hover):not(:focus-visible) .bibilili-performance-feedback {
+  display: none;
 }
 
 

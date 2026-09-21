@@ -359,10 +359,46 @@
     "message": "記錄效能資料"
   },
   "performanceToggleHint": {
-    "message": "記錄目前頁面中的擴充功能執行情況。關閉記錄後保留統計，重新載入頁面後清空。資料不會上傳。"
+    "message": "在設定旁顯示診斷指示器。黃色或紅色表示可能存在問題，點選即可複製報告。本分頁重新載入後可保留簡短記錄，最長 30 分鐘。資料不會上傳。"
   },
   "performanceHint": {
-    "message": "僅統計目前頁面。點選重新整理取得最新快照。在功能中啟用「記錄效能資料」以開始記錄。"
+    "message": "統計資料來自目前頁面。點選重新整理取得最新快照。報告也包含近期警告、播放器狀態，以及可用時保留的上次頁面載入記錄。警告描述現象，並不確定原因。"
+  },
+  "performanceWidgetQuiet": {
+    "message": "效能：暫無警告。點選以複製診斷報告。"
+  },
+  "performanceWidgetWarning": {
+    "message": "效能：可能存在問題 — $1。點選以複製診斷報告。"
+  },
+  "performanceWidgetSevere": {
+    "message": "效能：嚴重中斷 — $1。點選以複製診斷報告。"
+  },
+  "performanceWidgetCopied": {
+    "message": "診斷報告已複製，報告中的警告已確認。"
+  },
+  "performanceWidgetCopyFailed": {
+    "message": "無法複製診斷報告。點選以重試。"
+  },
+  "performanceAlertWork": {
+    "message": "擴充功能執行緩慢"
+  },
+  "performanceAlertStall": {
+    "message": "頁面回應緩慢"
+  },
+  "performanceAlertBuffering": {
+    "message": "長時間緩衝"
+  },
+  "performanceAlertMedia": {
+    "message": "播放器媒體錯誤"
+  },
+  "performanceAlertApi": {
+    "message": "擴充功能 API 請求失敗或過於密集"
+  },
+  "performanceAlertNavigation": {
+    "message": "擴充功能觸發了整頁導覽"
+  },
+  "performanceAlertPlayer": {
+    "message": "原生播放器未恢復"
   },
   "performanceVisible": {
     "message": "可見"

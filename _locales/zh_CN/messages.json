@@ -359,10 +359,46 @@
     "message": "记录性能数据"
   },
   "performanceToggleHint": {
-    "message": "记录当前页面中的扩展运行情况。关闭记录后保留统计，重新加载页面后清空。数据不会上传。"
+    "message": "在设置旁显示诊断指示器。黄色或红色表示可能存在问题，点击即可复制报告。本标签页重新加载后可保留简短记录，最长 30 分钟。数据不会上传。"
   },
   "performanceHint": {
-    "message": "仅统计当前页面。点击刷新获取最新快照。在功能中启用“记录性能数据”以开始记录。"
+    "message": "统计数据来自当前页面。点击刷新获取最新快照。报告还包含近期警告、播放器状态，以及可用时保留的上次页面加载记录。警告描述现象，并不确定原因。"
+  },
+  "performanceWidgetQuiet": {
+    "message": "性能：暂无警告。点击复制诊断报告。"
+  },
+  "performanceWidgetWarning": {
+    "message": "性能：可能存在问题 — $1。点击复制诊断报告。"
+  },
+  "performanceWidgetSevere": {
+    "message": "性能：严重中断 — $1。点击复制诊断报告。"
+  },
+  "performanceWidgetCopied": {
+    "message": "诊断报告已复制，报告中的警告已确认。"
+  },
+  "performanceWidgetCopyFailed": {
+    "message": "无法复制诊断报告。点击重试。"
+  },
+  "performanceAlertWork": {
+    "message": "扩展运行缓慢"
+  },
+  "performanceAlertStall": {
+    "message": "页面响应缓慢"
+  },
+  "performanceAlertBuffering": {
+    "message": "长时间缓冲"
+  },
+  "performanceAlertMedia": {
+    "message": "播放器媒体错误"
+  },
+  "performanceAlertApi": {
+    "message": "扩展 API 请求失败或过于密集"
+  },
+  "performanceAlertNavigation": {
+    "message": "扩展触发了整页跳转"
+  },
+  "performanceAlertPlayer": {
+    "message": "原生播放器未恢复"
   },
   "performanceVisible": {
     "message": "可见"

@@ -32,6 +32,8 @@
       this.enabled = false;
       this.state = PerformanceState.VISIBLE;
       this.generation = 0;
+      /** @type {PerformanceMonitor | null} Optional bounded diagnostic event sink. */
+      this.monitor = null;
       this.reset();
     }
 
@@ -107,11 +109,13 @@
       record.count += 1;
       record.totalMs += duration;
       record.maxMs = Math.max(record.maxMs, duration);
+      this.monitor?.work(work, duration, sample.state);
     }
 
     /** Counts an API start; outcomes remain attributed to its starting runtime state. */
     beginRequest() {
       this.count(PerformanceCounter.API);
+      if (this.enabled) this.monitor?.request();
       return this.begin();
     }
 
@@ -120,6 +124,7 @@
       if (!this.accept(sample)) return;
       if (aborted) this.states[sample.state].counters[PerformanceCounter.API_ABORTS] += 1;
       else if (failed) this.states[sample.state].counters[PerformanceCounter.API_ERRORS] += 1;
+      if (!aborted && failed) this.monitor?.event("api_error", {}, "warning");
     }
 
     /** @returns {PerformanceSnapshot} Detached, bounded records for presentation and export. */

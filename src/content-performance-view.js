@@ -39,6 +39,122 @@
     [ReconcileCause.CATALOG]: UiMessage.PERFORMANCE_CAUSE_CATALOG,
     [ReconcileCause.ACTION]: UiMessage.PERFORMANCE_CAUSE_ACTION
   });
+  const ALERT_LABELS = Object.freeze({
+    slow_extension_work: UiMessage.PERFORMANCE_ALERT_WORK,
+    busy_extension: UiMessage.PERFORMANCE_ALERT_WORK,
+    long_task: UiMessage.PERFORMANCE_ALERT_STALL,
+    timer_gap: UiMessage.PERFORMANCE_ALERT_STALL,
+    buffering: UiMessage.PERFORMANCE_ALERT_BUFFERING,
+    media_error: UiMessage.PERFORMANCE_ALERT_MEDIA,
+    api_burst: UiMessage.PERFORMANCE_ALERT_API,
+    api_error: UiMessage.PERFORMANCE_ALERT_API,
+    navigation_fallback: UiMessage.PERFORMANCE_ALERT_NAVIGATION,
+    player_recovery: UiMessage.PERFORMANCE_ALERT_PLAYER
+  });
+
+  /** Stable one-click diagnostics indicator beside Settings, shared by dock and floating controls. */
+  class PerformanceWidget {
+    /** @param {Document} document @param {PerformanceViewOptions} options */
+    constructor(document, options) {
+      this.document = document;
+      this.options = options;
+      this.enabled = false;
+      this.language = "en";
+      this.button = null;
+      this.copySequence = 0;
+      this.copyMessage = null;
+    }
+
+    /** Creates one accessible icon button without allocating the Settings statistics view. */
+    launcher() {
+      if (!this.button) {
+        this.button = UiControl.button(this.document, "bibilili-action-button bibilili-performance-button", () => this.copy());
+        this.button.append(UiControl.icon(this.document, "performance"));
+        this.badge = this.document.createElement("span");
+        this.badge.className = "bibilili-performance-badge";
+        this.badge.setAttribute("aria-hidden", "true");
+        this.feedback = this.document.createElement("span");
+        this.feedback.className = "bibilili-performance-feedback";
+        this.feedback.setAttribute("role", "status");
+        this.button.append(this.badge, this.feedback);
+      }
+      this.render();
+      return this.button;
+    }
+
+    /** Hides the entry immediately when recording is disabled, retaining its DOM identity. */
+    update(enabled, language) {
+      if (this.enabled !== enabled) {
+        this.copySequence += 1;
+        this.copyMessage = null;
+        if (this.button) this.button.disabled = false;
+      }
+      this.enabled = enabled;
+      this.language = language;
+      this.render();
+    }
+
+    /** Clears stale copy feedback when new diagnostic evidence or a reset arrives. */
+    notify() {
+      this.copyMessage = null;
+      this.render();
+    }
+
+    /** Copies fresh evidence and acknowledges only a successfully exported report. */
+    async copy() {
+      if (!this.enabled || this.button.disabled) return;
+      const sequence = ++this.copySequence;
+      this.button.disabled = true;
+      this.copyMessage = null;
+      this.render();
+      try {
+        const snapshot = this.options.onSnapshot();
+        await this.options.onCopy(JSON.stringify(snapshot, null, 2));
+        if (sequence !== this.copySequence) return;
+        this.options.onCopied(snapshot);
+        this.copyMessage = UiMessage.PERFORMANCE_WIDGET_COPIED;
+      } catch (_error) {
+        if (sequence !== this.copySequence) return;
+        this.copyMessage = UiMessage.PERFORMANCE_WIDGET_COPY_FAILED;
+      }
+      this.button.disabled = false;
+      this.render();
+    }
+
+    /** Updates only changed attributes; color, badge, tooltip, and accessible name describe state. */
+    render() {
+      if (!this.button) return;
+      if (this.button.hidden !== !this.enabled) this.button.hidden = !this.enabled;
+      if (!this.enabled) return;
+      const status = this.options.onStatus();
+      const key = status.level === "severe" ? UiMessage.PERFORMANCE_WIDGET_SEVERE
+        : status.level === "warning" ? UiMessage.PERFORMANCE_WIDGET_WARNING : UiMessage.PERFORMANCE_WIDGET_QUIET;
+      const reason = status.type ? UiStrings.message(ALERT_LABELS[status.type], this.language) : "";
+      const label = UiStrings.message(key, this.language, [reason]);
+      if (this.button.title !== label) UiControl.setLabel(this.button, label);
+      if (this.button.dataset.level !== status.level) this.button.dataset.level = status.level;
+      const feedback = this.copyMessage ? UiStrings.message(this.copyMessage, this.language) : "";
+      if (this.feedback.textContent !== feedback) {
+        this.feedback.textContent = feedback;
+        if (feedback) {
+          const rect = this.button.getBoundingClientRect();
+          this.feedback.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 288))}px`;
+          this.feedback.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+        }
+      }
+      if (this.feedback.hidden !== !feedback) this.feedback.hidden = !feedback;
+      const badge = this.copyMessage === UiMessage.PERFORMANCE_WIDGET_COPIED && status.level === "quiet"
+        ? "✓" : this.copyMessage === UiMessage.PERFORMANCE_WIDGET_COPY_FAILED ? "×"
+          : status.level === "quiet" ? "" : "!";
+      if (this.badge.textContent !== badge) this.badge.textContent = badge;
+    }
+
+    /** Prevents pending clipboard operations from updating a replaced runtime. */
+    destroy() {
+      this.copySequence += 1;
+      this.button?.remove();
+    }
+  }
 
   /** Presents manually captured statistics without taking samples during ordinary renders. */
   class PerformanceView {
@@ -218,12 +334,15 @@
   }
 
   /**
-   * @typedef {PerformanceSnapshot & { capturedAt: string, resources: PerformanceResources }} PerformanceReport
+   * @typedef {PerformanceSnapshot & { capturedAt: string, resources: PerformanceResources,
+   *   environment: { extensionVersion: string | null, userAgent: string | null },
+   *   diagnostics: { current: object, previous: object | null } }} PerformanceReport
    */
 
   /**
    * @typedef {object} PerformanceResources
    * @property {boolean} mutationObserver Whether page mutation observation is active.
+   * @property {boolean} longTaskObserver Whether page-wide long-task observation is active.
    * @property {boolean} navigationTimer Whether the shared navigation timer is active.
    * @property {boolean} loadingTimer Whether a fast readiness check is queued.
    * @property {number} renderedCards Extension cards currently in the rail DOM.
@@ -238,6 +357,8 @@
    * @property {() => PerformanceReport} onSnapshot Captures aggregates and current resource counts.
    * @property {() => void} onReset Clears this document's measurements.
    * @property {(json: string) => Promise<void>} onCopy Copies the displayed report.
+   * @property {() => { level: string, type: string | null }} onStatus Reads the current unacknowledged alert.
+   * @property {(report: PerformanceReport) => void} onCopied Acknowledges evidence copied by the widget.
    */
-  window.__bibililiPerformanceView = Object.freeze({ PerformanceView });
+  window.__bibililiPerformanceView = Object.freeze({ PerformanceView, PerformanceWidget });
 })();

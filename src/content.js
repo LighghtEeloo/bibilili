@@ -6,6 +6,7 @@
   const { SettingsView } = window.__bibililiSettings;
   const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause } =
     window.__bibililiPerformance;
+  const { PerformanceMonitor } = window.__bibililiPerformanceMonitor;
   const { FavoritesView } = window.__bibililiFavorites;
   const { MovedPageNodeStore, SourceRootMarker } =
     window.__bibililiLayoutState;
@@ -7899,7 +7900,7 @@
       this.moreButton.setAttribute("aria-expanded", "false");
       this.moreButton.setAttribute("aria-controls", "bibilili-more-actions");
       this.settingsButton = this.settingsView.launcher();
-      this.dockUtilityGroup.append(this.moreButton, this.settingsButton);
+      this.dockUtilityGroup.append(this.moreButton, this.settingsView.performanceWidget.launcher(), this.settingsButton);
       for (const [kind, control] of this.railControls()) {
         const label = this.document.createElement("span");
         label.className = "bibilili-action-label";
@@ -11128,6 +11129,12 @@
         this.layout.scheduleRailRender();
       }, this.performance);
       this.layout = new LayoutRoot(document, this.videoPreviews, this.performance);
+      this.performanceMonitor = new PerformanceMonitor(document, this.performance, {
+        media: () => this.layout.playerNode?.querySelector(PLAYER_MEDIA_SELECTOR) ?? null,
+        route: () => SourceAdapter.currentWatchRouteKey(),
+        onChange: () => this.settingsView?.performanceWidget.notify()
+      });
+      this.performance.monitor = this.performanceMonitor;
       this.videoLoading = new VideoLoadingState(document, this.layout, this.navigation, () => {
         this.reconcile(false);
       }, this.performance);
@@ -11165,8 +11172,12 @@
         onEnabledChange: (enabled) => this.setEnabled(enabled),
         performance: {
           onSnapshot: () => this.performanceSnapshot(),
-          onReset: () => this.performance.reset(),
-          onCopy: (json) => LayoutRoot.copyTextToClipboard(this.document, json, this.settingsView.panel.root)
+          onReset: () => { this.performance.reset(); this.performanceMonitor.reset(); },
+          onStatus: () => this.performanceMonitor.status(),
+          onCopied: (report) => this.performanceMonitor.acknowledge(report.diagnostics),
+          onCopy: (json) => LayoutRoot.copyTextToClipboard(this.document, json,
+            this.settingsView.panel.isOpen ? this.settingsView.panel.root
+              : this.settingsView.performanceWidget.button?.parentElement ?? this.document.body)
         },
         onOpen: () => {
           this.layout.morePanel?.close();
@@ -11244,6 +11255,7 @@
      * Stops observation, cancels asynchronous work, and restores page DOM.
      */
     stop() {
+      this.performanceMonitor.stop();
       this.performance.setEnabled(false);
       this.started = false;
       if (this.visibilityHandler) {
@@ -11542,6 +11554,7 @@
       this.playerRecoveryTimer = window.setTimeout(() => {
         this.playerRecoveryTimer = null;
         if (!this.discovery.findPlayerRegion()) {
+          this.performanceMonitor.event("player_recovery", { durationMs: PLAYER_RECOVERY_TIMEOUT_MS }, "warning");
           this.layout.destroy();
           this.renderFloatingActivation();
         }
@@ -11610,6 +11623,7 @@
     /** Shares one enabled-page timer between navigation and slow loading checks. */
     pollPageState() {
       this.performance.count(PerformanceCounter.NAVIGATION);
+      this.performanceMonitor.tick();
       this.handlePotentialNavigation();
       if (this.videoLoading.timer === null) this.videoLoading.revealWhenReady();
     }
@@ -11618,8 +11632,14 @@
     performanceSnapshot() {
       return {
         ...this.performance.snapshot(), capturedAt: new Date().toISOString(),
+        environment: {
+          extensionVersion: UiStrings.extensionRuntime()?.getManifest?.().version ?? null,
+          userAgent: window.navigator?.userAgent ?? null
+        },
+        diagnostics: this.performanceMonitor.snapshot(),
         resources: {
           mutationObserver: this.observer !== null,
+          longTaskObserver: this.performanceMonitor.observer !== null,
           navigationTimer: this.urlTimer !== null,
           loadingTimer: this.videoLoading.timer !== null,
           renderedCards: this.layout.rail?.querySelectorAll(".bibilili-video-card").length ?? 0,
@@ -11639,6 +11659,7 @@
     updateRuntimeActivity() {
       this.performance.setState(this.enabled, this.document.hidden);
       if (!this.started) return;
+      this.performanceMonitor.setActive(this.enabled && this.isWatchPage());
       if (this.enabled) {
         this.navigation.start();
         this.videoLoading.start();
@@ -11670,6 +11691,8 @@
 
     /** Updates loading presentation on visibility changes and resamples returning pages. */
     handleVisibilityChange() {
+      this.performance.setState(this.enabled, this.document.hidden);
+      this.performanceMonitor.event(this.document.hidden ? "page_hidden" : "page_visible");
       this.updateRuntimeActivity();
       if (!this.document.hidden && !this.handlePotentialNavigation()) {
         this.prepareMount();
@@ -11707,6 +11730,9 @@
         return false;
       }
 
+      this.performanceMonitor.finishWaiting("route_change");
+      this.performanceMonitor.event("route_change");
+      this.performanceMonitor.setActive(this.enabled && this.isWatchPage());
       this.lazyPrimer.stop(false);
       this.clearFavoriteActionState();
       this.cancelPlayerRecovery();
@@ -11752,12 +11778,16 @@
       }
       this.recordVideoCardNavigationSource(sourceKind, targetUrl, folderId);
       this.videoLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
-      const accepted = this.navigation.navigate(target.href, (success, landedUrl) => {
+      this.performanceMonitor.event("navigation_start");
+      const accepted = this.navigation.navigate(target.href, (success, landedUrl, reason) => {
         if (!this.enabled || !this.isWatchPage()) return;
         if (!success) {
+          this.performanceMonitor.event("navigation_fallback", { reason }, "severe");
+          this.performanceMonitor.checkpoint(true);
           window.location.assign(target.href);
           return;
         }
+        this.performanceMonitor.event("navigation_success");
         this.videoLoading.confirm(landedUrl);
         if (
           SourceAdapter.watchRouteKeyForUrl(landedUrl) !==
@@ -11928,6 +11958,8 @@
     applyFeaturePreferences() {
       this.performance.setState(this.enabled, this.document.hidden);
       this.performance.setEnabled(this.preferences.features.performance);
+      this.performanceMonitor.setEnabled(this.preferences.features.performance);
+      this.performanceMonitor.setActive(Boolean(this.started && this.enabled && this.isWatchPage()));
       this.layout.preferences = this.preferences;
       if (this.favoriteActionState?.pending && !this.preferences.features.favoriteToSelectedFolder) {
         this.clearFavoriteActionState();
@@ -12204,9 +12236,9 @@
       this.activationControl.mountFloating(this.resolveUiLanguage());
       this.settingsView.update(this.preferences, this.enabled, this.uiLanguage);
       const settingsButton = this.settingsView.launcher();
-      if (settingsButton.parentElement !== this.activationControl.floatingRoot) {
-        this.activationControl.floatingRoot.append(settingsButton);
-      }
+      const performanceButton = this.settingsView.performanceWidget.launcher();
+      UiControl.place(this.activationControl.floatingRoot, performanceButton, this.activationControl.button);
+      UiControl.place(this.activationControl.floatingRoot, settingsButton, performanceButton);
     }
 
     /**

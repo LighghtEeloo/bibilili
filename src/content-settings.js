@@ -3,7 +3,7 @@
 
   const { UiControl, PopupPanel } = window.__bibililiControls;
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
-  const { PerformanceView } = window.__bibililiPerformanceView;
+  const { PerformanceView, PerformanceWidget } = window.__bibililiPerformanceView;
   const { SettingsPreference, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
 
   /**
@@ -16,6 +16,7 @@
       this.document = document;
       this.options = options;
       this.performanceView = new PerformanceView(document, options.performance);
+      this.performanceWidget = new PerformanceWidget(document, options.performance);
       this.panel = new PopupPanel(document, "bibilili-settings");
       this.tab = SettingsTabPreference.read();
       this.preferences = SettingsPreference.defaults();
@@ -272,6 +273,7 @@
       this.syncSelectedTab();
       this.enabled = enabled;
       this.language = language;
+      this.performanceWidget.update(preferences.features.performance, language);
       if (this.button) UiControl.setLabel(this.button, UiStrings.message(UiMessage.SETTINGS_LABEL, language));
       if (this.panel.isOpen) {
         if (recordingChanged && this.tab === SettingsTab.PERFORMANCE) this.refreshPerformance();
@@ -337,6 +339,7 @@
     /** Releases panel listeners and DOM when the content runtime stops. */
     destroy() {
       this.panel.destroy();
+      this.performanceWidget.destroy();
       this.button?.remove();
     }
   }

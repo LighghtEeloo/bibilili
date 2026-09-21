@@ -50,6 +50,7 @@
         "src/content-controls.js",
         "src/content-favorites.js",
         "src/content-performance.js",
+        "src/content-performance-monitor.js",
         "src/content-performance-view.js",
         "src/content-settings.js",
         "src/content-theme.js",

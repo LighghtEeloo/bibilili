@@ -212,7 +212,7 @@ test("stopping removes lifecycle listeners and prevents visibility resumption", 
 });
 
 test("performance recording adds no scheduled work and accounts for hidden and off periods", (t) => {
-  const { controller, timers, intervals, visibility } = activityFixture(t);
+  const { controller, timers, intervals, visibility, listeners } = activityFixture(t);
   controller.start();
   const before = [...timers.keys()];
   const requests = controller.accountSources.refresh.mock.callCount();
@@ -226,12 +226,16 @@ test("performance recording adds no scheduled work and accounts for hidden and o
   controller.pollPageState();
   now = 100;
   visibility(true);
+  assert.equal(controller.performanceMonitor.active, true, "background playback remains observed");
+  assert.equal(listeners.get("waiting").size, 1);
   controller.pollPageState();
   t.mock.method(controller, "reconcilePage", () => {});
   controller.scheduleReconcile(false);
   controller.reconcileScheduler.run();
   now = 300;
   controller.setEnabled(false, false);
+  assert.equal(controller.performanceMonitor.active, false);
+  assert.equal(listeners.get("waiting").size, 0);
   now = 600;
   const { states } = controller.performance.snapshot();
   assert.deepEqual(Object.values(states).map((state) => state.elapsedMs), [100, 200, 300]);

@@ -12,14 +12,20 @@ function settingsFixture(t, { performance = false } = {}) {
   const fixture = railFixture(LayoutRoot, 5, SourceKind.COLLECTION);
   const { document } = fixture;
   const storage = global.localStorage;
+  const session = global.sessionStorage;
   global.localStorage = new FakeStorage();
+  global.sessionStorage = new FakeStorage();
   if (performance) {
     const preferences = SettingsPreference.defaults();
     preferences.features.performance = true;
     SettingsPreference.write(preferences);
   }
-  t.after(() => { global.localStorage = storage; });
   const controller = new BibililiController(document);
+  t.after(() => {
+    controller.performanceMonitor.stop();
+    global.localStorage = storage;
+    global.sessionStorage = session;
+  });
   t.mock.method(controller, "refreshAccountSources", () => {});
   t.mock.method(controller, "scheduleReconcile", () => {});
   const layout = controller.layout;
@@ -209,6 +215,75 @@ test("copy exports the displayed snapshot and reports clipboard failures", async
   await performance.copy();
   assert.equal(performance.copyMessage, UiMessage.PERFORMANCE_COPY_FAILED);
   assert.equal(performance.copyButton.disabled, false);
+});
+
+test("the performance widget follows its feature and stays directly beside Settings", (t) => {
+  const { controller, view, layout } = settingsFixture(t);
+  const widget = view.performanceWidget;
+  const button = widget.launcher();
+  assert.equal(button.hidden, true);
+  assert.equal(button.nextSibling, layout.settingsButton);
+  controller.setPreferences({ ...controller.preferences,
+    features: { ...controller.preferences.features, performance: true } }, false);
+  assert.equal(widget.launcher(), button);
+  assert.equal(button.hidden, false);
+  assert.equal(button.dataset.level, "quiet");
+  assert.equal(view.performanceView.status, undefined, "the widget does not allocate statistics tables");
+  controller.performanceMonitor.event("buffering", { durationMs: 3500 }, "warning");
+  assert.equal(button.dataset.level, "warning");
+  assert.equal(widget.badge.textContent, "!");
+  assert.equal(button.getAttribute("aria-label"), UiStrings.message(UiMessage.PERFORMANCE_WIDGET_WARNING, "en",
+    [UiStrings.message(UiMessage.PERFORMANCE_ALERT_BUFFERING, "en")]));
+  controller.performanceMonitor.event("timer_gap", { durationMs: 2500 }, "severe");
+  assert.equal(button.dataset.level, "severe");
+  controller.setPreferences(SettingsPreference.defaults(), false);
+  assert.equal(button.hidden, true);
+});
+
+test("widget copy captures a fresh report, keeps failures lit, and preserves alerts arriving during copying", async (t) => {
+  const { controller, view } = settingsFixture(t, { performance: true });
+  const widget = view.performanceWidget;
+  const monitor = controller.performanceMonitor;
+  monitor.event("buffering", { durationMs: 3500 }, "warning");
+  widget.options.onCopy = async () => { throw new Error("clipboard blocked"); };
+  await widget.copy();
+  assert.equal(widget.copyMessage, UiMessage.PERFORMANCE_WIDGET_COPY_FAILED);
+  assert.equal(widget.button.dataset.level, "warning");
+  let resolve;
+  let copied;
+  widget.options.onCopy = (json) => {
+    copied = JSON.parse(json);
+    return new Promise((done) => { resolve = done; });
+  };
+  const copying = widget.copy();
+  assert.equal(widget.button.disabled, true);
+  monitor.event("timer_gap", { durationMs: 2500 }, "severe");
+  resolve();
+  await copying;
+  assert.equal(copied.diagnostics.current.alert.type, "buffering");
+  assert.equal(widget.button.dataset.level, "severe");
+  widget.options.onCopy = async (json) => { copied = JSON.parse(json); };
+  await widget.copy();
+  assert.equal(copied.diagnostics.current.alert.type, "timer_gap");
+  assert.equal(widget.button.dataset.level, "quiet");
+  assert.equal(widget.copyMessage, UiMessage.PERFORMANCE_WIDGET_COPIED);
+  assert.equal(widget.badge.textContent, "✓");
+  assert.ok(monitor.events.some(({ type }) => type === "timer_gap"), "copying keeps event history");
+});
+
+test("disabling recording during widget copy prevents a stale success from clearing alerts", async (t) => {
+  const { controller, view } = settingsFixture(t, { performance: true });
+  const widget = view.performanceWidget;
+  controller.performanceMonitor.event("api_error", {}, "warning");
+  let resolve;
+  widget.options.onCopy = () => new Promise((done) => { resolve = done; });
+  const copying = widget.copy();
+  controller.setPreferences(SettingsPreference.defaults(), false);
+  resolve();
+  await copying;
+  assert.equal(widget.button.hidden, true);
+  assert.equal(widget.copyMessage, null);
+  assert.equal(controller.performanceMonitor.status().level, "warning");
 });
 
 test("report clipboard fallback stays inside settings and restores focus even on failure", (t) => {

@@ -23,8 +23,10 @@ account. `src/content-controls.js` defines shared controls, expandable search,
 extension icon paths, and popup positioning and focus.
 `src/content-favorites.js` owns the favorite-folder picker.
 `src/content-performance.js` aggregates runtime measurements in fixed-size
-records for each document. `src/content-performance-view.js` presents manual
-snapshots in Settings.
+records for each document. `src/content-performance-monitor.js` records bounded
+diagnostic events and retains a trace across page loads.
+`src/content-performance-view.js` presents manual snapshots in Settings and the
+diagnostic indicator beside its launcher.
 `src/content-settings.js` renders the settings view from ordered definitions and
 the controller's preference snapshot. `src/content-theme.js` defines browser
 color-scheme resolution and Bilibili native theme synchronization.
@@ -222,9 +224,9 @@ layout is disabled. Popups are excluded from native DOM discovery.
 
 The performance recorder aggregates extension work for the current document.
 Recording defaults to off. Its preference persists with other features; its
-measurements remain in memory. Disabling recording freezes totals, enabling it
-resumes them, and resetting clears them. Same-document navigation retains the
-measurements. A new document starts a new recording.
+aggregate measurements remain in memory. Disabling recording freezes totals,
+enabling it resumes them, and resetting clears them. Same-document navigation
+retains measurements. A new document starts new totals.
 
 Measurements use three exclusive states: enabled and visible, enabled and
 hidden, and extension off. Off includes visible and hidden documents. Elapsed
@@ -239,15 +241,58 @@ are inclusive; nested phases overlap. They describe elapsed execution time,
 including synchronous browser work, rather than processor utilization or power.
 API counts cover extension account and preview requests. Outcomes belong to
 the request's starting state. Reset and recording changes discard unfinished
-samples. URLs, identifiers, response bodies, and individual event histories are
-not retained.
+samples.
+
+The diagnostic monitor retains at most 80 recent events and the latest
+unacknowledged alert at each severity. Events cover extension timings, API
+failures and bursts, player buffering, long tasks, visibility, window focus,
+browser freeze/resume events, route changes, and native navigation handoffs.
+A failed handoff records its timeout or native
+failure reason before the extension requests full-page navigation. Reports
+include browser and extension versions, canonical watch identity, player
+readiness and buffered duration, mute and volume state, navigation type, and
+browser discard status. Window focus is recorded independently of browser
+visibility; a page can report visible while another application has focus.
+Request URLs, query strings, response bodies, page text, and account data are
+excluded. Reports remain local until copied by the user.
+
+Warning thresholds are a 100 ms reconciliation or rail update, a 200 ms page
+task, or three seconds of continuous buffering. Ten reconciliation passes
+totaling one second or 20 extension API starts in a ten-second window also
+produce warnings. API failures and failed player recovery produce warnings.
+A one-second measured task, a two-second gap between foreground navigation timer callbacks,
+ten seconds of buffering, a media error, or an extension navigation fallback
+produce severe alerts. Page tasks and timer gaps measure symptoms across the
+page; they do not identify the responsible script. Timer-gap alerts require a
+visible, focused page. Focus and visibility changes reset that timing baseline.
+Media events continue in the background and preserve buffering intervals across
+visibility changes. Recovery events can report a completed stall even if a
+throttled timer never sampled it. Pauses, seeks, and buffered playback do not
+start buffering intervals. Browser freeze/resume events terminate those intervals
+so suspension time does not count toward playback or timer alerts.
+
+The existing navigation timer checkpoints diagnostics to tab-local session
+storage at most once every five seconds. Visibility and window focus changes,
+browser freeze/resume, departure, media errors, and native navigation fallback
+checkpoint immediately. A new document can read one prior
+trace captured within the last 30 minutes. Storage failures leave in-memory
+capture available. Abrupt termination can lose events since the last checkpoint.
+Disabling recording removes the stored trace. Reset clears current and previous
+diagnostics as well as aggregate measurements.
 
 Features exposes the Record performance switch. The Performance tab appears
 only while this feature is enabled, including when the extension is off.
-It shows a timestamped snapshot with
-state columns, then expandable work timings, update triggers, and current
-resource counts. Resource counts include page observation, navigation and
-loading timers, rendered and listed cards, and preview requests and records.
+It shows a timestamped snapshot with state columns, then expandable work
+timings, update triggers, and current resource counts. Resource counts include
+page observation, navigation and loading timers, rendered and listed cards,
+and preview requests and records.
+
+The same feature shows an icon beside Settings in the dock or floating controls.
+The icon is muted with no pending alerts, amber for warnings, and red for severe
+events. Alerts also show an exclamation mark and a localized accessible label.
+Clicking captures and copies a fresh JSON report. Successful copying acknowledges
+only the included events and preserves their history; newer events remain lit.
+Clipboard failure keeps alerts pending and offers retry feedback.
 
 Disabling the feature hides the tab and returns a selected Performance tab to
 Features. Keyboard tab navigation skips unavailable tabs.
@@ -255,14 +300,16 @@ Features. Keyboard tab navigation skips unavailable tabs.
 The statistics view creates its tables when Performance is first opened.
 Opening or selecting Performance captures a snapshot. Refresh replaces it;
 ordinary reconciliation keeps the displayed values stable. Reset clears
-measurements in this document and captures a new snapshot without changing the
-recording preference. Copy report copies the displayed snapshot as JSON and
+measurements and retained diagnostics and captures a new snapshot without
+changing the recording preference. Copy report copies the displayed snapshot as JSON and
 reports clipboard failure in place. The preference synchronizes across tabs;
 measurements and resets belong to each document. Recording changes alone do
 not request reconciliation or refresh account lists.
 
-Recording uses existing runtime callbacks and fixed-size aggregate records.
-It installs no observer, timer, or network request. Disabled instrumentation
+Recording uses existing runtime callbacks and bounded records. Enabled watch
+pages observe media events and long tasks when supported, including while hidden.
+Disabling the layout disconnects these observers and resets sampling baselines.
+Recording adds no timer or network request. Disabled instrumentation
 returns before reading the clock or allocating samples.
 The page mutation handler excludes insertion and removal of extension-owned
 surfaces, so opening a settings popup does not request a page update.
