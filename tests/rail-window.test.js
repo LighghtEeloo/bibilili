@@ -226,6 +226,65 @@ test("Locate accepts a collection current marker and preserves control placement
   assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
 });
 
+test("Back to start refreshes the selected list once and preserves its search", async () => {
+  const { layout, source, rail, card } = railFixture(LayoutRoot, 100);
+  layout.createRailControls();
+  layout.renderSourceDock([source], null);
+  layout.railSearchQuery = "Video";
+  layout.railSearchInput.value = "Video";
+  layout.refreshRailSearch();
+  rail.scrollLeft = 8000;
+  let finish;
+  let requests = 0;
+  layout.onRailRefresh = async (selected) => {
+    assert.equal(selected, source);
+    requests += 1;
+    await new Promise((resolve) => { finish = resolve; });
+    const updated = { ...source, items: source.items.map((item) => ({ ...item, title: `${item.title} updated` })) };
+    layout.currentSources = [updated];
+    layout.renderSourceDock([updated], null);
+  };
+
+  layout.railStartButton.dispatch("click");
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(requests, 1);
+  assert.equal(layout.railRefreshButton.disabled, true);
+  layout.railStartButton.dispatch("click");
+  await layout.refreshCurrentRail();
+  assert.equal(requests, 1, "Start and Refresh share the pending request");
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(card(0).renderedItem.title, "Video 1 updated");
+  assert.equal(layout.selectedSourceKind, source.kind);
+  assert.equal(layout.railSearchQuery, "Video");
+  assert.equal(layout.railSearchInput.value, "Video");
+  assert.equal(layout.railRefreshButton.disabled, false);
+});
+
+test("Back to start only scrolls when refresh is disabled and ignores a closed rail", () => {
+  const { layout, source, rail, card } = railFixture(LayoutRoot, 100);
+  layout.createRailControls();
+  layout.renderSourceDock([source], null);
+  let requests = 0;
+  layout.onRailRefresh = async () => { requests += 1; };
+  layout.preferences.features.refreshRailOnStart = false;
+  rail.scrollLeft = 8000;
+  layout.railStartButton.dispatch("click");
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(requests, 0);
+  assert.equal(card(0).renderedItem, source.items[0]);
+  assert.equal(layout.railSource.items.length, 100);
+
+  layout.preferences.features.refreshRailOnStart = true;
+  rail.scrollLeft = 8000;
+  layout.isRailOpen = false;
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.railStartButton.disabled, true);
+  layout.scrollRailToStart();
+  assert.equal(requests, 0);
+});
+
 test("opening and reopening watch later reveals the cached current batch before rendering", async (t) => {
   const fixture = await watchLaterRailFixture(t);
   const { layout, store, rail, card, cards, created, demands, requests, reveals } = fixture;

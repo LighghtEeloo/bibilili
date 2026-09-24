@@ -181,9 +181,9 @@ feature preferences and is retained when restoring defaults.
 
 Features begins with the UI language selector. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
-enrichment, in-page video switching, direct favorite saves, each video source,
-and performance recording. Presentation features, in-page switching, and
-sources default to enabled. Performance recording defaults to off.
+enrichment, in-page video switching, direct favorite saves, rail refresh on return
+to start, each video source, and performance recording. These features default to
+enabled except performance recording, which defaults to off.
 
 Disabling the description restores its native node and removes its extension
 presentation.
@@ -848,10 +848,15 @@ window through the existing rail positioning path.
 
 ## Rail Start
 
-The Start button returns the rail to its beginning. It presents a left chevron
-and vertical bar with a localized tooltip and accessible name. It is disabled when the rail is closed. Activation renders
-the first rail window and preserves the selected source, search query, and
-account expansion depth.
+The Back to start button returns the rail to its beginning. It presents a left
+chevron and vertical bar with a localized tooltip and accessible name. It is
+disabled when the rail is closed. Activation renders the first rail window and
+preserves the selected source and search query.
+
+Refresh list when returning to start is enabled by default. Activation uses the
+Rail Refresh behavior after resetting the scroll position. An in-flight refresh
+is shared by both controls. Disabling the feature preserves account expansion
+depth and returns to the first window without refreshing the source.
 
 ## Rail Refresh
 

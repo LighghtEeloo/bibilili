@@ -198,7 +198,7 @@
     "description": "Button label for centering the current video in the displayed rail."
   },
   "railStartLabel": {
-    "message": "Start",
+    "message": "Back to start",
     "description": "Accessible name and tooltip for returning to the beginning of the rail."
   },
   "railRefreshLabel": {
@@ -276,6 +276,10 @@
   "settingsFavoriteFolderLabel": {
     "message": "Save favorites to selected folder",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
+  },
+  "settingsRefreshRailOnStartLabel": {
+    "message": "Refresh list when returning to start",
+    "description": "Switch for refreshing the selected rail source when returning to its beginning."
   },
   "settingsHelpLabel": {
     "message": "Help: $1",

@@ -112,7 +112,8 @@
         ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL],
         ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
         ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL, UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT],
-        ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT]
+        ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT],
+        ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL]
       ]) this.addPreferenceSwitch(features, "features", key, message, hint);
       features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {

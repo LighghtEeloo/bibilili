@@ -106,6 +106,7 @@
     SETTINGS_IN_PAGE_NAVIGATION_HINT: "settingsInPageNavigationHint",
     SETTINGS_FAVORITE_FOLDER_LABEL: "settingsFavoriteFolderLabel",
     SETTINGS_FAVORITE_FOLDER_HINT: "settingsFavoriteFolderHint",
+    SETTINGS_REFRESH_RAIL_ON_START_LABEL: "settingsRefreshRailOnStartLabel",
     SETTINGS_SOURCES_LABEL: "settingsSourcesLabel",
     SETTINGS_SOURCES_HINT: "settingsSourcesHint",
     SETTINGS_FIXED_HINT: "settingsFixedHint",

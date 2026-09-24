@@ -8031,10 +8031,11 @@
       this.railStartButton.addEventListener("click", () => this.scrollRailToStart());
     }
 
-    /** Returns to the first rail window while preserving source and search state. */
+    /** Returns to the first rail window and refreshes its source when enabled. */
     scrollRailToStart() {
       if (!this.isRailOpen || !this.railSource) return;
       this.renderRailWindow({ resetScroll: true });
+      if (this.preferences.features.refreshRailOnStart) return this.refreshCurrentRail();
     }
 
     /** Updates the Start control's localized label and open-rail availability. */
@@ -11976,7 +11977,8 @@
       const runtimeChanged = previous.language !== this.preferences.language ||
         ["features", "sources", "pinnedActions"].some((group) =>
           Object.keys(this.preferences[group]).some((key) =>
-            !(group === "features" && (key === "performance" || key === "inPageNavigation")) &&
+            !(group === "features" && (key === "performance" || key === "inPageNavigation" ||
+              key === "refreshRailOnStart")) &&
             previous[group][key] !== this.preferences[group][key]));
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();

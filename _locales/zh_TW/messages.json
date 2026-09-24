@@ -198,7 +198,7 @@
     "description": "Button label for centering the current video in the displayed rail."
   },
   "railStartLabel": {
-    "message": "起點",
+    "message": "回到開頭",
     "description": "Accessible name and tooltip for returning to the beginning of the rail."
   },
   "railRefreshLabel": {
@@ -276,6 +276,10 @@
   "settingsFavoriteFolderLabel": {
     "message": "直接收藏到選取的收藏夾",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
+  },
+  "settingsRefreshRailOnStartLabel": {
+    "message": "回到開頭時重新整理列表",
+    "description": "Switch for refreshing the selected rail source when returning to its beginning."
   },
   "settingsHelpLabel": {
     "message": "說明：$1",
