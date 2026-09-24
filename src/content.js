@@ -2042,9 +2042,10 @@
     /**
      * Extracts valid video items from the source root.
      *
+     * @param {SourceDiscoveryPass | null} [scan] Shared reads for one discovery pass.
      * @returns {VideoItem[]}
      */
-    extractItems() {
+    extractItems(scan = null) {
       const itemLimit =
         this.kind === SourceKind.PARTS || this.kind === SourceKind.COLLECTION
           ? Number.POSITIVE_INFINITY
@@ -2055,7 +2056,7 @@
           : SourceAdapter.itemKey;
 
       return VideoItemCollector.collect(
-        this.videoTargets(),
+        this.videoTargets(scan),
         (target, index) => this.itemFromTarget(target, index),
         keyForItem,
         itemLimit
@@ -2065,11 +2066,12 @@
     /**
      * Finds video target elements that belong to the page-owned source root.
      *
+     * @param {SourceDiscoveryPass | null} [scan]
      * @returns {Element[]}
      */
-    videoTargets() {
+    videoTargets(scan = null) {
       if (this.kind === SourceKind.PARTS) {
-        return SourceAdapter.videoPartTargetsIn(this.root);
+        return SourceAdapter.videoPartTargetsIn(this.root, scan);
       }
 
       if (this.kind === SourceKind.COLLECTION) {
@@ -2080,11 +2082,11 @@
         if (videoPod) {
           // Note: Broad right-column candidates can contain both video-pod and
           // recommendations. Only the nested pod supplies collection archives.
-          return SourceAdapter.videoPodArchiveTargetsIn(videoPod);
+          return scan ? scan.archiveTargetsIn(videoPod) : SourceAdapter.videoPodArchiveTargetsIn(videoPod);
         }
       }
 
-      return SourceAdapter.videoTargetsIn(this.root);
+      return scan ? scan.videoTargetsIn(this.root) : SourceAdapter.videoTargetsIn(this.root);
     }
 
     /**
@@ -2102,14 +2104,12 @@
         (element) =>
           !element.parentElement?.closest(VIDEO_POD_ARCHIVE_ITEM_SELECTOR)
       );
-      const fallbackTargets = [
+      const targets = archiveItems.length > 0 ? archiveItems : [
         ...SourceAdapter.dataTargetsIn(root),
         ...SourceAdapter.anchorTargetsIn(root).filter(
           (anchor) => !anchor.closest(VIDEO_PART_ITEM_SELECTOR)
         )
       ];
-      const targets = archiveItems.length > 0 ? archiveItems : fallbackTargets;
-
       return DomProbe.unique(targets)
         .filter((target) => !DomProbe.isOwned(target))
         .filter((target) => Boolean(SourceAdapter.explicitTargetUrlFor(target)));
@@ -2119,18 +2119,20 @@
      * Finds part rows for the current multipart archive.
      *
      * @param {Element} root
+     * @param {SourceDiscoveryPass | null} [scan]
      * @returns {Element[]}
      */
-    static videoPartTargetsIn(root) {
+    static videoPartTargetsIn(root, scan = null) {
       if (root.matches(VIDEO_POD_SELECTOR)) {
-        return SourceAdapter.videoPodPartTargetsIn(root);
+        return SourceAdapter.videoPodPartTargetsIn(root, scan);
       }
 
       const currentIdentity = SourceAdapter.playableIdentityForUrl(
         window.location.href
       );
 
-      return SourceAdapter.videoTargetsIn(root).filter((target, index) => {
+      const targets = scan ? scan.videoTargetsIn(root) : SourceAdapter.videoTargetsIn(root);
+      return targets.filter((target, index) => {
         const targetUrl = SourceAdapter.targetUrlFor(target, index);
 
         return Boolean(
@@ -2149,10 +2151,11 @@
      * ancestor is itself a playable data target.
      *
      * @param {Element} root
+     * @param {SourceDiscoveryPass | null} [scan]
      * @returns {Element[]}
      */
-    static videoPodPartTargetsIn(root) {
-      const archive = SourceAdapter.currentVideoPodArchiveTarget(root);
+    static videoPodPartTargetsIn(root, scan = null) {
+      const archive = SourceAdapter.currentVideoPodArchiveTarget(root, scan);
 
       if (!archive) {
         return [];
@@ -2168,10 +2171,11 @@
      * Finds the video-pod archive entry representing the current BV or AV.
      *
      * @param {Element} root
+     * @param {SourceDiscoveryPass | null} [scan]
      * @returns {Element | null}
      */
-    static currentVideoPodArchiveTarget(root) {
-      const archives = SourceAdapter.videoPodArchiveTargetsIn(root);
+    static currentVideoPodArchiveTarget(root, scan = null) {
+      const archives = scan ? scan.archiveTargetsIn(root) : SourceAdapter.videoPodArchiveTargetsIn(root);
       const currentIdentity = SourceAdapter.playableIdentityForUrl(
         window.location.href
       );
@@ -2274,7 +2278,7 @@
         element.matches(VIDEO_POD_ITEM_SELECTOR) &&
         Boolean(
           element.matches(VIDEO_POD_ITEM_CLASS_SELECTOR) ||
-            SourceAdapter.textsFromSelectors(element, TITLE_SELECTORS).length > 0 ||
+            SourceAdapter.textsFromSelectors(element, TITLE_SELECTORS).next().value ||
             SourceAdapter.durationToken(DomProbe.compactText(element))
         )
       );
@@ -2749,16 +2753,7 @@
      * @returns {string | null}
      */
     static titleFor(target, card) {
-      const candidates = [
-        target.getAttribute("title"),
-        target.getAttribute("aria-label"),
-        ...SourceAdapter.textsFromSelectors(target, TITLE_SELECTORS),
-        ...SourceAdapter.textsFromSelectors(card, TITLE_SELECTORS),
-        SourceAdapter.imageAltFor(target),
-        DomProbe.compactText(target)
-      ];
-
-      for (const candidate of candidates) {
+      for (const candidate of SourceAdapter.titleCandidates(target, card, true)) {
         const title = SourceAdapter.cleanTitle(candidate);
 
         if (title) {
@@ -2777,15 +2772,7 @@
      * @returns {string | null}
      */
     static videoPartTitleFor(target, card) {
-      const candidates = [
-        target.getAttribute("title"),
-        target.getAttribute("aria-label"),
-        ...SourceAdapter.textsFromSelectors(target, TITLE_SELECTORS),
-        ...SourceAdapter.textsFromSelectors(card, TITLE_SELECTORS),
-        DomProbe.compactText(target)
-      ];
-
-      for (const candidate of candidates) {
+      for (const candidate of SourceAdapter.titleCandidates(target, card, false)) {
         const text = SourceAdapter.cleanMetadata(candidate);
 
         if (!text) {
@@ -2806,6 +2793,23 @@
     }
 
     /**
+     * Reads title fallbacks in priority order until the caller accepts one.
+     *
+     * @param {Element} target
+     * @param {Element} card
+     * @param {boolean} includeImageAlt Whether image alt text supplies a title.
+     * @returns {Generator<string | null>}
+     */
+    static *titleCandidates(target, card, includeImageAlt) {
+      yield target.getAttribute("title");
+      yield target.getAttribute("aria-label");
+      yield* SourceAdapter.textsFromSelectors(target, TITLE_SELECTORS);
+      if (card !== target) yield* SourceAdapter.textsFromSelectors(card, TITLE_SELECTORS);
+      if (includeImageAlt) yield SourceAdapter.imageAltFor(target);
+      yield DomProbe.compactText(target);
+    }
+
+    /**
      * Finds a thumbnail URL from images or CSS background images.
      *
      * @param {Element} target
@@ -2813,18 +2817,17 @@
      * @returns {string | null}
      */
     static thumbnailFor(target, card) {
-      const imageUrl =
-        SourceAdapter.thumbnailAttributeUrl(card) ||
-        SourceAdapter.thumbnailAttributeUrl(target);
-
-      if (imageUrl) {
-        return imageUrl;
+      const elements = card === target ? [card] : [card, target];
+      for (const element of elements) {
+        const imageUrl = SourceAdapter.thumbnailAttributeUrl(element);
+        if (imageUrl) return imageUrl;
       }
 
-      return (
-        SourceAdapter.backgroundImageUrl(card) ||
-        SourceAdapter.backgroundImageUrl(target)
-      );
+      for (const element of elements) {
+        const imageUrl = SourceAdapter.backgroundImageUrl(element);
+        if (imageUrl) return imageUrl;
+      }
+      return null;
     }
 
     /**
@@ -2889,26 +2892,22 @@
     }
 
     /**
-     * Collects non-empty text from a set of selector probes.
+     * Yields non-empty text in selector priority order, querying on demand.
      *
      * @param {ParentNode} root
      * @param {string[]} selectors
-     * @returns {string[]}
+     * @returns {Generator<string>}
      */
-    static textsFromSelectors(root, selectors) {
-      const texts = [];
-
+    static *textsFromSelectors(root, selectors) {
       for (const selector of selectors) {
         for (const element of DomProbe.queryAll(root, selector)) {
           const text = DomProbe.compactText(element);
 
           if (text) {
-            texts.push(text);
+            yield text;
           }
         }
       }
-
-      return texts;
     }
 
     /**
@@ -4855,6 +4854,67 @@
   }
 
   /**
+   * Shares source DOM reads within one synchronous discovery pass.
+   * Each findSources call creates a fresh pass, including explicit rail refresh.
+   * Cached arrays are read-only; source-kind filtering creates separate arrays.
+   */
+  class SourceDiscoveryPass {
+    /** @param {RegionDiscovery} discovery */
+    constructor(discovery) {
+      this.discovery = discovery;
+      this.queries = new Map();
+      this.targets = new Map();
+      this.archives = new Map();
+      this.roots = new Map();
+      this.validRoots = new Map();
+      this.headings = new Map();
+    }
+
+    /** Returns each document selector's matches in native order. */
+    queryAll(selector) {
+      return this.read(this.queries, selector, () => DomProbe.queryAll(this.discovery.document, selector));
+    }
+
+    /** Returns the playable targets below a root. @param {Element} root */
+    videoTargetsIn(root) {
+      return this.read(this.targets, root, () => SourceAdapter.videoTargetsIn(root));
+    }
+
+    /** Shares archive targets between parts and collection extraction. */
+    archiveTargetsIn(root) {
+      return this.read(this.archives, root, () => SourceAdapter.videoPodArchiveTargetsIn(root));
+    }
+
+    /** Resolves a candidate element once across overlapping source selectors. */
+    rootForElement(element) {
+      return this.read(this.roots, element, () => this.discovery.sourceRootForElement(element, this));
+    }
+
+    /** Validates each resolved root once across source kinds. */
+    isValidRoot(root) {
+      return this.read(this.validRoots, root, () => this.discovery.isValidSourceRoot(root, this));
+    }
+
+    /** Shares heading text between source-kind matching and root scoring. */
+    headingText(root) {
+      return this.read(this.headings, root, () => this.discovery.sourceHeadingText(root, this));
+    }
+
+    /**
+     * Retains one read, including empty or invalid results, for this pass.
+     * @template K, V
+     * @param {Map<K, V>} values
+     * @param {K} key
+     * @param {() => V} read
+     * @returns {V}
+     */
+    read(values, key, read) {
+      if (!values.has(key)) values.set(key, read());
+      return values.get(key);
+    }
+  }
+
+  /**
    * Discovers page-owned player, comment, and source regions for one watch page.
    */
   class RegionDiscovery {
@@ -5906,12 +5966,13 @@
      */
     findSources(profile = null) {
       const candidates = [];
+      const scan = new SourceDiscoveryPass(this);
 
       for (const definition of SOURCE_DEFINITIONS) {
-        const roots = this.measure(profile, DiscoveryStep.SOURCE_ROOTS, () => this.sourceRootsFor(definition));
+        const roots = this.measure(profile, DiscoveryStep.SOURCE_ROOTS, () => this.sourceRootsFor(definition, scan));
         for (const root of roots) {
           const adapter = new SourceAdapter(definition.kind, root);
-          const items = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => adapter.extractItems());
+          const items = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => adapter.extractItems(scan));
 
           if (
             items.length <
@@ -5925,7 +5986,7 @@
             root,
             items,
             score: this.measure(profile, DiscoveryStep.SOURCE_SELECTION,
-              () => this.scoreSourceRoot(root, definition, items.length))
+              () => this.scoreSourceRoot(root, definition, items.length, scan))
           });
         }
       }
@@ -6017,44 +6078,42 @@
      * Finds plausible roots for one source definition.
      *
      * @param {SourceDefinition} definition
+     * @param {SourceDiscoveryPass} scan
      * @returns {Element[]}
      */
-    sourceRootsFor(definition) {
-      const roots = [];
+    sourceRootsFor(definition, scan) {
+      const elements = new Set();
+      const roots = new Set();
 
       for (const selector of definition.selectors) {
-        for (const element of DomProbe.queryAll(this.document, selector)) {
-          const root = this.sourceRootForElement(element);
-
-          if (root && this.isValidSourceRoot(root)) {
-            roots.push(root);
-          }
-        }
+        for (const element of scan.queryAll(selector)) elements.add(element);
       }
 
-      for (const root of this.headingMatchedSourceRoots(definition)) {
-        if (this.isValidSourceRoot(root)) {
-          roots.push(root);
-        }
+      for (const element of elements) {
+        const root = scan.rootForElement(element);
+        if (root) roots.add(root);
       }
 
-      return DomProbe.unique(roots);
+      for (const root of this.headingMatchedSourceRoots(definition, scan)) roots.add(root);
+
+      return [...roots].filter((root) => scan.isValidRoot(root));
     }
 
     /**
      * Chooses a bounded source root near a matching element.
      *
      * @param {Element} element
+     * @param {SourceDiscoveryPass} scan
      * @returns {Element | null}
      */
-    sourceRootForElement(element) {
+    sourceRootForElement(element, scan) {
       if (DomProbe.isOwned(element)) {
         return null;
       }
 
       let current = element;
       let best =
-        SourceAdapter.videoTargetsIn(current).length > 0 ? current : null;
+        scan.videoTargetsIn(current).length > 0 ? current : null;
 
       if (best && this.isSourceBoundary(best)) {
         return best;
@@ -6067,8 +6126,8 @@
           break;
         }
 
-        const currentCount = best ? SourceAdapter.videoTargetsIn(best).length : 0;
-        const parentCount = SourceAdapter.videoTargetsIn(parent).length;
+        const currentCount = best ? scan.videoTargetsIn(best).length : 0;
+        const parentCount = scan.videoTargetsIn(parent).length;
 
         const upperBound =
           currentCount <= 2 ? 120 : Math.max(currentCount + 20, currentCount * 3);
@@ -6118,14 +6177,12 @@
      * Finds child groups whose heading text identifies a source kind.
      *
      * @param {SourceDefinition} definition
+     * @param {SourceDiscoveryPass} scan
      * @returns {Element[]}
      */
-    headingMatchedSourceRoots(definition) {
+    headingMatchedSourceRoots(definition, scan) {
       const roots = [];
-      const containers = DomProbe.queryAll(
-        this.document,
-        SIDEBAR_BOUNDARY_SELECTOR
-      );
+      const containers = scan.queryAll(SIDEBAR_BOUNDARY_SELECTOR);
 
       for (const container of containers) {
         if (DomProbe.isOwned(container)) {
@@ -6133,7 +6190,7 @@
         }
 
         for (const child of Array.from(container.children).filter(DomProbe.isElement)) {
-          const text = this.sourceHeadingText(child);
+          const text = scan.headingText(child);
 
           if (definition.pattern.test(text)) {
             roots.push(child);
@@ -6150,13 +6207,14 @@
      * Only a root heading or its direct header children identify the list kind.
      *
      * @param {Element} root
+     * @param {SourceDiscoveryPass} scan
      * @returns {string}
      */
-    sourceHeadingText(root) {
+    sourceHeadingText(root, scan) {
       const headings = [root, ...Array.from(root.children)]
         .filter((element) => element.matches(SOURCE_HEADING_SELECTOR))
         .filter((element) => !element.closest(SOURCE_HEADING_ITEM_SELECTOR))
-        .filter((element) => SourceAdapter.videoTargetsIn(element).length === 0);
+        .filter((element) => scan.videoTargetsIn(element).length === 0);
       return headings.map((element) => DomProbe.compactText(element)).join(" ").slice(0, 500);
     }
 
@@ -6165,9 +6223,10 @@
      * playback or comment regions.
      *
      * @param {Element} root
+     * @param {SourceDiscoveryPass} scan
      * @returns {boolean}
      */
-    isValidSourceRoot(root) {
+    isValidSourceRoot(root, scan) {
       if (!root.isConnected || root === this.document.body || DomProbe.isOwned(root)) {
         return false;
       }
@@ -6176,7 +6235,7 @@
         return false;
       }
 
-      return SourceAdapter.videoTargetsIn(root).length > 0;
+      return scan.videoTargetsIn(root).length > 0;
     }
 
     /**
@@ -6185,11 +6244,12 @@
      * @param {Element} root
      * @param {SourceDefinition} definition
      * @param {number} itemCount
+     * @param {SourceDiscoveryPass} scan
      * @returns {number}
      */
-    scoreSourceRoot(root, definition, itemCount) {
+    scoreSourceRoot(root, definition, itemCount, scan) {
       let score = itemCount;
-      const text = this.sourceHeadingText(root);
+      const text = scan.headingText(root);
 
       if (definition.pattern.test(text)) {
         score += 12;

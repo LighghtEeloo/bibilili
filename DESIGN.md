@@ -476,6 +476,13 @@ Discovery identifies source kinds through named containers and list headings.
 Heading fallbacks read a root heading or its direct header children; video-card
 titles do not identify the containing list's kind.
 
+Each source discovery pass shares selector matches, resolved roots, root
+validation, headings, and playable target arrays. Candidate elements and roots
+are deduplicated before resolution and validation. Extraction remains specific
+to each source kind. The next pass, including an explicit rail refresh, reads
+the current DOM. Source adapters evaluate title and metadata fallbacks in
+priority order and stop at the first usable value.
+
 The route model converts playable Bilibili URLs into route identities, archive
 preview identities, canonical archive URLs, and route keys. Archive route keys
 include the page number; bangumi route keys use the playable bangumi identity.
