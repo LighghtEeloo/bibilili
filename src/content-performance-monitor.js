@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const { PerformanceState, PerformanceWork } = window.__bibililiPerformance;
+  const { PerformanceState, PerformanceWork, ReconcileCause, DiscoveryStep } = window.__bibililiPerformance;
   const STORAGE_KEY = "bibilili-performance-trace";
   const MAX_EVENTS = 80;
   const MAX_STORED_LENGTH = 64000;
@@ -212,7 +212,7 @@
       if (!EVENT_TYPES.includes(type) || !Object.hasOwn(LEVELS, level)) throw new Error("Unknown performance event");
       const event = { sequence: ++this.sequence, atMs: Math.round(this.recorder.now()),
         state: this.recorder.state, focused: this.document.hasFocus?.() ?? null,
-        type, level, details: { ...details } };
+        type, level, details: this.copyDetails(details) };
       this.events.push(event);
       if (this.events.length > MAX_EVENTS) this.events.shift();
       if (level !== "quiet") this.alerts[level] = event;
@@ -228,12 +228,13 @@
       return this.window;
     }
 
-    /** Receives completed extension timings; nested discovery/layout phases stay in totals. */
-    work(work, durationMs, state) {
+    /** Receives completed timings and optional evidence captured at reconciliation entry. */
+    work(work, durationMs, state, details = null) {
       if (!this.enabled || state === PerformanceState.OFF) return;
       if (work !== PerformanceWork.RECONCILE && work !== PerformanceWork.RAIL) return;
       if (durationMs >= SLOW_WORK_MS) {
-        this.event("slow_extension_work", { work, durationMs }, durationMs >= SEVERE_WORK_MS ? "severe" : "warning");
+        this.event("slow_extension_work", { ...details, work, durationMs },
+          durationMs >= SEVERE_WORK_MS ? "severe" : "warning");
       }
       if (work !== PerformanceWork.RECONCILE) return;
       const recent = this.activityWindow();
@@ -368,14 +369,22 @@
       return { schemaVersion: 1, startedAt: this.startedAt, capturedAt: Date.now(),
         timeOrigin: window.performance?.timeOrigin ?? null,
         sequence: this.sequence, acknowledged: this.acknowledged, context: this.context(),
-        alert: this.alert ? { ...this.alert, details: { ...this.alert.details } } : null,
-        events: this.events.map((event) => ({ ...event, details: { ...event.details } })),
+        alert: this.alert ? { ...this.alert, details: this.copyDetails(this.alert.details) } : null,
+        events: this.events.map((event) => ({ ...event, details: this.copyDetails(event.details) })),
         totals: this.recorder.snapshot() };
     }
 
     /** Copies a current trace and one retained trace, with no recursive history. */
     snapshot() {
       return { current: this.trace(), previous: this.previous ? JSON.parse(JSON.stringify(this.previous)) : null };
+    }
+
+    /** Detaches the bounded nested reconciliation evidence in events and exported snapshots. */
+    copyDetails(details) {
+      const copy = { ...details };
+      if (details.causes) copy.causes = [...details.causes];
+      if (details.discoveryMs) copy.discoveryMs = { ...details.discoveryMs };
+      return copy;
     }
 
     /** Saves at most once per five seconds, plus explicit departure/fallback checkpoints. */
@@ -427,6 +436,21 @@
       }
       if (typeof event.details?.persisted === "boolean") details.persisted = event.details.persisted;
       if (Object.values(PerformanceWork).includes(event.details?.work)) details.work = event.details.work;
+      if (event.type === "slow_extension_work" && details.work === PerformanceWork.RECONCILE) {
+        for (const key of ["navigationPending", "videoLoading"]) {
+          if (typeof event.details?.[key] === "boolean") details[key] = event.details[key];
+        }
+        if (Array.isArray(event.details?.causes)) {
+          details.causes = Object.values(ReconcileCause).filter((cause) => event.details.causes.includes(cause));
+        }
+        if (event.details?.discoveryMs && typeof event.details.discoveryMs === "object") {
+          details.discoveryMs = {};
+          for (const step of Object.values(DiscoveryStep)) {
+            const duration = event.details.discoveryMs[step];
+            if (Number.isFinite(duration) && duration >= 0) details.discoveryMs[step] = duration;
+          }
+        }
+      }
       const reasons = [...MEDIA_EVENTS, "state_changed", "route_change", "timeout", "native_failure", "freeze", "resume"];
       if (reasons.includes(event.details?.reason)) details.reason = event.details.reason;
       return { sequence: event.sequence, atMs: event.atMs, state: event.state,

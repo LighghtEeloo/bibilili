@@ -263,6 +263,58 @@ test("recording distinguishes coalesced scheduling requests from executed work",
   assert.equal(state.causes.account, 1);
 });
 
+test("slow updates capture navigation at entry, merged causes, and separate readiness updates", (t) => {
+  const { controller } = activityFixture(t);
+  const { ReconcileCause, DiscoveryStep } = global.__bibililiPerformance;
+  let now = 0;
+  controller.performance.now = () => now;
+  controller.performance.setEnabled(true);
+  controller.performanceMonitor.setEnabled(true);
+  t.mock.method(controller, "reconcilePage", (profile) => {
+    profile.measure(DiscoveryStep.METADATA, () => { now += 5; });
+    profile.measure(DiscoveryStep.SOURCE_ITEMS, () => { now += 130; });
+    controller.navigation.pending = null;
+    controller.videoLoading.active = false;
+  });
+  controller.navigation.pending = {};
+  controller.videoLoading.active = true;
+  controller.scheduleReconcile(false, undefined, ReconcileCause.MUTATION);
+  controller.scheduleReconcile(false, undefined, ReconcileCause.MUTATION);
+  controller.scheduleReconcile(false, undefined, ReconcileCause.ACCOUNT);
+  controller.reconcileScheduler.run();
+  const first = controller.performanceMonitor.alert.details;
+  assert.equal(first.navigationPending, true, "capture the state before the pass runs");
+  assert.equal(first.videoLoading, true);
+  assert.deepEqual(first.causes, [ReconcileCause.MUTATION, ReconcileCause.ACCOUNT]);
+  assert.equal(first.discoveryMs.metadata, 5);
+  assert.equal(first.discoveryMs.sourceItems, 130);
+
+  controller.scheduleReconcile(false, undefined, ReconcileCause.SETTLING);
+  controller.videoLoading.active = true;
+  controller.videoLoading.onReady();
+  const ready = controller.performanceMonitor.alert.details;
+  assert.equal(ready.navigationPending, false);
+  assert.equal(ready.videoLoading, true, "readiness can continue after the native handoff ends");
+  assert.deepEqual(ready.causes, [ReconcileCause.MEDIA]);
+  controller.reconcileScheduler.run();
+  const settled = controller.performanceMonitor.alert.details;
+  assert.equal(settled.navigationPending, false);
+  assert.equal(settled.videoLoading, false);
+  assert.deepEqual(settled.causes, [ReconcileCause.SETTLING]);
+  assert.equal(controller.performance.snapshot().states.visible.causes.media, 1);
+});
+
+test("recording-off reconciliation does not allocate a discovery profile or read its clock", (t) => {
+  const { controller } = activityFixture(t);
+  controller.performance.now = () => { throw new Error("unexpected recording clock"); };
+  const run = t.mock.method(controller, "reconcilePage", (profile) => assert.equal(profile, null));
+  controller.scheduleReconcile(false);
+  controller.reconcileScheduler.run();
+  controller.videoLoading.onReady();
+  assert.equal(run.mock.callCount(), 2);
+  assert.equal(controller.reconcileScheduler.pendingCauses.size, 0);
+});
+
 test("opening extension popups is excluded from page mutation work while native additions remain observable", (t) => {
   const { controller } = activityFixture(t);
   controller.start();

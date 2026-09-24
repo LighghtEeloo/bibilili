@@ -233,7 +233,8 @@ hidden, and extension off. Off includes visible and hidden documents. Elapsed
 recording time is accounted for at state changes and snapshots. Counters record
 reconciliation requests, relevant mutation batches, navigation and fast-loading
 timer callbacks, API starts and failures, cancellations, and cached thumbnail
-applications. Scheduling causes count requests before coalescing.
+applications. Scheduling causes count requests before coalescing, including
+direct updates when destination media and comments become ready.
 
 Synchronous timing records retain count, total duration, and maximum duration
 for reconciliation, discovery, layout rendering, and rail updates. Durations
@@ -255,6 +256,18 @@ browser discard status. Window focus is recorded independently of browser
 visibility; a page can report visible while another application has focus.
 Request URLs, query strings, response bodies, page text, and account data are
 excluded. Reports remain local until copied by the user.
+
+Slow reconciliation events retain the distinct causes merged into that pass
+and two states captured when it begins: whether a native navigation handoff
+is pending and whether destination media and comment readiness is still being
+tracked. Readiness tracking can continue after the handoff succeeds. Canceling
+a queued pass discards its causes. Direct readiness updates have their own cause.
+
+Each slow reconciliation event includes discovery durations for comments,
+player, metadata, watch actions, account control, source-root discovery, source
+item extraction, and source selection. Repeated calls within a step accumulate
+in the same pass. These timings measure existing reads and add no DOM queries.
+They are retained with the event through copying, acknowledgement, and reload.
 
 Warning thresholds are a 100 ms reconciliation or rail update, a 200 ms page
 task, or three seconds of continuous buffering. Ten reconciliation passes

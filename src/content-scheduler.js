@@ -20,12 +20,14 @@
     /**
      * Creates a scheduler that invokes one reconciliation callback.
      *
-     * @param {(resetSourceRoute: boolean) => void} onRun
+     * @param {(resetSourceRoute: boolean, causes: string[] | null) => void} onRun
      */
     constructor(onRun) {
       this.onRun = onRun;
       this.pending = false;
       this.pendingResetSourceRoute = false;
+      /** @type {Set<string>} Diagnostic causes for the queued pass, cleared on cancellation. */
+      this.pendingCauses = new Set();
       this.urgentTimer = null;
       this.delayTimer = null;
       this.idleHandle = null;
@@ -36,9 +38,11 @@
      *
      * @param {boolean} [resetSourceRoute]
      * @param {string} [priority]
+     * @param {string | null} [cause] ReconcileCause captured while recording.
      */
-    request(resetSourceRoute = false, priority = ReconcilePriority.LAZY) {
+    request(resetSourceRoute = false, priority = ReconcilePriority.LAZY, cause = null) {
       this.pending = true;
+      if (cause !== null) this.pendingCauses.add(cause);
       this.pendingResetSourceRoute =
         this.pendingResetSourceRoute || resetSourceRoute;
 
@@ -59,6 +63,7 @@
       this.clearIdleCallback();
       this.pending = false;
       this.pendingResetSourceRoute = false;
+      this.pendingCauses.clear();
     }
 
     /**
@@ -134,9 +139,11 @@
       }
 
       const resetSourceRoute = this.pendingResetSourceRoute;
+      const causes = this.pendingCauses.size ? [...this.pendingCauses] : null;
       this.pending = false;
       this.pendingResetSourceRoute = false;
-      this.onRun(resetSourceRoute);
+      this.pendingCauses.clear();
+      this.onRun(resetSourceRoute, causes);
     }
 
     /**

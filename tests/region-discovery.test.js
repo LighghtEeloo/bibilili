@@ -3,7 +3,7 @@ const test = require("node:test");
 
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 
-const { RegionDiscovery } = loadContentRuntime();
+const { RegionDiscovery, SourceAdapter, SourceKind } = loadContentRuntime();
 
 function fakeElement(text) {
   return {
@@ -19,6 +19,48 @@ function fakeDescriptionDocument(element) {
     querySelectorAll: (selector) => (selector === "#v_desc" ? [element] : [])
   };
 }
+
+test("profiling preserves discovery results and attributes source scans without additional reads", (t) => {
+  const { RuntimePerformance, DiscoveryProfile } = global.__bibililiPerformance;
+  let now = 0;
+  const recorder = new RuntimePerformance(() => now);
+  recorder.setEnabled(true);
+  const discovery = new RegionDiscovery({});
+  const calls = [];
+  const comments = {};
+  for (const [name, value] of [
+    ["findCommentRegion", comments], ["hasUsableCommentContent", true], ["findPlayerRegion", {}],
+    ["findWatchTitle", "Title"], ["findVideoDescription", {}], ["findVideoTags", []],
+    ["findUploaderInfo", {}], ["findPublishDate", null], ["findActions", []], ["findAccountControl", null]
+  ]) {
+    t.mock.method(discovery, name, () => { calls.push(name); now += 2; return value; });
+  }
+  const root = {};
+  const items = [
+    { targetUrl: "https://www.bilibili.com/video/av1", title: "One" },
+    { targetUrl: "https://www.bilibili.com/video/av2", title: "Two" }
+  ];
+  t.mock.method(discovery, "sourceRootsFor", (definition) => {
+    calls.push(`roots:${definition.kind}`);
+    now += 3;
+    return definition.kind === SourceKind.COLLECTION ? [root] : [];
+  });
+  t.mock.method(SourceAdapter.prototype, "extractItems", () => { calls.push("extract"); now += 120; return items; });
+  t.mock.method(discovery, "scoreSourceRoot", () => { calls.push("score"); now += 2; return 2; });
+  const ordinary = discovery.discover();
+  const ordinaryCalls = [...calls];
+  calls.length = 0;
+  const profile = new DiscoveryProfile(recorder);
+  assert.deepEqual(discovery.discover(profile), ordinary);
+  assert.deepEqual(calls, ordinaryCalls, "profiling must reuse the normal discovery reads");
+  assert.deepEqual(profile.snapshot(), {
+    comments: 4, player: 2, metadata: 10, actions: 2, account: 2,
+    sourceRoots: ordinaryCalls.filter((name) => name.startsWith("roots:")).length * 3,
+    sourceItems: 120, sourceSelection: 2
+  });
+  assert.equal(ordinary.comments, comments);
+  assert.equal(ordinary.sources[0].items, items);
+});
 
 test("normalizes video description text from native controls", () => {
   assert.equal(

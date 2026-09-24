@@ -164,3 +164,30 @@ test("ReconcileScheduler cancel clears timers and pending work", () => {
     harness.restore();
   }
 });
+
+test("ReconcileScheduler retains distinct merged causes and isolates canceled and reentrant requests", () => {
+  const harness = installTimerHarness();
+  const runs = [];
+  const scheduler = new ReconcileScheduler((_reset, causes) => {
+    runs.push(causes);
+    if (runs.length === 1) scheduler.request(false, ReconcilePriority.LAZY, "settling");
+  });
+  try {
+    scheduler.request(false, ReconcilePriority.LAZY, "mutation");
+    scheduler.request(false, ReconcilePriority.LAZY, "mutation");
+    scheduler.request(true, ReconcilePriority.URGENT, "account");
+    scheduler.run();
+    scheduler.run();
+    assert.deepEqual(runs, [["mutation", "account"], ["settling"]]);
+    scheduler.request(false, ReconcilePriority.LAZY, "page");
+    scheduler.cancel();
+    scheduler.request(false, ReconcilePriority.LAZY, "visibility");
+    scheduler.run();
+    assert.deepEqual(runs.at(-1), ["visibility"]);
+    scheduler.request(false);
+    scheduler.run();
+    assert.equal(runs.at(-1), null, "recording-off requests allocate no cause snapshot");
+  } finally {
+    harness.restore();
+  }
+});

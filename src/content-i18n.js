@@ -79,6 +79,7 @@
     PERFORMANCE_CAUSE_RECOVERY: "performanceCauseRecovery",
     PERFORMANCE_CAUSE_CATALOG: "performanceCauseCatalog",
     PERFORMANCE_CAUSE_ACTION: "performanceCauseAction",
+    PERFORMANCE_CAUSE_MEDIA: "performanceCauseMedia",
     PERFORMANCE_RESOURCES: "performanceResources",
     PERFORMANCE_OBSERVER: "performanceObserver",
     PERFORMANCE_ACTIVE: "performanceActive",

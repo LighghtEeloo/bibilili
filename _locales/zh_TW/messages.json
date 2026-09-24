@@ -505,6 +505,9 @@
   "performanceCauseHint": {
     "message": "請求可被合併、延後或取消。原生媒體就緒也可直接更新頁面。"
   },
+  "performanceCauseMedia": {
+    "message": "播放器就緒"
+  },
   "performanceCausePage": {
     "message": "啟動／導覽"
   },

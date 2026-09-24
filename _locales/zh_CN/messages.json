@@ -505,6 +505,9 @@
   "performanceCauseHint": {
     "message": "请求可被合并、延后或取消。原生媒体就绪也可直接更新页面。"
   },
+  "performanceCauseMedia": {
+    "message": "播放器就绪"
+  },
   "performanceCausePage": {
     "message": "启动／导航"
   },

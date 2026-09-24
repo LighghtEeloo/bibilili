@@ -14,12 +14,48 @@
   const PerformanceWork = Object.freeze({
     RECONCILE: "reconcile", DISCOVERY: "discovery", LAYOUT: "layout", RAIL: "rail"
   });
+  /** Non-overlapping discovery steps measured within one reconciliation pass. */
+  const DiscoveryStep = Object.freeze({
+    COMMENTS: "comments", PLAYER: "player", METADATA: "metadata", ACTIONS: "actions",
+    ACCOUNT: "account", SOURCE_ROOTS: "sourceRoots", SOURCE_ITEMS: "sourceItems",
+    SOURCE_SELECTION: "sourceSelection"
+  });
   /** Causes count scheduling requests before coalescing. */
   const ReconcileCause = Object.freeze({
     PAGE: "page", MUTATION: "mutation", SETTLING: "settling", ACCOUNT: "account",
     SETTINGS: "settings", VISIBILITY: "visibility", THEME: "theme", COMMENTS: "comments",
-    RECOVERY: "recovery", CATALOG: "catalog", ACTION: "action"
+    RECOVERY: "recovery", CATALOG: "catalog", ACTION: "action", MEDIA: "media"
   });
+
+  /** Measures existing discovery calls for one pass, including repeated source scans. */
+  class DiscoveryProfile {
+    /** @param {RuntimePerformance} recorder Recording must be enabled at creation. */
+    constructor(recorder) {
+      this.recorder = recorder;
+      this.generation = recorder.generation;
+      this.timings = Object.fromEntries(Object.values(DiscoveryStep).map((step) => [step, 0]));
+    }
+
+    /** @param {string} step Closed DiscoveryStep value. @param {() => any} read Existing DOM read. */
+    measure(step, read) {
+      if (!this.recorder.enabled || this.generation !== this.recorder.generation) return read();
+      if (!Object.hasOwn(this.timings, step)) throw new Error("Unknown discovery step");
+      const started = this.recorder.now();
+      try {
+        return read();
+      } finally {
+        if (this.recorder.enabled && this.generation === this.recorder.generation) {
+          this.timings[step] += Math.max(0, this.recorder.now() - started);
+        }
+      }
+    }
+
+    /** Returns detached millisecond timings rounded to one decimal place for reports. */
+    snapshot() {
+      return Object.fromEntries(Object.entries(this.timings)
+        .map(([step, duration]) => [step, Math.round(duration * 10) / 10]));
+    }
+  }
 
   /**
    * Aggregates per-document measurements in fixed-size records without timers or observers.
@@ -101,15 +137,19 @@
       return true;
     }
 
-    /** @param {string} work Closed PerformanceWork value. @param {PerformanceSample | null} sample */
-    end(work, sample) {
+    /**
+     * @param {string} work Closed PerformanceWork value.
+     * @param {PerformanceSample | null} sample
+     * @param {ReconcileEvidence | null} [details] Context captured at reconciliation entry.
+     */
+    end(work, sample, details = null) {
       if (!this.accept(sample)) return;
       const duration = Math.max(0, this.now() - sample.started);
       const record = this.states[sample.state].work[work];
       record.count += 1;
       record.totalMs += duration;
       record.maxMs = Math.max(record.maxMs, duration);
-      this.monitor?.work(work, duration, sample.state);
+      this.monitor?.work(work, duration, sample.state, details);
     }
 
     /** Counts an API start; outcomes remain attributed to its starting runtime state. */
@@ -141,6 +181,14 @@
   }
 
   /**
+   * @typedef {object} ReconcileEvidence
+   * @property {string[]} causes Coalesced ReconcileCause values or the direct media-readiness cause.
+   * @property {boolean} navigationPending Whether the native navigation handoff was pending at entry.
+   * @property {boolean} videoLoading Whether destination media and comment readiness was still being tracked at entry.
+   * @property {Record<string, number>} discoveryMs Milliseconds by DiscoveryStep for this pass.
+   */
+
+  /**
    * @typedef {object} PerformanceStateRecord
    * @property {number} elapsedMs Time spent recording in this state.
    * @property {Record<string, number>} counters Counts keyed by PerformanceCounter.
@@ -164,6 +212,7 @@
    */
 
   window.__bibililiPerformance = Object.freeze({
-    RuntimePerformance, PerformanceState, PerformanceCounter, PerformanceWork, ReconcileCause
+    RuntimePerformance, PerformanceState, PerformanceCounter, PerformanceWork, ReconcileCause,
+    DiscoveryStep, DiscoveryProfile
   });
 })();

@@ -505,6 +505,9 @@
   "performanceCauseHint": {
     "message": "Requests can be merged, deferred, or canceled. Native media readiness can also update the page directly."
   },
+  "performanceCauseMedia": {
+    "message": "Player readiness"
+  },
   "performanceCausePage": {
     "message": "Startup / navigation"
   },

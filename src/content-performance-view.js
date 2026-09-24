@@ -37,7 +37,8 @@
     [ReconcileCause.COMMENTS]: UiMessage.COMMENTS_LABEL,
     [ReconcileCause.RECOVERY]: UiMessage.PERFORMANCE_CAUSE_RECOVERY,
     [ReconcileCause.CATALOG]: UiMessage.PERFORMANCE_CAUSE_CATALOG,
-    [ReconcileCause.ACTION]: UiMessage.PERFORMANCE_CAUSE_ACTION
+    [ReconcileCause.ACTION]: UiMessage.PERFORMANCE_CAUSE_ACTION,
+    [ReconcileCause.MEDIA]: UiMessage.PERFORMANCE_CAUSE_MEDIA
   });
   const ALERT_LABELS = Object.freeze({
     slow_extension_work: UiMessage.PERFORMANCE_ALERT_WORK,

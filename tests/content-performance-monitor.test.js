@@ -300,6 +300,50 @@ test("departure checkpoints survive a new document, retain player evidence, and 
   assert.equal(storage.records.size, 0);
 });
 
+test("slow-update evidence survives copying and reload within the trace storage bound", (t) => {
+  const { monitor, enable, storage } = fixture(t);
+  const { DiscoveryStep, ReconcileCause } = global.__bibililiPerformance;
+  enable();
+  const evidence = {
+    navigationPending: true, videoLoading: true, causes: Object.values(ReconcileCause),
+    discoveryMs: Object.fromEntries(Object.values(DiscoveryStep).map((step) => [step, 123.4]))
+  };
+  for (let index = 0; index < 80; index += 1) {
+    monitor.work(PerformanceWork.RECONCILE, 999.9, PerformanceState.VISIBLE, evidence);
+  }
+  assert.equal(monitor.events.length, 80);
+  const expected = { ...evidence, work: PerformanceWork.RECONCILE, durationMs: 999.9 };
+  const copied = monitor.snapshot();
+  copied.current.alert.details.discoveryMs.sourceItems = 9999;
+  copied.current.events.at(-1).details.causes.length = 0;
+  assert.deepEqual(monitor.alert.details, expected, "exported nested records must be detached");
+  monitor.checkpoint(true);
+  assert.ok([...storage.records.values()][0].length < 64000, "a full enriched ring must fit the existing storage limit");
+  const previous = monitor.readPrevious();
+  assert.deepEqual(previous.alert.details, expected);
+  assert.deepEqual(previous.events.at(-1).details, expected);
+  const retained = monitor.snapshot();
+  monitor.acknowledge(retained);
+  assert.equal(monitor.status().level, "quiet");
+  assert.deepEqual(monitor.events.at(-1).details, expected, "acknowledgement preserves historical evidence");
+});
+
+test("stored slow-update evidence accepts only closed causes, boolean states, and finite discovery timings", (t) => {
+  const { monitor, enable } = fixture(t);
+  enable();
+  monitor.work(PerformanceWork.RECONCILE, 140, PerformanceState.VISIBLE);
+  const event = { ...monitor.alert, details: {
+    ...monitor.alert.details, navigationPending: "private value", videoLoading: false,
+    causes: ["mutation", "private cause", "mutation", "media"],
+    discoveryMs: { sourceRoots: 0, sourceItems: 135.2, metadata: -1, comments: Infinity,
+      player: "private text", unknown: 123 }
+  } };
+  assert.deepEqual(monitor.readEvent(event, monitor.sequence).details, {
+    work: "reconcile", durationMs: 140, videoLoading: false,
+    causes: ["mutation", "media"], discoveryMs: { sourceRoots: 0, sourceItems: 135.2 }
+  });
+});
+
 test("expired, malformed, and oversized traces are ignored and blocked storage does not break recording", (t) => {
   const { monitor, storage, enable } = fixture(t);
   enable();

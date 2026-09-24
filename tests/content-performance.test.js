@@ -2,7 +2,8 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 global.window = globalThis;
 require("../src/content-performance.js");
-const { RuntimePerformance, PerformanceCounter: Counter, PerformanceWork: Work, ReconcileCause } = global.__bibililiPerformance;
+const { RuntimePerformance, PerformanceCounter: Counter, PerformanceWork: Work, ReconcileCause,
+  DiscoveryProfile, DiscoveryStep } = global.__bibililiPerformance;
 
 test("disabled recording never reads the clock or changes counters", () => {
   const recorder = new RuntimePerformance(() => { throw new Error("unexpected clock"); });
@@ -74,4 +75,39 @@ test("aggregation uses fixed records even across long sessions", () => {
     recorder.end(Work.RAIL, recorder.begin());
   }
   assert.equal(shape(recorder.snapshot()), initial);
+});
+
+test("discovery profiles accumulate repeated reads, preserve results and errors, and detach snapshots", () => {
+  let now = 0;
+  const recorder = new RuntimePerformance(() => now);
+  recorder.setEnabled(true);
+  const profile = new DiscoveryProfile(recorder);
+  const result = {};
+  assert.equal(profile.measure(DiscoveryStep.SOURCE_ROOTS, () => { now += 20.123; return result; }), result);
+  profile.measure(DiscoveryStep.SOURCE_ROOTS, () => { now += 30; });
+  const failure = new Error("failed read");
+  assert.throws(() => profile.measure(DiscoveryStep.SOURCE_ITEMS, () => { now += 10; throw failure; }),
+    (error) => error === failure);
+  const snapshot = profile.snapshot();
+  assert.equal(snapshot.sourceRoots, 50.1);
+  assert.equal(snapshot.sourceItems, 10);
+  assert.equal(snapshot.comments, 0);
+  snapshot.sourceRoots = 999;
+  assert.equal(profile.snapshot().sourceRoots, 50.1);
+});
+
+test("reset and recording boundaries invalidate discovery profiles without suppressing the reads", () => {
+  const recorder = new RuntimePerformance(() => 0);
+  recorder.setEnabled(true);
+  const beforeReset = new DiscoveryProfile(recorder);
+  recorder.reset();
+  const beforePause = new DiscoveryProfile(recorder);
+  recorder.setEnabled(false);
+  recorder.setEnabled(true);
+  recorder.now = () => { throw new Error("retired profile read the clock"); };
+  assert.equal(beforeReset.measure(DiscoveryStep.PLAYER, () => "reset"), "reset");
+  assert.equal(beforePause.measure(DiscoveryStep.PLAYER, () => "pause"), "pause");
+  const current = new DiscoveryProfile(recorder);
+  recorder.enabled = false;
+  assert.equal(current.measure(DiscoveryStep.PLAYER, () => "disabled"), "disabled");
 });

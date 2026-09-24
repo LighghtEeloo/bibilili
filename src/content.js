@@ -4,7 +4,7 @@
   const { DomProbe } = window.__bibililiDom;
   const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
   const { SettingsView } = window.__bibililiSettings;
-  const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause } =
+  const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause, DiscoveryStep, DiscoveryProfile } =
     window.__bibililiPerformance;
   const { PerformanceMonitor } = window.__bibililiPerformanceMonitor;
   const { FavoritesView } = window.__bibililiFavorites;
@@ -4870,27 +4870,34 @@
     /**
      * Discovers the current watch page regions.
      *
+     * @param {DiscoveryProfile | null} [profile] Measures existing reads while recording.
      * @returns {DiscoveredRegions}
      */
-    discover() {
-      const comments = this.findCommentRegion();
-      const hasUsableComments = this.hasUsableCommentContent(comments);
+    discover(profile = null) {
+      const comments = this.measure(profile, DiscoveryStep.COMMENTS, () => {
+        const candidate = this.findCommentRegion();
+        return this.hasUsableCommentContent(candidate) ? candidate : null;
+      });
 
       return {
-        player: this.findPlayerRegion(),
-        title: this.findWatchTitle(),
-        description: this.findVideoDescription(),
-        tags: this.findVideoTags(),
-        uploader: this.findUploaderInfo(),
-        publishedAt: this.findPublishDate(),
-        actions: this.findActions(),
-        accountControl: this.findAccountControl(),
-        comments: hasUsableComments ? comments : null,
-        commentState: hasUsableComments
+        player: this.measure(profile, DiscoveryStep.PLAYER, () => this.findPlayerRegion()),
+        ...this.measure(profile, DiscoveryStep.METADATA, () => ({
+          title: this.findWatchTitle(), description: this.findVideoDescription(),
+          tags: this.findVideoTags(), uploader: this.findUploaderInfo(), publishedAt: this.findPublishDate()
+        })),
+        actions: this.measure(profile, DiscoveryStep.ACTIONS, () => this.findActions()),
+        accountControl: this.measure(profile, DiscoveryStep.ACCOUNT, () => this.findAccountControl()),
+        comments,
+        commentState: comments
           ? CommentPaneState.LOADED
           : CommentPaneState.RETRY,
-        sources: this.findSources()
+        sources: this.findSources(profile)
       };
+    }
+
+    /** Runs each existing read once, with an optional per-pass discovery measurement. */
+    measure(profile, step, read) {
+      return profile ? profile.measure(step, read) : read();
     }
 
     /**
@@ -5894,15 +5901,17 @@
     /**
      * Finds valid source roots and extracts their video items.
      *
+     * @param {DiscoveryProfile | null} [profile]
      * @returns {VideoListSource[]}
      */
-    findSources() {
+    findSources(profile = null) {
       const candidates = [];
 
       for (const definition of SOURCE_DEFINITIONS) {
-        for (const root of this.sourceRootsFor(definition)) {
+        const roots = this.measure(profile, DiscoveryStep.SOURCE_ROOTS, () => this.sourceRootsFor(definition));
+        for (const root of roots) {
           const adapter = new SourceAdapter(definition.kind, root);
-          const items = adapter.extractItems();
+          const items = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => adapter.extractItems());
 
           if (
             items.length <
@@ -5915,12 +5924,13 @@
             kind: definition.kind,
             root,
             items,
-            score: this.scoreSourceRoot(root, definition, items.length)
+            score: this.measure(profile, DiscoveryStep.SOURCE_SELECTION,
+              () => this.scoreSourceRoot(root, definition, items.length))
           });
         }
       }
 
-      return this.chooseSources(candidates);
+      return this.measure(profile, DiscoveryStep.SOURCE_SELECTION, () => this.chooseSources(candidates));
     }
 
     /**
@@ -11136,7 +11146,8 @@
       });
       this.performance.monitor = this.performanceMonitor;
       this.videoLoading = new VideoLoadingState(document, this.layout, this.navigation, () => {
-        this.reconcile(false);
+        this.performance.request(ReconcileCause.MEDIA);
+        this.reconcile(false, this.performance.enabled ? [ReconcileCause.MEDIA] : null);
       }, this.performance);
       this.lazyPrimer = new PageLazyPrimer(document);
       this.accountSources = new AccountSourceStore(() => {
@@ -11204,8 +11215,8 @@
       this.readyHandler = null;
       this.started = false;
       this.observer = null;
-      this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute) => {
-        this.reconcile(resetSourceRoute);
+      this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute, causes) => {
+        this.reconcile(resetSourceRoute, causes);
       });
       this.urlTimer = null;
       this.playerRecoveryTimer = null;
@@ -11345,7 +11356,7 @@
     ) {
       this.performance.request(cause);
       this.pendingSourceRouteReset ||= resetSourceRoute;
-      this.reconcileScheduler.request(resetSourceRoute, priority);
+      this.reconcileScheduler.request(resetSourceRoute, priority, this.performance.enabled ? cause : null);
     }
 
     /**
@@ -11420,19 +11431,25 @@
      * account-backed sources may change the source list during later passes.
      *
      * @param {boolean} resetSourceRoute
+     * @param {string[] | null} [causes] Requests merged into this pass, or a direct readiness update.
      */
-    reconcile(resetSourceRoute) {
+    reconcile(resetSourceRoute, causes = null) {
       this.pendingSourceRouteReset ||= resetSourceRoute;
       const sample = this.performance.begin();
+      const profile = sample ? new DiscoveryProfile(this.performance) : null;
+      const details = sample ? {
+        causes: causes ?? [], navigationPending: Boolean(this.navigation.pending), videoLoading: this.videoLoading.active
+      } : null;
       try {
-        this.reconcilePage();
+        this.reconcilePage(profile);
       } finally {
-        this.performance.end(PerformanceWork.RECONCILE, sample);
+        if (details) details.discoveryMs = profile.snapshot();
+        this.performance.end(PerformanceWork.RECONCILE, sample, details);
       }
     }
 
-    /** Reconciles the current page after pending source state has been captured. */
-    reconcilePage() {
+    /** Reconciles the current page with optional measurements scoped to this pass. */
+    reconcilePage(profile = null) {
       BilibiliThemeSync.sync(this.document);
 
       if (!this.isWatchPage()) {
@@ -11452,7 +11469,7 @@
       const discoverySample = this.performance.begin();
       let regions;
       try {
-        regions = this.discovery.discover();
+        regions = this.discovery.discover(profile);
       } finally {
         this.performance.end(PerformanceWork.DISCOVERY, discoverySample);
       }
