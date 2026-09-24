@@ -102,6 +102,8 @@
     SETTINGS_WATCH_PAGE_LABEL: "settingsWatchPageLabel",
     SETTINGS_DESCRIPTION_LABEL: "settingsDescriptionLabel",
     SETTINGS_THUMBNAILS_LABEL: "settingsThumbnailsLabel",
+    SETTINGS_IN_PAGE_NAVIGATION_LABEL: "settingsInPageNavigationLabel",
+    SETTINGS_IN_PAGE_NAVIGATION_HINT: "settingsInPageNavigationHint",
     SETTINGS_FAVORITE_FOLDER_LABEL: "settingsFavoriteFolderLabel",
     SETTINGS_FAVORITE_FOLDER_HINT: "settingsFavoriteFolderHint",
     SETTINGS_SOURCES_LABEL: "settingsSourcesLabel",

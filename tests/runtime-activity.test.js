@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { FakeStorage, loadContentRuntime, TEST_WATCH_HREF } = require("./helpers/content-runtime.js");
-const { BibililiController } = loadContentRuntime();
+const { BibililiController, SourceKind } = loadContentRuntime();
 
 /** Runs controller lifecycle events with observable timer and listener ownership. */
 function activityFixture(t, { enabled = true, hidden = false } = {}) {
@@ -136,6 +136,54 @@ test("hidden pages reconcile mutations and detect navigation before returning", 
   assert.equal(intervals.size, 1);
   assert.equal(controller.observer, observer);
   assert.equal(controller.accountSources.refresh.mock.callCount(), 2);
+});
+
+for (const hidden of [false, true]) {
+  test(`full-page switching reloads native video changes once while ${hidden ? "hidden" : "visible"}`, (t) => {
+    const { controller, intervals } = activityFixture(t, { hidden });
+    const { CardNavigationOriginStore } = global.__bibililiStorageState;
+    controller.preferences.features.inPageNavigation = false;
+    const reloads = [];
+    global.location.reload = () => reloads.push(global.location.href);
+    controller.start();
+    const requests = controller.accountSources.refresh.mock.callCount();
+    const poll = intervals.get(controller.urlTimer).callback;
+    poll();
+    global.location.href = `${TEST_WATCH_HREF}?from=player&t=12#comments`;
+    poll();
+    assert.deepEqual(reloads, [], "startup, tracking, timestamps, and fragments retain the document");
+
+    const target = "https://www.bilibili.com/video/av333?p=2";
+    CardNavigationOriginStore.write({ sourceKind: SourceKind.HISTORY }, "video:av333:p2");
+    global.location.href = target;
+    poll();
+    poll();
+    assert.deepEqual(reloads, [target]);
+    assert.equal(controller.pageKey, "video:av333:p2");
+    assert.equal(controller.layout.resetPageSession.mock.callCount(), 0);
+    assert.equal(controller.accountSources.refresh.mock.callCount(), requests);
+    assert.equal(controller.reconcileScheduler.pending, false);
+    assert.deepEqual(CardNavigationOriginStore.take("video:av333:p2"), { sourceKind: SourceKind.HISTORY });
+  });
+}
+
+test("full-page switching follows history and parts while disabled layouts keep native navigation", (t) => {
+  const { controller, listeners } = activityFixture(t);
+  controller.preferences.features.inPageNavigation = false;
+  const reloads = [];
+  global.location.reload = () => reloads.push(global.location.href);
+  controller.start();
+  global.location.href = `${TEST_WATCH_HREF}?p=2`;
+  for (const callback of listeners.get("popstate")) callback();
+  assert.deepEqual(reloads, [`${TEST_WATCH_HREF}?p=2`]);
+
+  global.location.href = "https://www.bilibili.com/";
+  controller.handlePotentialNavigation();
+  assert.equal(reloads.length, 1, "leaving the watch page does not trigger another load");
+  controller.setEnabled(false, false);
+  global.location.href = TEST_WATCH_HREF;
+  for (const callback of listeners.get("popstate")) callback();
+  assert.equal(reloads.length, 1, "the preference does not control a disabled layout");
 });
 
 test("visibility alone reuses account results and does not restart settling timers", (t) => {

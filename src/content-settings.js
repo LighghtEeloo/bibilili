@@ -111,6 +111,7 @@
       for (const [key, message, hint] of [
         ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL],
         ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
+        ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL, UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT],
         ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT]
       ]) this.addPreferenceSwitch(features, "features", key, message, hint);
       features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));

@@ -83,7 +83,8 @@ Bibilili may add and remove watch-later account records through Bilibili's
 account API. It may add an unsaved archive to the selected favorite folder when
 the direct-save setting is enabled. These operations are account-list mutations.
 
-Bibilili hands archive card navigation to Bilibili's native player API. The
+Bibilili hands archive card navigation to Bilibili's native player API when
+in-page switching is enabled. Otherwise, card links load a new document. The
 player and watch page own video resolution, playback, metadata, comments, and
 browser history.
 
@@ -180,10 +181,12 @@ feature preferences and is retained when restoring defaults.
 
 Features begins with the UI language selector. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
-enrichment, direct favorite saves, each video source, and performance recording.
-Presentation features and sources default to enabled. Performance recording
-defaults to off. Disabling the description restores its native node
-and removes its extension presentation.
+enrichment, in-page video switching, direct favorite saves, each video source,
+and performance recording. Presentation features, in-page switching, and
+sources default to enabled. Performance recording defaults to off.
+
+Disabling the description restores its native node and removes its extension
+presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails. Disabling a source removes it from routing and source
 root marking. A disabled account source cancels outstanding list requests and
@@ -192,9 +195,11 @@ appears before Watch later in Features, as it does in the dock. Disabling
 Favorites closes its picker and cancels folder video requests. Folder metadata
 remains available to direct saves while that feature is enabled. The current-video
 favorite action retains its independent behavior and Action bar preferences.
-Its setting explains direct saves through a question-mark help button beside
-the label. The explanation appears on hover or keyboard focus; activating the
-help button also reveals it for touch input.
+
+The video-switching and direct-save settings explain their behavior through
+question-mark help buttons beside their labels. The explanation appears on
+hover or keyboard focus; activating the help button also reveals it for touch
+input.
 
 Action bar controls whether each watch action or list tool appears on the bar
 or in More. All actions default to the bar. Show More button defaults to enabled
@@ -942,7 +947,7 @@ fixed card width and stable thumbnail aspect ratio. Card content keeps the rail
 height stable.
 
 The card links to the item's target URL. Plain same-tab archive activation uses
-the native video navigation bridge for every source kind. Modified clicks,
+the configured video-switching behavior for every source kind. Modified clicks,
 downloads, and new-tab targets retain normal browser behavior. Activating the
 current watch route preserves playback unless the link specifies a timestamp
 or supersedes an unfinished switch.
@@ -972,6 +977,13 @@ link.
 
 ## Video Navigation
 
+The feature preference `inPageNavigation` appears as “Switch videos without
+reloading” and defaults to enabled. It applies to the next video switch. When
+disabled, card links load a new document and native same-document video or part
+changes trigger a reload of the destination URL. Source-route hints survive
+the reload. Tracking parameters and fragment changes on the same watch route
+retain the current page. The preference applies while Bibilili is enabled.
+
 The navigation bridge hands a BV or AV identifier, one-based part, and optional
 playback timestamp to Bilibili's player reload API. It works between archive
 watch pages without requiring a matching page-owned list item. Bilibili resolves
@@ -999,9 +1011,10 @@ The runtime controller coordinates discovery, activation, layout updates,
 mutation observation, account source loading, and same-tab navigation
 detection. It observes same-tab navigation, lazy region insertion, list
 updates, account source completion, and page theme marker changes. When the
-watched video changes, it starts a new page session and reconciles discovered
-regions in the mounted layout. The comment scroll position and source-route
-interaction state reset for the destination video.
+watched video changes with in-page switching enabled, it starts a new page
+session and reconciles discovered regions in the mounted layout. The comment
+scroll position and source-route interaction state reset for the destination
+video. Full-page switching reloads the new watch route before reconciliation.
 
 Enabled documents retain mutation observation, URL polling, native navigation,
 account loading, preview demand, and scheduled reconciliation while hidden.

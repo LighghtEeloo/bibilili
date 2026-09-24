@@ -11733,12 +11733,11 @@
     /**
      * Resets per-page state when the visible watch page changes.
      *
-     * Same-tab navigation reuses the content-script instance, so page-scoped
-     * lazy-prime, preview, and source-route state are reset before the new
-     * page's urgent reconciliation. The mounted layout retains native nodes
-     * while Bilibili updates them for the destination video.
+     * In-page switching resets page-scoped state before urgent reconciliation
+     * and retains native nodes while Bilibili updates them. Full-page switching
+     * reloads the destination before consuming its source-route hint.
      *
-     * @returns {boolean} Whether a new page session was started.
+     * @returns {boolean} Whether a route change was handled.
      */
     handlePotentialNavigation() {
       const nextPageKey = this.currentPageKey();
@@ -11755,6 +11754,19 @@
       this.cancelPlayerRecovery();
       this.cancelSettlingReconciles();
       this.videoPreviews.stop();
+      if (
+        this.enabled && !this.preferences.features.inPageNavigation && this.pageKey &&
+        this.isWatchPage() && SourceAdapter.currentWatchRouteKey()
+      ) {
+        // Note: Player recommendations and browser history can change the video in place.
+        this.pageKey = nextPageKey;
+        this.navigation.cancel();
+        this.videoLoading.cancel();
+        this.reconcileScheduler.cancel();
+        this.performanceMonitor.checkpoint(true);
+        window.location.reload();
+        return true;
+      }
       this.nextPageSourceRouteState = this.initialSourceRouteState();
       this.pageKey = nextPageKey;
       if (this.isWatchPage()) {
@@ -11771,8 +11783,8 @@
     }
 
     /**
-     * Hands every rail source's archive target to Bilibili's native player.
-     * Unavailable or failed handoffs retain ordinary document navigation.
+     * Opens archive cards in place or through a full-page load, as configured.
+     * In-page switching uses Bilibili's native player with a document fallback.
      *
      * @param {string} sourceKind
      * @param {string} targetUrl
@@ -11794,6 +11806,10 @@
         return;
       }
       this.recordVideoCardNavigationSource(sourceKind, targetUrl, folderId);
+      if (!this.preferences.features.inPageNavigation) {
+        this.videoLoading.cancel();
+        return;
+      }
       this.videoLoading.begin(SourceAdapter.watchRouteKeyForUrl(target.href));
       this.performanceMonitor.event("navigation_start");
       const accepted = this.navigation.navigate(target.href, (success, landedUrl, reason) => {
@@ -11960,7 +11976,7 @@
       const runtimeChanged = previous.language !== this.preferences.language ||
         ["features", "sources", "pinnedActions"].some((group) =>
           Object.keys(this.preferences[group]).some((key) =>
-            !(group === "features" && key === "performance") &&
+            !(group === "features" && (key === "performance" || key === "inPageNavigation")) &&
             previous[group][key] !== this.preferences[group][key]));
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();

@@ -265,6 +265,14 @@
     "message": "補齊缺失封面",
     "description": "Switch for fetching missing video covers."
   },
+  "settingsInPageNavigationLabel": {
+    "message": "切換影片時不重新載入頁面",
+    "description": "Switch for opening videos within the current page."
+  },
+  "settingsInPageNavigationHint": {
+    "message": "在目前頁面內切換影片。關閉後，每次切換影片都會重新載入整個頁面。",
+    "description": "Explains in-page video switching and the full-page alternative."
+  },
   "settingsFavoriteFolderLabel": {
     "message": "直接收藏到選取的收藏夾",
     "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."

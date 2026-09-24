@@ -8,6 +8,7 @@ const { loadContentRuntime, resetStorageState, TEST_WATCH_HREF } =
 const { BibililiController, SourceKind } = loadContentRuntime();
 const { NativeVideoNavigation } = global.__bibililiNavigation;
 const { UiStrings } = global.__bibililiI18n;
+const { CardNavigationOriginStore } = global.__bibililiStorageState;
 const pageScript = fs.readFileSync(require.resolve("../src/page-navigation.js"), "utf8");
 const NEXT_HREF = "https://www.bilibili.com/video/BV1xx411c7mD";
 const REQUEST_EVENT = "bibilili:video-navigation-request";
@@ -88,9 +89,9 @@ function navigationFixture(t) {
     }
   });
   t.mock.method(controller, "scheduleReconcile", () => {});
-  const click = (kind, url) => {
+  const click = (kind, url, folderId) => {
     const event = new Event("click", { cancelable: true });
-    controller.navigateVideoCard(kind, url, event);
+    controller.navigateVideoCard(kind, url, event, folderId);
     return event;
   };
   return {
@@ -122,6 +123,56 @@ test("every rail source uses the same native handoff and preserves its route", a
     assert.deepEqual(f.requests.at(-1), { p: 2, bvid: `BVtest${index}`, t: 43 });
     assert.deepEqual(f.sources.at(-1), { sourceKind: kind, isRailOpen: true });
   }
+});
+
+test("full-page switching leaves every source link usable and retains its destination hint", (t) => {
+  const f = navigationFixture(t);
+  f.controller.preferences.features.inPageNavigation = false;
+  f.controller.performance.setEnabled(true);
+  f.controller.performanceMonitor.setEnabled(true);
+  t.after(() => f.controller.performanceMonitor.stop());
+  const begin = t.mock.method(f.controller.videoLoading, "begin", () => {});
+  for (const [index, kind] of Object.values(SourceKind).entries()) {
+    const target = `https://www.bilibili.com/video/BVtest${index}?p=2&t=43&from=rail`;
+    const route = { sourceKind: kind };
+    if (kind === SourceKind.FAVORITES) route.folderId = "42";
+    assert.equal(f.click(kind, target, route.folderId).defaultPrevented, false);
+    assert.deepEqual(CardNavigationOriginStore.take(`video:BVtest${index}:p2`), route);
+  }
+  assert.deepEqual(f.requests, []);
+  assert.equal(f.navigation.pending, null);
+  assert.equal(f.timers.size, 0);
+  assert.equal(begin.mock.callCount(), 0);
+  assert.equal(f.controller.performanceMonitor.alert, null);
+});
+
+test("navigation mode changes apply to the next click and preserve current playback", async (t) => {
+  const f = navigationFixture(t);
+  f.controller.preferences.features.inPageNavigation = false;
+  assert.equal(f.click(SourceKind.COLLECTION, TEST_WATCH_HREF).defaultPrevented, true);
+  assert.equal(f.click(SourceKind.PARTS, `${TEST_WATCH_HREF}?p=2`).defaultPrevented, false);
+  assert.equal(f.click(SourceKind.HISTORY, `${TEST_WATCH_HREF}?t=12`).defaultPrevented, false);
+  assert.deepEqual(f.requests, []);
+  f.controller.preferences.features.inPageNavigation = true;
+  assert.equal(f.click(SourceKind.COLLECTION, NEXT_HREF).defaultPrevented, true);
+  await f.settle();
+  assert.deepEqual(f.requests, [{ bvid: "BV1xx411c7mD", p: 1 }]);
+});
+
+test("a full-page card click retires an earlier in-page fallback", async (t) => {
+  const f = navigationFixture(t);
+  let reject;
+  const fallbacks = [];
+  global.location.assign = (url) => fallbacks.push(url);
+  f.player.reload = () => new Promise((_resolve, failure) => { reject = failure; });
+  assert.equal(f.click(SourceKind.HISTORY, NEXT_HREF).defaultPrevented, true);
+  f.controller.preferences.features.inPageNavigation = false;
+  assert.equal(f.click(SourceKind.COLLECTION, TEST_WATCH_HREF).defaultPrevented, false);
+  reject(new Error("superseded"));
+  await f.settle();
+  assert.deepEqual(fallbacks, []);
+  assert.equal(f.navigation.pending, null);
+  assert.equal(f.timers.size, 0);
 });
 
 test("current-card clicks preserve playback; part and timestamp links still switch", async (t) => {

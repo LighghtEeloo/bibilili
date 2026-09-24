@@ -51,20 +51,22 @@ function settingsFixture(t, { performance = false } = {}) {
   return { ...fixture, controller, layout, anchor, view: controller.settingsView };
 }
 
-test("settings enable presentation features, sources, and pins while recording defaults off", () => {
+test("settings enable presentation, in-page switching, sources, and pins while recording defaults off", () => {
   const defaults = SettingsPreference.defaults();
   assert.equal(defaults.language, null);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
-  assert.deepEqual(defaults.features, { description: true, thumbnails: true, favoriteToSelectedFolder: true, moreButton: true, performance: false });
+  assert.deepEqual(defaults.features, { description: true, thumbnails: true, inPageNavigation: true, favoriteToSelectedFolder: true, moreButton: true, performance: false });
   const value = SettingsPreference.normalize({
-    features: { description: false, thumbnails: "false", unknown: true },
+    features: { description: false, thumbnails: "false", inPageNavigation: "false", unknown: true },
     sources: { collection: false, history: 0 }, pinnedActions: { like: false, unknown: true }
   });
   assert.equal(value.features.description, false);
   assert.equal(value.features.thumbnails, true);
+  assert.equal(value.features.inPageNavigation, true);
+  assert.equal(SettingsPreference.normalize({ features: { thumbnails: false } }).features.inPageNavigation, true);
   assert.equal(value.features.favoriteToSelectedFolder, true);
   assert.equal(value.sources.collection, false);
   assert.equal(value.sources.history, true);
@@ -80,6 +82,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new FakeStorage();
   const value = SettingsPreference.defaults();
   value.features.thumbnails = false;
+  value.features.inPageNavigation = false;
   value.features.favoriteToSelectedFolder = false;
   value.features.performance = true;
   value.pinnedActions.coin = false;
@@ -385,6 +388,32 @@ test("a language choice stays active with blocked storage while the layout is di
   assert.equal(view.statusKey, UiMessage.SETTINGS_PAGE_ONLY_LABEL);
   assert.equal(view.languageSelect.value, UiLanguage.ENGLISH);
   assert.equal(controller.enabled, false);
+});
+
+test("video switching preferences persist and restore without refreshing the current page", (t) => {
+  const { view, controller } = settingsFixture(t);
+  view.ensure();
+  view.panel.root.hidden = false;
+  t.mock.method(view.panel, "position", () => {});
+  view.render();
+  const input = [...view.inputs.keys()].find((input) => input.name === "inPageNavigation");
+  assert.equal(input.checked, true);
+  assert.ok(view.panels.get("features").contains(input));
+  input.checked = false;
+  input.dispatch("change");
+  assert.equal(controller.preferences.features.inPageNavigation, false);
+  assert.equal(SettingsPreference.read().features.inPageNavigation, false);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  controller.setPreferences(SettingsPreference.defaults());
+  assert.equal(input.checked, true);
+  const saved = SettingsPreference.read();
+  saved.features.inPageNavigation = false;
+  SettingsPreference.write(saved);
+  controller.onStorageChange({ storageArea: global.localStorage, key: SettingsPreference.key });
+  assert.equal(input.checked, false);
+  assert.equal(controller.preferences.features.inPageNavigation, false);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
 });
 
 test("the direct-favorite switch uses the shared settings row and persistence", (t) => {
