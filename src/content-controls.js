@@ -7,6 +7,9 @@
     locate: "M12 2v3m0 14v3M2 12h3m14 0h3M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0",
     start: "M5 5v14M17 6l-6 6 6 6",
     refresh: "M20 4v6h-6M20 10a8 8 0 1 0-1.1 6",
+    // Material undo and redo paths adapted for this registry; see assets/material-icons-LICENSE.txt.
+    undo: "M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z",
+    redo: "M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z",
     search: "M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0M16 16l5 5",
     more: "M5 12h.01M12 12h.01M19 12h.01",
     performance: "M3 12h4l3-8 4 16 3-8h4",
@@ -32,9 +35,10 @@
       const svg = document.createElementNS(SVG_NS, "svg");
       svg.setAttribute("class", "bibilili-local-icon");
       const path = document.createElementNS(SVG_NS, "path");
+      const filled = kind === "undo" || kind === "redo";
       for (const [name, value] of Object.entries({
-        viewBox: "0 0 24 24", width: "20", height: "20", fill: "none",
-        stroke: "currentColor", "stroke-width": kind === "more" ? "3" : "2",
+        viewBox: "0 0 24 24", width: "20", height: "20", fill: filled ? "currentColor" : "none",
+        stroke: filled ? "none" : "currentColor", "stroke-width": kind === "more" ? "3" : "2",
         "stroke-linecap": "round", "stroke-linejoin": "round",
         "aria-hidden": "true", focusable: "false"
       })) svg.setAttribute(name, value);

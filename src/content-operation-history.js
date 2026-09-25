@@ -224,7 +224,12 @@
         parts.actions.hidden = entry.kind === OperationKind.VISIT;
         parts.button.disabled = Boolean(store.pendingId) || !store.enabled;
         parts.button.setAttribute("aria-busy", String(entry.pending));
-        UiControl.setTextButtonLabel(parts.button,
+        const iconKind = entry.undone ? "redo" : "undo";
+        if (parts.iconKind !== iconKind) {
+          parts.button.replaceChildren(UiControl.icon(this.document, iconKind));
+          parts.iconKind = iconKind;
+        }
+        UiControl.setLabel(parts.button,
           message(entry.undone ? UiMessage.OPERATION_HISTORY_REDO : UiMessage.OPERATION_HISTORY_UNDO));
         parts.loading.hidden = !entry.pending;
         const failed = entry.result === UiMessage.OPERATION_HISTORY_FAILED;

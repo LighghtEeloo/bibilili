@@ -246,8 +246,9 @@ them. Failed operations and attempts to favorite an already saved archive do not
 create records. Disabling the feature stops capture, hides its tab, and retains
 existing records. Disabling a selected history tab returns Settings to Features.
 
-Favorite saves and rail removals expose Undo. Undo removes a favorite from its
-original folder or adds a removed archive back to Watch later. Redo reapplies
+Favorite saves and rail removals expose Undo and Redo as curved-arrow icon
+buttons with localized hover titles and accessible labels. Undo removes a
+favorite from its original folder or adds a removed archive back to Watch later. Redo reapplies
 the original operation. Each request verifies the original account before
 submitting a mutation. Undo and redo update the same history record and refresh
 the affected account source. Restoring a Watch later item uses Bilibili's normal

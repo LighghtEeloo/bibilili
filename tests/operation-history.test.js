@@ -122,7 +122,11 @@ test("undo uses the shared loading bar, serializes clicks, then shows a check an
   store.record(OperationKind.FAVORITE, details);
   const entry = store.entries[0];
   const parts = historyView.rows.get(entry.id);
-  assert.equal(parts.button.textContent, "Undo");
+  assert.equal(parts.button.getAttribute("aria-label"), "Undo");
+  assert.equal(parts.button.title, "Undo");
+  const undoIcon = parts.button.firstChild;
+  assert.equal(undoIcon.getAttribute("aria-hidden"), "true");
+  const undoPath = undoIcon.firstChild.getAttribute("d");
   assert.equal(parts.check.style.display, "none");
   parts.button.focus();
   let finish;
@@ -140,14 +144,17 @@ test("undo uses the shared loading bar, serializes clicks, then shows a check an
   assert.equal(parts.loading.hidden, true);
   assert.equal(parts.feedback.dataset.state, "success");
   assert.equal(parts.check.style.display, "");
-  assert.equal(parts.button.textContent, "Redo");
+  assert.equal(parts.button.getAttribute("aria-label"), "Redo");
+  assert.equal(parts.button.title, "Redo");
+  assert.notEqual(parts.button.firstChild.firstChild.getAttribute("d"), undoPath);
   assert.equal(parts.button.disabled, false);
   assert.equal(document.activeElement, parts.button);
   view.render();
   assert.equal(historyView.rows.get(entry.id).button, parts.button);
   assert.equal(new OperationHistory(() => {}).entries[0].undone, true);
   await store.toggle(entry.id, async (_entry, undo) => assert.equal(undo, false));
-  assert.equal(parts.button.textContent, "Undo");
+  assert.equal(parts.button.getAttribute("aria-label"), "Undo");
+  assert.equal(parts.button.firstChild.firstChild.getAttribute("d"), undoPath);
   assert.equal(parts.message.textContent, "Redone");
 });
 
@@ -162,13 +169,13 @@ test("failed undo and redo retain their retry buttons and display the error besi
   assert.equal(entry.undone, false);
   assert.equal(parts.feedback.dataset.state, "error");
   assert.equal(parts.message.textContent, "Request denied");
-  assert.equal(parts.button.textContent, "Undo");
+  assert.equal(parts.button.getAttribute("aria-label"), "Undo");
   assert.equal(parts.button.disabled, false);
   assert.equal(parts.check.style.display, "none");
   await store.toggle(entry.id, async () => {});
   await store.toggle(entry.id, fail);
   assert.equal(entry.undone, true);
-  assert.equal(parts.button.textContent, "Redo");
+  assert.equal(parts.button.getAttribute("aria-label"), "Redo");
 });
 
 test("favorite undo and redo use the recorded folder and reject changed accounts before posting", async (t) => {

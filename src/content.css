@@ -1684,10 +1684,13 @@
 }
 
 .bibilili-operation-history-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  min-width: 56px;
+  width: 30px;
   min-height: 30px;
-  padding: 4px 8px;
+  padding: 4px;
   border: 1px solid var(--bibilili-button-border);
   border-radius: 5px;
   background: var(--bibilili-control-bg);
@@ -2045,6 +2048,10 @@ label.bibilili-settings-row,
 
 
 @media (pointer: coarse) {
+  .bibilili-operation-history-button {
+    min-width: 44px;
+  }
+
   .bibilili-settings-row {
     min-height: 44px;
   }
