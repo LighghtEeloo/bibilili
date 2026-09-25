@@ -60,6 +60,7 @@
   const FAVORITE_CUSTOM_FOLDER_FLAG = 2;
   const FAVORITE_ARCHIVE_TYPE = 2;
   const FAVORITE_UNAVAILABLE_FLAG = 1;
+  const FAVORITE_DOUBLE_CLICK_DELAY_MS = 500;
   const ACCOUNT_HISTORY_PAGE_SIZE = 30;
   const ACCOUNT_WATCH_LATER_INITIAL_SIZE = 80;
   const ACCOUNT_MORE_BATCH_SIZE = 30;
@@ -6561,7 +6562,7 @@
      * @param {() => VideoListSource | null} onWatchLaterReveal
      * @param {() => VideoListSource | null} onWatchLaterSearchSource
      * @param {(source: VideoListSource) => Promise<void>} onRailRefresh
-     * @param {(action: WatchAction) => boolean} onFavoriteAction True consumes the click.
+     * @param {(action: WatchAction, event?: MouseEvent) => boolean} onFavoriteAction True consumes the click.
      */
     render(
       regions,
@@ -7954,7 +7955,10 @@
       }
       this.morePanel.root.append(this.moreWatchGroup, this.moreRailGroup);
       this.morePanel.root.addEventListener("click", (event) => {
-        if (event.target.closest("button") && !event.target.closest(".bibilili-rail-search")) {
+        const button = event.target.closest("button");
+        // Favorite clicks keep More open until the single or double action resolves.
+        if (button && button.dataset.watchActionKind !== WatchActionKind.FAVORITE &&
+            !event.target.closest(".bibilili-rail-search")) {
           // Restore focus before forwarding a click that may open a native dialog.
           this.morePanel.close(true);
         }
@@ -8426,8 +8430,8 @@
       const button = UiControl.button(
         this.document,
         "bibilili-action-button",
-        () => {
-          this.handleWatchActionButtonClick(kind);
+        (event) => {
+          this.handleWatchActionButtonClick(kind, event);
         }
       );
       button.dataset.watchActionKind = kind;
@@ -8756,8 +8760,9 @@
      * Activates a dock watch action.
      *
      * @param {string} kind
+     * @param {MouseEvent} [event] Pointer click count; keyboard activation uses zero.
      */
-    handleWatchActionButtonClick(kind) {
+    handleWatchActionButtonClick(kind, event) {
       if (this.isVideoLoading) return;
       const action = this.currentActions.find(
         (candidate) => candidate.kind === kind
@@ -8777,7 +8782,7 @@
         return;
       }
 
-      if (kind === WatchActionKind.FAVORITE && this.onFavoriteAction?.(action)) return;
+      if (kind === WatchActionKind.FAVORITE && this.onFavoriteAction?.(action, event)) return;
       this.forwardWatchAction(action);
     }
 
@@ -8786,6 +8791,7 @@
      * @param {WatchAction} action
      */
     forwardWatchAction(action) {
+      this.morePanel?.close(true);
       LayoutRoot.clickNativeTrigger(action.trigger);
       LayoutRoot.liftNativeWatchActionOverlay(action.kind, action.trigger);
       this.onWatchActionForward?.();
@@ -11603,7 +11609,7 @@
           () => this.accountSources.revealWatchLaterItem(window.location.href),
           () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
           (source) => this.refreshRail(source),
-          (action) => this.handleFavoriteAction(action)
+          (action, event) => this.handleFavoriteAction(action, event)
         );
       } finally {
         this.performance.end(PerformanceWork.LAYOUT, layoutSample);
@@ -12007,6 +12013,7 @@
      */
     setEnabled(enabled, persist = true) {
       this.enabled = enabled;
+      this.accountSources.setFavoriteActionsEnabled(enabled);
       if (persist) this.settingsView.showSaveResult(ActivationPreference.writeEnabled(enabled));
       this.reconcileScheduler.cancel();
       this.updateRuntimeActivity();
@@ -12056,48 +12063,90 @@
       this.performanceMonitor.setEnabled(this.preferences.features.performance);
       this.performanceMonitor.setActive(Boolean(this.started && this.enabled && this.isWatchPage()));
       this.layout.preferences = this.preferences;
-      if (this.favoriteActionState?.pending && !this.preferences.features.favoriteToSelectedFolder) {
+      if (this.favoriteActionState && !this.favoriteActionState.saved &&
+          this.favoriteActionState.directOnSingle !== this.preferences.features.favoriteToSelectedFolder) {
         this.clearFavoriteActionState();
       }
       if (!this.preferences.sources[SourceKind.FAVORITES]) this.favoritesView.panel.close();
       this.videoPreviews.setEnabled(this.preferences.features.thumbnails);
-      this.accountSources.setFavoriteActionsEnabled(this.preferences.features.favoriteToSelectedFolder);
+      this.accountSources.setFavoriteActionsEnabled(this.enabled);
       this.accountSources.setEnabledKinds(ACCOUNT_SOURCE_ORDER.filter((kind) => this.preferences.sources[kind]));
     }
 
     /**
-     * Routes an inactive star to the selected account folder when enabled.
-     * Active stars retain the native dialog, including after a direct save.
+     * Distinguishes single and double clicks on an inactive star before acting.
+     * The preference selects the single-click action; double click uses its opposite.
+     * Active stars and keyboard activation retain immediate handling.
      * @param {WatchAction} action
-     * @returns {boolean} Whether the direct-save path consumed the click.
+     * @param {MouseEvent} [event] Keyboard and programmatic clicks have no click count.
+     * @returns {boolean} Whether favorite handling consumed the click.
      */
-    handleFavoriteAction(action) {
-      if (this.favoriteActionState && (!this.isFavoriteActionCurrent(this.favoriteActionState) ||
-          (this.favoriteActionState.accountId && this.favoriteActionState.accountId !== this.accountSources.favoriteFolders.accountId))) {
+    handleFavoriteAction(action, event) {
+      if (this.favoriteActionState && !this.isFavoriteActionCurrent(this.favoriteActionState)) {
         this.clearFavoriteActionState();
       }
       const previous = this.favoriteActionState;
       if (previous?.pending) return true;
       if (previous?.saved || BibililiController.isFavoriteActionActive(action)) {
         if (previous?.saved) this.expectNativeFavoriteDialog(previous);
+        else if (previous) this.clearFavoriteActionState();
         return false;
       }
       const targetUrl = window.location.href;
-      const folderId = this.accountSources.currentFavoriteFolderId();
-      if (!this.enabled || this.layout.isVideoLoading || !this.preferences.features.favoriteToSelectedFolder ||
+      if (!this.enabled || this.layout.isVideoLoading ||
           !SourceAdapter.archiveIdentityForUrl(targetUrl)) return false;
 
+      const clickCount = event?.detail ?? 0;
+      if (clickCount > 1) {
+        if (clickCount === 2 && previous && previous.clickTimer !== null) {
+          this.resolveFavoriteAction(action, previous, !previous.directOnSingle);
+        }
+        return true;
+      }
+      if (previous) this.clearFavoriteActionState();
       const state = {
         pageKey: this.currentPageKey(), accountId: this.accountSources.favoriteFolders.accountId,
-        aid: null, pending: true, saved: false, controller: new AbortController(),
+        targetUrl, folderId: this.accountSources.currentFavoriteFolderId(),
+        directOnSingle: this.preferences.features.favoriteToSelectedFolder, clickTimer: null,
+        aid: null, pending: false, saved: false, controller: new AbortController(),
         waitingForNative: false, nativeDialog: null, nativeRevision: 0
       };
       this.favoriteActionState = state;
+      if (clickCount === 1) {
+        state.clickTimer = window.setTimeout(() => {
+          this.resolveFavoriteAction(action, state, state.directOnSingle);
+        }, FAVORITE_DOUBLE_CLICK_DELAY_MS);
+      } else {
+        this.resolveFavoriteAction(action, state, state.directOnSingle);
+      }
+      return true;
+    }
+
+    /**
+     * Runs one resolved gesture using its original route, folder, and preference.
+     * @param {WatchAction} action
+     * @param {FavoriteActionState} state
+     * @param {boolean} direct Saves to the captured folder instead of opening native controls.
+     */
+    resolveFavoriteAction(action, state, direct) {
+      window.clearTimeout(state.clickTimer);
+      state.clickTimer = null;
+      if (!this.isFavoriteActionCurrent(state) || this.layout.isVideoLoading || !action.trigger.isConnected) {
+        if (this.favoriteActionState === state) this.clearFavoriteActionState();
+        return;
+      }
+      if (!direct || BibililiController.isFavoriteActionActive(action)) {
+        this.clearFavoriteActionState();
+        this.layout.forwardWatchAction(action);
+        return;
+      }
+
+      this.layout.morePanel?.close(true);
+      state.pending = true;
       this.updateFavoriteActionButton();
       const canAdd = () => this.isFavoriteActionCurrent(state) &&
-        this.preferences.features.favoriteToSelectedFolder &&
         !this.layout.isVideoLoading && action.trigger.isConnected && !BibililiController.isFavoriteActionActive(action);
-      void this.accountSources.addFavoriteItem(targetUrl, folderId, canAdd, state.controller.signal)
+      void this.accountSources.addFavoriteItem(state.targetUrl, state.folderId, canAdd, state.controller.signal)
         .then((result) => {
           if (!this.isFavoriteActionCurrent(state) ||
               (result && result.accountId !== this.accountSources.favoriteFolders.accountId)) return;
@@ -12123,7 +12172,6 @@
           this.updateFavoriteActionButton();
           this.scheduleReconcile(false, ReconcilePriority.URGENT);
         });
-      return true;
     }
 
     /**
@@ -12136,9 +12184,11 @@
       return action.isActive || RegionDiscovery.isWatchActionActive(action.trigger, definition);
     }
 
-    /** @param {FavoriteActionState} state @returns {boolean} The originating page is still mounted. */
+    /** @param {FavoriteActionState} state @returns {boolean} The originating page, account, and gesture remain current. */
     isFavoriteActionCurrent(state) {
       return this.favoriteActionState === state && !state.controller.signal.aborted && this.enabled &&
+        (!state.accountId || state.accountId === this.accountSources.favoriteFolders.accountId) &&
+        (state.saved || state.directOnSingle === this.preferences.features.favoriteToSelectedFolder) &&
         this.currentPageKey() === state.pageKey && Boolean(this.layout.root?.isConnected);
     }
 
@@ -12149,8 +12199,9 @@
       if (button) this.layout.syncWatchActionButtonState(button);
     }
 
-    /** Cancels preparatory reads and releases the current video's saved-state override. */
+    /** Cancels click timing and preparatory reads, then releases the saved-state override. */
     clearFavoriteActionState() {
+      window.clearTimeout(this.favoriteActionState?.clickTimer);
       this.favoriteActionState?.controller.abort();
       this.favoriteActionState = null;
       this.updateFavoriteActionButton();
@@ -12174,8 +12225,7 @@
     reconcileFavoriteAction(actions) {
       const state = this.favoriteActionState;
       if (!state) return;
-      if (!this.isFavoriteActionCurrent(state) ||
-          (state.accountId && state.accountId !== this.accountSources.favoriteFolders.accountId)) {
+      if (!this.isFavoriteActionCurrent(state)) {
         this.clearFavoriteActionState();
         return;
       }
@@ -12440,6 +12490,10 @@
    * @typedef {object} FavoriteActionState
    * @property {string} pageKey Originating watch route.
    * @property {string | null} accountId Account owning the selection, pending initial restoration.
+   * @property {string} targetUrl Archive URL captured on the first click.
+   * @property {string | null} folderId Selected folder captured on the first click, or restored on demand.
+   * @property {boolean} directOnSingle Gesture mapping captured on the first click.
+   * @property {number | null} clickTimer Delays the single-click action while a double click remains possible.
    * @property {string | null} aid Resolved archive id after a successful check or save.
    * @property {boolean} pending Disables duplicate direct saves.
    * @property {boolean} saved Confirmed favorite state until native state catches up.

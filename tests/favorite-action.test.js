@@ -26,7 +26,7 @@ function fixture(t, mockSave = true) {
   document.body.append(trigger);
   const action = { kind: FAVORITE, trigger, isActive: false, countText: "42" };
   layout.currentActions = [action];
-  layout.onFavoriteAction = (action) => controller.handleFavoriteAction(action);
+  layout.onFavoriteAction = (action, event) => controller.handleFavoriteAction(action, event);
   const button = layout.watchActionButtonFor(FAVORITE);
   button.querySelector(".bibilili-action-count").textContent = "42";
   document.body.append(button);
@@ -42,7 +42,7 @@ function fixture(t, mockSave = true) {
     global.location.href = previous.href;
   });
   return { controller, layout, document, action, trigger, button, save, native,
-    click: () => layout.handleWatchActionButtonClick(FAVORITE),
+    click: (detail = 0) => button.dispatch("click", { detail }),
     resolve: (result) => resolve({ accountId: "77", ...result }), reject };
 }
 
@@ -87,13 +87,141 @@ test("active native state always forwards, including changes since discovery", (
   assert.equal(save.mock.callCount(), 0);
 });
 
-test("disabled direct saving uses the existing native path", (t) => {
+test("the disabled preference gives keyboard activation the native action", (t) => {
   const { controller, save, native, click } = fixture(t);
   controller.preferences.features.favoriteToSelectedFolder = false;
   click();
   assert.equal(native.mock.callCount(), 1);
   assert.equal(save.mock.callCount(), 0);
 });
+
+for (const directOnSingle of [true, false]) {
+  test(`an unlit single click waits before ${directOnSingle ? "saving to the captured folder" : "opening the chooser"}`, (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { controller, layout, action, button, save, native, click } = fixture(t);
+    controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+    click(1);
+    controller.accountSources.records.get(SourceKind.FAVORITES).folderId = "202";
+    controller.reconcileFavoriteAction([action]);
+    layout.syncWatchActionButtonState(button, action);
+    t.mock.timers.tick(499);
+    assert.equal(save.mock.callCount(), 0);
+    assert.equal(native.mock.callCount(), 0);
+    assert.equal(button.disabled, false, "the second click must remain available");
+    assert.equal(button.getAttribute("aria-busy"), "false");
+    t.mock.timers.tick(1);
+    assert.equal(save.mock.callCount(), Number(directOnSingle));
+    assert.equal(native.mock.callCount(), Number(!directOnSingle));
+    if (directOnSingle) assert.equal(save.mock.calls[0].arguments[1], "101");
+    assert.equal(button.disabled, directOnSingle);
+    t.mock.timers.tick(1000);
+    assert.equal(save.mock.callCount() + native.mock.callCount(), 1);
+  });
+
+  test(`an unlit double click ${directOnSingle ? "opens the chooser without saving" : "saves without opening the chooser"}`, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { controller, button, save, native, click, resolve } = fixture(t);
+    controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+    click(1);
+    t.mock.timers.tick(150);
+    assert.equal(save.mock.callCount() + native.mock.callCount(), 0);
+    controller.accountSources.records.get(SourceKind.FAVORITES).folderId = "202";
+    click(2);
+    button.dispatch("dblclick", { detail: 2 });
+    click(3);
+    t.mock.timers.tick(1000);
+    assert.equal(save.mock.callCount(), Number(!directOnSingle));
+    assert.equal(native.mock.callCount(), Number(directOnSingle));
+    assert.equal(button.disabled, !directOnSingle);
+    assert.equal(button.getAttribute("aria-pressed"), "false");
+    if (!directOnSingle) {
+      assert.equal(save.mock.calls[0].arguments[1], "101");
+      resolve({ aid: "123", alreadySaved: false });
+      await settle();
+      assert.equal(button.getAttribute("aria-pressed"), "true");
+      click(1);
+      assert.equal(native.mock.callCount(), 1, "a directly saved star uses native handling immediately");
+      assert.equal(save.mock.callCount(), 1);
+    }
+  });
+
+  test(`lit pointer clicks remain immediate native actions with the preference ${directOnSingle ? "on" : "off"}`, (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { controller, action, button, save, native, click } = fixture(t);
+    controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+    action.isActive = true;
+    click(1);
+    assert.equal(native.mock.callCount(), 1);
+    click(2);
+    button.dispatch("dblclick", { detail: 2 });
+    assert.equal(native.mock.callCount(), 2);
+    t.mock.timers.tick(1000);
+    assert.equal(native.mock.callCount(), 2);
+    assert.equal(save.mock.callCount(), 0);
+  });
+
+  for (const double of [false, true]) {
+    test(`More accepts a ${double ? "double" : "single"} favorite click with the preference ${directOnSingle ? "on" : "off"}`, (t) => {
+      t.mock.timers.enable({ apis: ["setTimeout"] });
+      const { controller, layout, document, button, save, native, click } = fixture(t);
+      controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+      layout.sourceBar = document.createElement("div");
+      layout.createRailControls();
+      layout.createDockUtilities();
+      layout.moreWatchGroup.append(button);
+      document.body.append(layout.morePanel.root);
+      layout.morePanel.root.hidden = false;
+      const close = t.mock.method(layout.morePanel, "close", () => { layout.morePanel.root.hidden = true; });
+      const press = (detail) => {
+        layout.morePanel.root.dispatch("click", { target: button, detail });
+        click(detail);
+      };
+      press(1);
+      assert.equal(layout.morePanel.isOpen, true);
+      assert.equal(close.mock.callCount(), 0);
+      if (double) press(2);
+      t.mock.timers.tick(1000);
+      assert.equal(layout.morePanel.isOpen, false);
+      assert.equal(close.mock.callCount(), 1);
+      assert.equal(close.mock.calls[0].arguments[0], true, "restore focus before opening native controls");
+      const direct = double ? !directOnSingle : directOnSingle;
+      assert.equal(save.mock.callCount(), Number(direct));
+      assert.equal(native.mock.callCount(), Number(!direct));
+    });
+  }
+
+  for (const interruption of ["preference", "navigation", "account", "unmount", "loading", "trigger", "native favorite"]) {
+    test(`${interruption} invalidates a delayed favorite click with the preference ${directOnSingle ? "on" : "off"}`, (t) => {
+      t.mock.timers.enable({ apis: ["setTimeout"] });
+      const { controller, layout, action, trigger, button, save, native, click } = fixture(t);
+      controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+      click(1);
+      if (interruption === "preference") {
+        controller.preferences.features.favoriteToSelectedFolder = !directOnSingle;
+        controller.applyFeaturePreferences();
+      } else if (interruption === "navigation") {
+        global.location.href = "https://www.bilibili.com/video/av456";
+      } else if (interruption === "account") {
+        controller.accountSources.favoriteFolders.accountId = "88";
+      } else if (interruption === "unmount") {
+        t.mock.method(layout, "destroy", () => { layout.root = null; });
+        controller.clearRenderedPageState();
+      } else if (interruption === "loading") {
+        layout.isVideoLoading = true;
+      } else if (interruption === "trigger") {
+        trigger.remove();
+      } else {
+        action.isActive = true;
+        controller.reconcileFavoriteAction([action]);
+      }
+      t.mock.timers.tick(1000);
+      assert.equal(save.mock.callCount(), 0);
+      assert.equal(native.mock.callCount(), 0);
+      assert.equal(controller.favoriteActionState, null);
+      assert.equal(button.getAttribute("aria-busy"), String(interruption === "loading"));
+    });
+  }
+}
 
 test("hiding Favorites in settings retains its current folder and a pending save", async (t) => {
   const { controller, button, save, native, click, resolve } = fixture(t);
@@ -115,10 +243,11 @@ test("hiding Favorites in settings retains its current folder and a pending save
   assert.equal(native.mock.callCount(), 0);
 });
 
-for (const { name, sourceKind, isRailOpen, sourceEnabled, remembered, destination } of [
+for (const { name, sourceKind, isRailOpen, sourceEnabled, remembered, destination, directOnSingle = true } of [
   { name: "another rail is open", sourceKind: SourceKind.WATCH_LATER, isRailOpen: true, sourceEnabled: true, remembered: "202", destination: "202" },
   { name: "the Favorites rail is closed", sourceKind: SourceKind.FAVORITES, isRailOpen: false, sourceEnabled: true, remembered: null, destination: "101" },
-  { name: "the Favorites source is disabled", sourceKind: SourceKind.HISTORY, isRailOpen: true, sourceEnabled: false, remembered: "202", destination: "202" }
+  { name: "the Favorites source is disabled", sourceKind: SourceKind.HISTORY, isRailOpen: true, sourceEnabled: false, remembered: "202", destination: "202" },
+  { name: "double click saves and Favorites is disabled", sourceKind: SourceKind.HISTORY, isRailOpen: false, sourceEnabled: false, remembered: "202", destination: "202", directOnSingle: false }
 ]) {
   test(`a fresh page restores the favorite destination without showing Favorites when ${name}`, async (t) => {
     const { controller, layout, action, button, native, click } = fixture(t, false);
@@ -126,6 +255,7 @@ for (const { name, sourceKind, isRailOpen, sourceEnabled, remembered, destinatio
     store.stop();
     store.language = "en";
     controller.preferences.sources[SourceKind.FAVORITES] = sourceEnabled;
+    controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
     controller.applyFeaturePreferences();
     FavoriteFolderPreference.write("77", remembered);
     layout.selectedSourceKind = sourceKind;
@@ -146,7 +276,8 @@ for (const { name, sourceKind, isRailOpen, sourceEnabled, remembered, destinatio
     });
     t.mock.method(AccountSourceStore, "csrfToken", () => "test-csrf");
     const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => ({ code: 0 }));
-    click();
+    if (directOnSingle) click();
+    else { click(1); click(2); }
     assert.equal(button.disabled, true);
     await settle();
     assert.equal(post.mock.callCount(), 1);
@@ -182,20 +313,24 @@ test("failed direct saves release the button and forward to native controls", as
   assert.equal(button.getAttribute("aria-pressed"), "false");
 });
 
-test("disabling the setting cancels preparation and ignores its late completion", async (t) => {
-  const { controller, button, save, native, click, resolve } = fixture(t);
-  click();
-  const [, , canAdd, signal] = save.mock.calls[0].arguments;
-  controller.preferences.features.favoriteToSelectedFolder = false;
-  controller.applyFeaturePreferences();
-  assert.equal(signal.aborted, true);
-  assert.equal(canAdd(), false);
-  resolve({ aid: "123", alreadySaved: false });
-  await settle();
-  assert.equal(button.disabled, false);
-  assert.equal(button.getAttribute("aria-pressed"), "false");
-  assert.equal(native.mock.callCount(), 0);
-});
+for (const directOnSingle of [true, false]) {
+  test(`turning the preference ${directOnSingle ? "off" : "on"} cancels save preparation and ignores its late completion`, async (t) => {
+    const { controller, button, save, native, click, resolve } = fixture(t);
+    controller.preferences.features.favoriteToSelectedFolder = directOnSingle;
+    if (directOnSingle) click();
+    else { click(1); click(2); }
+    const [, , canAdd, signal] = save.mock.calls[0].arguments;
+    controller.preferences.features.favoriteToSelectedFolder = !directOnSingle;
+    controller.applyFeaturePreferences();
+    assert.equal(signal.aborted, true);
+    assert.equal(canAdd(), false);
+    resolve({ aid: "123", alreadySaved: false });
+    await settle();
+    assert.equal(button.disabled, false);
+    assert.equal(button.getAttribute("aria-pressed"), "false");
+    assert.equal(native.mock.callCount(), 0);
+  });
+}
 
 test("navigation invalidates preparation and prevents late saves from lighting the next video", async (t) => {
   const { controller, button, save, native, click, resolve } = fixture(t);

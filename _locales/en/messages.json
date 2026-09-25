@@ -274,8 +274,8 @@
     "description": "Explains in-page video switching and the full-page alternative."
   },
   "settingsFavoriteFolderLabel": {
-    "message": "Save favorites to selected folder",
-    "description": "Switch for adding an unfavorited video directly to the selected Favorites folder."
+    "message": "Single click to save to selected folder",
+    "description": "Selects the single-click action for an unlit Favorite button; double click uses the other action."
   },
   "settingsRefreshRailOnStartLabel": {
     "message": "Refresh list when returning to start",
@@ -286,8 +286,8 @@
     "description": "Accessible name for a settings help button, including the setting name."
   },
   "settingsFavoriteFolderHint": {
-    "message": "Unlit Favorite buttons save to the current folder even when the Favorites rail is hidden. Lit buttons open Bilibili’s controls.",
-    "description": "Explains the selected-folder shortcut and native handling for existing favorites."
+    "message": "For an unlit Favorite button: on means single click saves to the current folder and double click opens Bilibili’s folder chooser; off swaps these actions. Lit buttons always open Bilibili’s controls. The current folder stays available when the Favorites rail is hidden.",
+    "description": "Explains how the preference swaps single and double clicks, with native handling for existing favorites."
   },
   "settingsSourcesLabel": {
     "message": "Video sources",
