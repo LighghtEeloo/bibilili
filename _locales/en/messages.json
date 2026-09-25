@@ -230,8 +230,20 @@
     "description": "Feature toggle and settings tab for recorded operations."
   },
   "operationHistoryHint": {
-    "message": "Keep the last 100 video visits, direct favorite saves, and rail removals in this tab across page loads. Favorites and removals can be undone.",
+    "message": "Keep recent video visits, direct favorite saves, and rail removals in this tab across page loads. Favorites and removals can be undone.",
     "description": "Explains tab-local operation history and its undo scope."
+  },
+  "operationHistorySize": {
+    "message": "History size",
+    "description": "Label for the retained operation count slider."
+  },
+  "operationHistorySizeHint": {
+    "message": "Applies when the slider loses focus.",
+    "description": "Explains when a draft history size takes effect."
+  },
+  "operationHistoryClear": {
+    "message": "Clear",
+    "description": "Clears the recorded operation history."
   },
   "operationHistoryEmpty": {
     "message": "No operations recorded yet.",
@@ -379,10 +391,10 @@
   },
   "settingsRestoreLabel": {
     "message": "Restore defaults",
-    "description": "Resets language, feature, source, and placement preferences."
+    "description": "Resets language, history size, feature, source, and placement preferences."
   },
   "settingsAutosaveLabel": {
-    "message": "Changes apply immediately",
+    "message": "Changes are saved automatically",
     "description": "Initial settings footer text."
   },
   "settingsSavedLabel": {

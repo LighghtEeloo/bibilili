@@ -4,9 +4,8 @@
   const { BilibiliRoute } = window.__bibililiRoute;
   const { UiControl } = window.__bibililiControls;
   const { UiMessage, UiStrings } = window.__bibililiI18n;
-  const { FavoriteFolderPreference } = window.__bibililiStorageState;
+  const { FavoriteFolderPreference, OPERATION_HISTORY_LIMITS, DEFAULT_OPERATION_HISTORY_LIMIT } = window.__bibililiStorageState;
   const STORAGE_KEY = "bibilili:operation-history";
-  const MAX_ENTRIES = 100;
   /** Operations owned by Bibilili and supported by its history surface. */
   const OperationKind = Object.freeze({ VISIT: "visit", FAVORITE: "favorite", REMOVE: "remove" });
   const OPERATION_MESSAGES = Object.freeze({
@@ -17,9 +16,10 @@
 
   /** Keeps bounded tab-local history and serializes undo and redo requests. */
   class OperationHistory {
-    /** @param {() => void} onChange Refreshes an open history surface. */
-    constructor(onChange) {
+    /** @param {() => void} onChange Refreshes an open history surface. @param {number} [limit] Saved capacity. */
+    constructor(onChange, limit = DEFAULT_OPERATION_HISTORY_LIMIT) {
       this.onChange = onChange;
+      this.limit = OPERATION_HISTORY_LIMITS.includes(limit) ? limit : DEFAULT_OPERATION_HISTORY_LIMIT;
       this.enabled = false;
       this.entries = [];
       this.pendingId = null;
@@ -27,12 +27,15 @@
       try {
         const saved = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY));
         const ids = new Set();
-        if (Array.isArray(saved)) this.entries = saved.slice(0, MAX_ENTRIES).flatMap((value) => {
-          const entry = OperationHistory.normalize(value);
-          if (!entry || ids.has(entry.id)) return [];
-          ids.add(entry.id);
-          return [entry];
-        });
+        if (Array.isArray(saved)) {
+          this.entries = saved.slice(0, this.limit).flatMap((value) => {
+            const entry = OperationHistory.normalize(value);
+            if (!entry || ids.has(entry.id)) return [];
+            ids.add(entry.id);
+            return [entry];
+          });
+          if (saved.length > this.entries.length) this.save();
+        }
       } catch (_error) {
         // Unavailable storage leaves history usable for the current document.
       }
@@ -43,6 +46,31 @@
       if (this.enabled === enabled) return;
       this.enabled = enabled;
       this.lastVisitKey = null;
+    }
+
+    /** Applies a supported capacity while retaining an active request. @param {number} limit */
+    setLimit(limit) {
+      if (!OPERATION_HISTORY_LIMITS.includes(limit) || this.limit === limit) return;
+      this.limit = limit;
+      this.trim();
+      this.save();
+      this.onChange();
+    }
+
+    /** Clears completed history while keeping the current visit deduplicated. */
+    clear() {
+      if (this.pendingId || !this.entries.length) return;
+      this.entries = [];
+      this.save();
+      this.onChange();
+    }
+
+    /** Keeps the newest records and any in-flight row within the configured capacity. */
+    trim() {
+      while (this.entries.length > this.limit) {
+        const index = this.entries.findLastIndex((candidate) => candidate.id !== this.pendingId);
+        this.entries.splice(index, 1);
+      }
     }
 
     /** @param {unknown} value @returns {OperationHistoryEntry | null} Validated persisted entry. */
@@ -80,11 +108,7 @@
       });
       if (!entry) return;
       this.entries.unshift(entry);
-      // Retain an in-flight row even when visits fill the bounded history.
-      if (this.entries.length > MAX_ENTRIES) {
-        const index = this.entries.findLastIndex((candidate) => candidate.id !== this.pendingId);
-        this.entries.splice(index, 1);
-      }
+      this.trim();
       this.save();
       this.onChange();
     }
@@ -149,6 +173,7 @@
       this.options = options;
       this.root = null;
       this.rows = new Map();
+      this.draftLimit = null;
     }
 
     /** Allocates history DOM only when its settings tab is first selected. */
@@ -156,10 +181,59 @@
       if (this.root) return;
       this.root = this.element("div", "bibilili-operation-history");
       this.hint = this.element("p", "bibilili-settings-hint");
+      const toolbar = this.element("div", "bibilili-operation-history-toolbar");
+      const size = this.element("div", "bibilili-operation-history-size");
+      const label = this.element("label", "bibilili-operation-history-size-label");
+      this.sizeLabel = this.element("span", "");
+      this.sizeValue = this.element("span", "");
+      this.sizeValue.setAttribute("aria-hidden", "true");
+      this.sizeInput = this.element("input", "bibilili-operation-history-size-input");
+      this.sizeInput.id = "bibilili-operation-history-size";
+      this.sizeInput.type = "range";
+      this.sizeInput.min = "0";
+      this.sizeInput.max = String(OPERATION_HISTORY_LIMITS.length - 1);
+      this.sizeInput.step = "1";
+      label.setAttribute("for", this.sizeInput.id);
+      label.append(this.sizeLabel, this.sizeValue);
+      const ticks = this.element("div", "bibilili-operation-history-size-ticks");
+      ticks.setAttribute("aria-hidden", "true");
+      for (const limit of OPERATION_HISTORY_LIMITS) {
+        const tick = this.element("span", "");
+        tick.textContent = String(limit);
+        ticks.append(tick);
+      }
+      this.sizeHint = this.element("p", "bibilili-settings-hint");
+      this.sizeHint.id = "bibilili-operation-history-size-hint";
+      this.sizeInput.setAttribute("aria-describedby", this.sizeHint.id);
+      this.sizeInput.addEventListener("input", () => {
+        this.draftLimit = OPERATION_HISTORY_LIMITS[Number(this.sizeInput.value)];
+        this.renderLimit();
+      });
+      this.sizeInput.addEventListener("blur", () => this.commitLimit());
+      this.clearButton = UiControl.button(this.document, "bibilili-operation-history-clear", () => this.options.store.clear());
+      size.append(label, this.sizeInput, ticks);
+      toolbar.append(size, this.clearButton);
       this.empty = this.element("p", "bibilili-operation-history-empty");
       this.list = this.element("ol", "bibilili-operation-history-list");
-      this.root.append(this.hint, this.empty, this.list);
+      this.root.append(this.hint, toolbar, this.sizeHint, this.empty, this.list);
       parent.append(this.root);
+    }
+
+    /** Publishes a slider draft only after focus leaves the input. */
+    commitLimit() {
+      const limit = this.draftLimit;
+      this.draftLimit = null;
+      if (limit !== null && limit !== this.options.store.limit) this.options.onLimitChange(limit);
+      this.renderLimit();
+    }
+
+    /** Preserves an uncommitted slider choice through history and settings refreshes. */
+    renderLimit() {
+      const limit = this.draftLimit ?? this.options.store.limit;
+      const position = String(OPERATION_HISTORY_LIMITS.indexOf(limit));
+      if (this.sizeInput.value !== position) this.sizeInput.value = position;
+      this.sizeInput.setAttribute("aria-valuetext", String(limit));
+      this.sizeValue.textContent = String(limit);
     }
 
     /** @param {string} tag @param {string} className @returns {HTMLElement} */
@@ -201,6 +275,11 @@
       const message = (key) => UiStrings.message(key, language);
       const dateFormat = new Intl.DateTimeFormat(language, { dateStyle: "short", timeStyle: "medium" });
       this.hint.textContent = message(UiMessage.OPERATION_HISTORY_HINT);
+      this.sizeLabel.textContent = message(UiMessage.OPERATION_HISTORY_SIZE);
+      this.sizeHint.textContent = message(UiMessage.OPERATION_HISTORY_SIZE_HINT);
+      this.renderLimit();
+      UiControl.setTextButtonLabel(this.clearButton, message(UiMessage.OPERATION_HISTORY_CLEAR));
+      this.clearButton.disabled = !store.entries.length || Boolean(store.pendingId);
       this.empty.textContent = message(UiMessage.OPERATION_HISTORY_EMPTY);
       this.empty.hidden = store.entries.length > 0;
       const available = new Set();
@@ -267,6 +346,7 @@
    * @typedef {object} OperationHistoryViewOptions
    * @property {OperationHistory} store Tab-local operations and mutation state.
    * @property {(entry: OperationHistoryEntry, undo: boolean) => Promise<void>} onApply Account operation executor.
+   * @property {(limit: number) => void} onLimitChange Applies and persists the selected capacity after blur.
    * @property {() => HTMLElement} createLoading Shared loading view factory.
    */
 

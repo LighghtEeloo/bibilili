@@ -11253,7 +11253,8 @@
       }, this.performance);
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
-      this.operationHistory = new OperationHistory(() => this.settingsView?.refreshOperationHistory());
+      this.operationHistory = new OperationHistory(() => this.settingsView?.refreshOperationHistory(),
+        this.preferences.operationHistoryLimit);
       /** @type {FavoriteActionState | null} */
       this.favoriteActionState = null;
       this.favoritesView = new FavoritesView(document, {
@@ -11282,6 +11283,7 @@
         onEnabledChange: (enabled) => this.setEnabled(enabled),
         operationHistory: {
           store: this.operationHistory,
+          onLimitChange: (limit) => this.setPreferences({ ...this.preferences, operationHistoryLimit: limit }),
           onApply: (entry, undo) => this.applyHistoryOperation(entry, undo),
           createLoading: () => LoadingView.create(document, { inline: true })
         },
@@ -12099,6 +12101,7 @@
     /** Shares one preference snapshot with layout and demand-driven stores. */
     applyFeaturePreferences() {
       this.operationHistory.setEnabled(this.preferences.features.operationHistory);
+      this.operationHistory.setLimit(this.preferences.operationHistoryLimit);
       this.performance.setState(this.enabled, this.document.hidden);
       this.performance.setEnabled(this.preferences.features.performance);
       this.performanceMonitor.setEnabled(this.preferences.features.performance);

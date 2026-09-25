@@ -230,8 +230,20 @@
     "description": "Feature toggle and settings tab for recorded operations."
   },
   "operationHistoryHint": {
-    "message": "在目前分頁中保留最近 100 筆影片造訪、直接收藏和清單移除記錄，重新載入頁面後仍可查看。收藏和移除操作可以復原。",
+    "message": "在目前分頁中保留最近的影片造訪、直接收藏和清單移除記錄，重新載入頁面後仍可查看。收藏和移除操作可以復原。",
     "description": "Explains tab-local operation history and its undo scope."
+  },
+  "operationHistorySize": {
+    "message": "歷史記錄筆數",
+    "description": "Label for the retained operation count slider."
+  },
+  "operationHistorySizeHint": {
+    "message": "滑桿失去焦點後生效。",
+    "description": "Explains when a draft history size takes effect."
+  },
+  "operationHistoryClear": {
+    "message": "清除",
+    "description": "Clears the recorded operation history."
   },
   "operationHistoryEmpty": {
     "message": "尚無操作記錄。",
@@ -379,10 +391,10 @@
   },
   "settingsRestoreLabel": {
     "message": "恢復預設",
-    "description": "Resets language, feature, source, and placement preferences."
+    "description": "Resets language, history size, feature, source, and placement preferences."
   },
   "settingsAutosaveLabel": {
-    "message": "變更立即生效",
+    "message": "變更自動儲存",
     "description": "Initial settings footer text."
   },
   "settingsSavedLabel": {

@@ -11,6 +11,9 @@
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
   const SETTINGS_TAB_STORAGE_KEY = "bibilili:settings-tab";
+  /** Supported operation history capacities, ordered by slider position. */
+  const OPERATION_HISTORY_LIMITS = Object.freeze([10, 20, 100, 500]);
+  const DEFAULT_OPERATION_HISTORY_LIMIT = 100;
   /** Closed settings tabs shared by the view and its persisted navigation state. */
   const SettingsTab = Object.freeze({
     FEATURES: "features", ACTIONS: "actions", OPERATION_HISTORY: "operation_history", PERFORMANCE: "performance"
@@ -85,7 +88,7 @@
     }
   }
 
-  /** Persists settings view mode, UI language, features, sources, and action placement. */
+  /** Persists settings view mode, UI language, history capacity, features, sources, and action placement. */
   class SettingsPreference {
     /** @returns {string} Origin-local key observed across Bilibili tabs. */
     static get key() { return SETTINGS_STORAGE_KEY; }
@@ -95,6 +98,7 @@
       return {
         viewMode: SettingsViewMode.CONCISE,
         language: null,
+        operationHistoryLimit: DEFAULT_OPERATION_HISTORY_LIMIT,
         features: { ...FEATURE_DEFAULTS },
         sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
         pinnedActions: { ...storageConfig.actionDefaults }
@@ -102,7 +106,7 @@
     }
 
     /**
-     * Keeps a supported view mode, language, and known booleans, defaulting missing values.
+     * Keeps supported choices and known booleans, defaulting missing values.
      * @param {unknown} value
      * @returns {SettingsPreferenceRecord}
      */
@@ -110,6 +114,9 @@
       const result = SettingsPreference.defaults();
       if (Object.values(SettingsViewMode).includes(value?.viewMode)) result.viewMode = value.viewMode;
       if (Object.values(UiLanguage).includes(value?.language)) result.language = value.language;
+      if (OPERATION_HISTORY_LIMITS.includes(value?.operationHistoryLimit)) {
+        result.operationHistoryLimit = value.operationHistoryLimit;
+      }
       for (const group of ["features", "sources", "pinnedActions"]) {
         const defaults = result[group];
         for (const key of Object.keys(defaults)) {
@@ -515,6 +522,7 @@
    * @typedef {object} SettingsPreferenceRecord
    * @property {string} viewMode Closed SettingsViewMode controlling settings visibility.
    * @property {string | null} language Supported UI language; null uses automatic detection.
+   * @property {number} operationHistoryLimit Maximum retained operations; one of OPERATION_HISTORY_LIMITS.
    * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
@@ -534,6 +542,8 @@
     SettingsViewMode,
     SettingsTab,
     SettingsTabPreference,
+    OPERATION_HISTORY_LIMITS,
+    DEFAULT_OPERATION_HISTORY_LIMIT,
     configure
   });
 })();

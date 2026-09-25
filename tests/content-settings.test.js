@@ -62,6 +62,7 @@ test("settings enable features, sources, and pins while recording defaults off",
   const defaults = SettingsPreference.defaults();
   assert.equal(defaults.viewMode, SettingsViewMode.CONCISE);
   assert.equal(defaults.language, null);
+  assert.equal(defaults.operationHistoryLimit, 100);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
@@ -91,6 +92,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   global.localStorage = new FakeStorage();
   const value = SettingsPreference.defaults();
   value.viewMode = SettingsViewMode.ADVANCED;
+  value.operationHistoryLimit = 500;
   value.features.thumbnails = false;
   value.features.inPageNavigation = false;
   value.features.favoriteToSelectedFolder = false;

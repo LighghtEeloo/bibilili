@@ -116,6 +116,127 @@ test("invalid stored records are ignored and blocked storage leaves undo usable"
   assert.equal(history.entries[0].undone, true);
 });
 
+test("history capacity accepts only its four choices and restores the saved limit before loading records", (t) => {
+  const { controller, store } = fixture(t);
+  for (const operationHistoryLimit of [10, 20, 100, 500]) {
+    assert.equal(SettingsPreference.normalize({ operationHistoryLimit }).operationHistoryLimit, operationHistoryLimit);
+  }
+  for (const operationHistoryLimit of [0, 11, 50, 501, "20", null, {}, undefined]) {
+    assert.equal(SettingsPreference.normalize({ operationHistoryLimit }).operationHistoryLimit, 100);
+  }
+  controller.setPreferences({ ...controller.preferences, operationHistoryLimit: 500 });
+  store.setEnabled(true);
+  for (let i = 0; i < 510; i += 1) store.visit(`https://www.bilibili.com/video/av${i + 1}`, `Video ${i}`);
+  assert.equal(store.entries.length, 500);
+  assert.equal(store.entries[0].title, "Video 509");
+  assert.equal(store.entries.at(-1).title, "Video 10");
+  const reloaded = new BibililiController(controller.document);
+  assert.equal(reloaded.operationHistory.limit, 500);
+  assert.equal(reloaded.operationHistory.entries.length, 500);
+  SettingsPreference.write({ ...controller.preferences, operationHistoryLimit: 20 });
+  const reduced = new BibililiController(controller.document);
+  assert.equal(reduced.operationHistory.entries.length, 20);
+  assert.equal(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")).length, 20);
+});
+
+test("size drafts survive input, change, and reconciliation and only trim and persist on blur", (t) => {
+  const { controller, store, view, document, enable } = fixture(t);
+  const history = enable();
+  for (let i = 0; i < 30; i += 1) store.visit(`https://www.bilibili.com/video/av${i + 1}`, `Video ${i}`);
+  const slider = history.sizeInput;
+  assert.equal(slider.type, "range");
+  assert.equal(slider.value, "2");
+  assert.equal(slider.getAttribute("aria-valuetext"), "100");
+  slider.focus();
+  for (const [position, limit] of [[0, 10], [3, 500], [1, 20]]) {
+    slider.value = String(position);
+    slider.dispatch("input");
+    slider.dispatch("change");
+    view.render();
+    assert.equal(history.sizeValue.textContent, String(limit));
+    assert.equal(slider.getAttribute("aria-valuetext"), String(limit));
+    assert.equal(store.limit, 100);
+    assert.equal(store.entries.length, 30);
+    assert.equal(SettingsPreference.read().operationHistoryLimit, 100);
+    assert.equal(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")).length, 30);
+  }
+  store.visit("https://www.bilibili.com/video/av31", "New while editing");
+  assert.equal(slider.value, "1");
+  assert.equal(store.entries.length, 31);
+  document.body.focus();
+  slider.dispatch("blur");
+  assert.equal(store.limit, 20);
+  assert.equal(store.entries.length, 20);
+  assert.equal(store.entries[0].title, "New while editing");
+  assert.equal(history.rows.size, 20);
+  assert.equal(history.sizeInput, slider);
+  assert.equal(SettingsPreference.read().operationHistoryLimit, 20);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
+});
+
+test("clear empties and persists history without repeating the current visit or changing account data", (t) => {
+  const { controller, store, enable, post } = fixture(t);
+  const history = enable();
+  assert.equal(history.clearButton.disabled, true);
+  controller.setPreferences({ ...controller.preferences, operationHistoryLimit: 20 });
+  store.visit(TARGET, "Current video");
+  store.record(OperationKind.FAVORITE, details);
+  store.record(OperationKind.REMOVE, details);
+  assert.equal(history.clearButton.disabled, false);
+  history.clearButton.dispatch("click");
+  assert.equal(store.entries.length, 0);
+  assert.equal(history.rows.size, 0);
+  assert.equal(history.empty.hidden, false);
+  assert.equal(history.clearButton.disabled, true);
+  assert.deepEqual(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")), []);
+  assert.equal(new OperationHistory(() => {}, 20).entries.length, 0);
+  assert.equal(SettingsPreference.read().operationHistoryLimit, 20);
+  assert.equal(post.mock.callCount(), 0);
+  store.visit(TARGET, "Still current");
+  assert.equal(store.entries.length, 0);
+  store.visit("https://www.bilibili.com/video/av456", "Next video");
+  assert.equal(store.entries.length, 1);
+});
+
+test("shrinking retains an in-flight operation and clear waits for it to settle", async (t) => {
+  const { controller, store, enable } = fixture(t);
+  const history = enable();
+  store.record(OperationKind.FAVORITE, details);
+  const entry = store.entries[0];
+  let finish;
+  const pending = store.toggle(entry.id, () => new Promise((resolve) => { finish = resolve; }));
+  for (let i = 0; i < 30; i += 1) store.visit(`https://www.bilibili.com/video/av${i + 1}`, `Video ${i}`);
+  controller.setPreferences({ ...controller.preferences, operationHistoryLimit: 10 });
+  assert.equal(store.entries.length, 10);
+  assert.equal(store.entries.at(-1), entry);
+  assert.equal(history.rows.get(entry.id).loading.hidden, false);
+  assert.equal(history.clearButton.disabled, true);
+  store.clear();
+  assert.equal(store.entries.length, 10);
+  finish();
+  await pending;
+  assert.equal(entry.undone, true);
+  assert.equal(history.clearButton.disabled, false);
+  history.clearButton.dispatch("click");
+  assert.equal(store.entries.length, 0);
+});
+
+test("history size survives blocked storage for the page and clear remains usable", (t) => {
+  const { controller, store, enable } = fixture(t);
+  const history = enable();
+  store.visit(TARGET, "Current video");
+  global.localStorage = new ThrowingStorage();
+  global.sessionStorage = new ThrowingStorage();
+  history.sizeInput.value = "0";
+  history.sizeInput.dispatch("input");
+  history.sizeInput.dispatch("blur");
+  assert.equal(store.limit, 10);
+  assert.equal(controller.settingsView.statusKey, UiMessage.SETTINGS_PAGE_ONLY_LABEL);
+  history.clearButton.dispatch("click");
+  assert.equal(store.entries.length, 0);
+});
+
 test("undo uses the shared loading bar, serializes clicks, then shows a check and Redo", async (t) => {
   const { store, view, enable, document } = fixture(t);
   const historyView = enable();

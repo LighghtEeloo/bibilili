@@ -222,14 +222,15 @@ and displays the launcher when More contains available actions. Disabling it
 hides the launcher and closes its popup while retaining action placements.
 Source order and the Power and Settings entry points have fixed placement.
 
-Preferences use a validated record of settings view mode, UI language, and
-feature, source, and action booleans in Bilibili origin-local storage. Changes
-apply immediately, persist across videos and reloads, and propagate through
-storage events to other Bilibili tabs.
+Preferences use a validated record of settings view mode, UI language, history
+capacity, and feature, source, and action booleans in Bilibili origin-local
+storage. Changes persist across videos and reloads and propagate through
+storage events to other Bilibili tabs. History capacity applies when its slider
+loses focus; other preferences apply immediately.
 Unavailable storage leaves the current page's choices active and displays a
-save-failure status. Restore defaults resets language, feature, source, and
-placement preferences while retaining the settings view mode, available selected
-tab, activation state, and pane dimensions.
+save-failure status. Restore defaults resets language, history capacity, feature,
+source, and placement preferences while retaining the settings view mode,
+available selected tab, activation state, and pane dimensions.
 
 Settings rows keep their control identity through reconciliation. Native watch
 icons use the same sanitized visual renderer and watch-later snapshot as dock
@@ -250,12 +251,18 @@ Each record contains the original video title, watch URL, operation kind, and
 completion time. Account mutations also retain the account and archive ids;
 favorite saves retain the destination folder id.
 
-The history retains the newest 100 records in tab-local session storage across
-page loads. Records appear newest first. Visits are recorded after navigation
-settles and a watch title is available; ordinary reconciliation does not repeat
-them. Failed operations and attempts to favorite an already saved archive do not
-create records. Disabling the feature stops capture, hides its tab, and retains
-existing records. Disabling a selected history tab returns Settings to Features.
+The history retains records in tab-local session storage across page loads.
+Its capacity defaults to 100 and supports 10, 20, 100, or 500 records. A discrete
+slider previews the selected capacity and applies it on losing focus. Reducing
+capacity removes the oldest records while retaining any pending operation.
+Clear removes the recorded history and is unavailable during an undo or redo.
+Clearing keeps the current visit deduplicated and leaves account data unchanged.
+
+Records appear newest first. Visits are recorded after navigation settles and a
+watch title is available; ordinary reconciliation does not repeat them. Failed
+operations and attempts to favorite an already saved archive do not create
+records. Disabling the feature stops capture, hides its tab, and retains existing
+records. Disabling a selected history tab returns Settings to Features.
 
 Favorite saves and rail removals expose Undo and Redo as curved-arrow icon
 buttons with localized hover titles and accessible labels. Undo removes a

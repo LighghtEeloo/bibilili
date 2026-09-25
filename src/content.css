@@ -1603,6 +1603,41 @@
   flex: 0 0 auto;
 }
 
+.bibilili-operation-history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.bibilili-operation-history-size {
+  flex: 1 1 240px;
+  max-width: 280px;
+  min-width: 0;
+}
+
+.bibilili-operation-history-size-label,
+.bibilili-operation-history-size-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.bibilili-operation-history-size-input {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--bibilili-selected-border);
+  cursor: pointer;
+}
+
+.bibilili-operation-history-size-ticks {
+  color: var(--bibilili-muted);
+  font-size: 11px;
+}
+
 .bibilili-operation-history-list {
   margin: 12px 0 0;
   padding: 0;
@@ -1683,25 +1718,32 @@
   clip-path: inset(50%);
 }
 
-.bibilili-operation-history-button {
+.bibilili-operation-history-button,
+.bibilili-operation-history-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 30px;
   min-height: 30px;
-  padding: 4px;
+  padding: 4px 10px;
   border: 1px solid var(--bibilili-button-border);
   border-radius: 5px;
   background: var(--bibilili-control-bg);
   color: var(--bibilili-control-text);
 }
 
-.bibilili-operation-history-button:hover:enabled {
+.bibilili-operation-history-button {
+  width: 30px;
+  padding: 4px;
+}
+
+.bibilili-operation-history-button:hover:enabled,
+.bibilili-operation-history-clear:hover:enabled {
   border-color: var(--bibilili-button-hover-border);
 }
 
-.bibilili-operation-history-button:disabled {
+.bibilili-operation-history-button:disabled,
+.bibilili-operation-history-clear:disabled {
   opacity: 0.5;
 }
 
@@ -2064,6 +2106,8 @@ label.bibilili-settings-row,
   .bibilili-settings-tab,
   .bibilili-settings-restore,
   .bibilili-operation-history-button,
+  .bibilili-operation-history-clear,
+  .bibilili-operation-history-size-input,
   .bibilili-more-popup .bibilili-action-button {
     min-height: 44px;
   }
