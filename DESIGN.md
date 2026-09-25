@@ -178,13 +178,22 @@ Settings manages extension preferences on the watch page. Its button follows
 the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
 with Features, Action bar, Operation history, and Performance tabs. Operation
-history and Performance appear while their respective features are enabled.
+history and Performance require their respective features to be enabled.
+
+The Settings view selector starts the Features tab. Concise is the default and
+shows UI language, description and tags, and in-page video switching.
+Fully fledged adds thumbnail enrichment, favorite click behavior, rail refresh,
+video sources, and operation history. Advanced adds performance recording,
+exposing every feature setting. View modes control the rows in Features and
+preserve tab availability, the selected tab, feature values, source choices,
+and action placements.
+
 Settings remembers the last selected tab across videos and page reloads in
 origin-local storage. Features is the initial tab when no valid selection is
-saved. Tab selection is stored independently of
-feature preferences and is retained when restoring defaults.
+saved. Hiding the selected tab returns to Features. Focus moves out of hidden
+tabs and rows. Tab selection is stored independently of feature preferences.
 
-Features begins with the UI language selector. Language names appear in their
+The UI language selector follows Settings view. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
 enrichment, in-page video switching, single-click favorite saves, rail refresh on return
 to start, each video source, operation history, and performance recording. These
@@ -213,12 +222,14 @@ and displays the launcher when More contains available actions. Disabling it
 hides the launcher and closes its popup while retaining action placements.
 Source order and the Power and Settings entry points have fixed placement.
 
-Preferences use a validated record of UI language and feature, source, and action
-booleans in Bilibili origin-local storage. Changes apply immediately, persist
-across videos and reloads, and propagate through storage events to other Bilibili tabs.
+Preferences use a validated record of settings view mode, UI language, and
+feature, source, and action booleans in Bilibili origin-local storage. Changes
+apply immediately, persist across videos and reloads, and propagate through
+storage events to other Bilibili tabs.
 Unavailable storage leaves the current page's choices active and displays a
 save-failure status. Restore defaults resets language, feature, source, and
-placement preferences while retaining the activation state and pane dimensions.
+placement preferences while retaining the settings view mode, available selected
+tab, activation state, and pane dimensions.
 
 Settings rows keep their control identity through reconciliation. Native watch
 icons use the same sanitized visual renderer and watch-later snapshot as dock

@@ -15,6 +15,10 @@
   const SettingsTab = Object.freeze({
     FEATURES: "features", ACTIONS: "actions", OPERATION_HISTORY: "operation_history", PERFORMANCE: "performance"
   });
+  /** Closed settings view modes, independent of feature values. */
+  const SettingsViewMode = Object.freeze({
+    CONCISE: "concise", FULLY_FLEDGED: "fully_fledged", ADVANCED: "advanced"
+  });
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, inPageNavigation: true,
     favoriteToSelectedFolder: true, refreshRailOnStart: true,
@@ -81,7 +85,7 @@
     }
   }
 
-  /** Persists UI language, feature switches, enabled sources, and action placement. */
+  /** Persists settings view mode, UI language, features, sources, and action placement. */
   class SettingsPreference {
     /** @returns {string} Origin-local key observed across Bilibili tabs. */
     static get key() { return SETTINGS_STORAGE_KEY; }
@@ -89,6 +93,7 @@
     /** @returns {SettingsPreferenceRecord} Fresh defaults in canonical key order. */
     static defaults() {
       return {
+        viewMode: SettingsViewMode.CONCISE,
         language: null,
         features: { ...FEATURE_DEFAULTS },
         sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
@@ -97,12 +102,13 @@
     }
 
     /**
-     * Keeps a supported language and known booleans, defaulting missing values.
+     * Keeps a supported view mode, language, and known booleans, defaulting missing values.
      * @param {unknown} value
      * @returns {SettingsPreferenceRecord}
      */
     static normalize(value) {
       const result = SettingsPreference.defaults();
+      if (Object.values(SettingsViewMode).includes(value?.viewMode)) result.viewMode = value.viewMode;
       if (Object.values(UiLanguage).includes(value?.language)) result.language = value.language;
       for (const group of ["features", "sources", "pinnedActions"]) {
         const defaults = result[group];
@@ -507,6 +513,7 @@
 
   /**
    * @typedef {object} SettingsPreferenceRecord
+   * @property {string} viewMode Closed SettingsViewMode controlling settings visibility.
    * @property {string | null} language Supported UI language; null uses automatic detection.
    * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
@@ -524,6 +531,7 @@
     SourceRoute,
     SourceRouteStateStore,
     SettingsPreference,
+    SettingsViewMode,
     SettingsTab,
     SettingsTabPreference,
     configure

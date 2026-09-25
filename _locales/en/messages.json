@@ -281,6 +281,22 @@
     "message": "Settings",
     "description": "Label for the settings popup and its launcher."
   },
+  "settingsViewLabel": {
+    "message": "Settings view",
+    "description": "Selects how many settings are shown."
+  },
+  "settingsViewHint": {
+    "message": "Concise shows essential viewing controls. Fully fledged adds the remaining feature controls. Advanced also shows performance recording. Other tabs and your saved choices stay the same."
+  },
+  "settingsViewConcise": {
+    "message": "Concise"
+  },
+  "settingsViewFullyFledged": {
+    "message": "Fully fledged"
+  },
+  "settingsViewAdvanced": {
+    "message": "Advanced"
+  },
   "closeLabel": {
     "message": "Close",
     "description": "Accessible label for closing a popup."

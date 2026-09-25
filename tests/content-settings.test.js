@@ -3,23 +3,22 @@ const test = require("node:test");
 const { FakeStorage, ThrowingStorage, loadContentRuntime } = require("./helpers/content-runtime.js");
 const { railFixture } = require("./helpers/rail-dom.js");
 const { AccountSourceStore, BibililiController, LayoutRoot, SourceKind, WatchActionKind, VideoPreviewStore } = loadContentRuntime();
-const { SettingsPreference } = global.__bibililiStorageState;
+const { SettingsPreference, SettingsViewMode, SettingsTabPreference } = global.__bibililiStorageState;
 const { UiControl } = global.__bibililiControls;
 const { UiLanguage, UiMessage, UiStrings } = global.__bibililiI18n;
 
 /** Uses the real controller and settings definitions with the existing small DOM model. */
-function settingsFixture(t, { performance = false } = {}) {
+function settingsFixture(t, { performance = false, viewMode = SettingsViewMode.CONCISE } = {}) {
   const fixture = railFixture(LayoutRoot, 5, SourceKind.COLLECTION);
   const { document } = fixture;
   const storage = global.localStorage;
   const session = global.sessionStorage;
   global.localStorage = new FakeStorage();
   global.sessionStorage = new FakeStorage();
-  if (performance) {
-    const preferences = SettingsPreference.defaults();
-    preferences.features.performance = true;
-    SettingsPreference.write(preferences);
-  }
+  const preferences = SettingsPreference.defaults();
+  preferences.features.performance = performance;
+  preferences.viewMode = viewMode;
+  SettingsPreference.write(preferences);
   const controller = new BibililiController(document);
   t.after(() => {
     controller.performanceMonitor.stop();
@@ -51,8 +50,17 @@ function settingsFixture(t, { performance = false } = {}) {
   return { ...fixture, controller, layout, anchor, view: controller.settingsView };
 }
 
+/** Checks visibility through section and tab ancestors in the small DOM model. */
+function isSettingsControlVisible(view, control) {
+  for (let element = control; element !== view.panel.root; element = element.parentElement) {
+    if (element.hidden) return false;
+  }
+  return true;
+}
+
 test("settings enable features, sources, and pins while recording defaults off", () => {
   const defaults = SettingsPreference.defaults();
+  assert.equal(defaults.viewMode, SettingsViewMode.CONCISE);
   assert.equal(defaults.language, null);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of [defaults.sources, defaults.pinnedActions]) {
@@ -82,6 +90,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   t.after(() => { global.localStorage = previous; });
   global.localStorage = new FakeStorage();
   const value = SettingsPreference.defaults();
+  value.viewMode = SettingsViewMode.ADVANCED;
   value.features.thumbnails = false;
   value.features.inPageNavigation = false;
   value.features.favoriteToSelectedFolder = false;
@@ -98,8 +107,140 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   assert.deepEqual(SettingsPreference.read(), SettingsPreference.defaults());
 });
 
+test("settings view modes accept the closed choices and default older records to Concise", () => {
+  for (const viewMode of Object.values(SettingsViewMode)) {
+    assert.equal(SettingsPreference.normalize({ viewMode }).viewMode, viewMode);
+  }
+  for (const viewMode of [null, undefined, "", "toString", {}, ["advanced"], false]) {
+    const preferences = SettingsPreference.normalize({ viewMode, features: { description: false } });
+    assert.equal(preferences.viewMode, SettingsViewMode.CONCISE);
+    assert.equal(preferences.features.description, false);
+  }
+});
+
+test("view modes reveal settings progressively while retaining feature values and control identity", (t) => {
+  const { view, controller, document } = settingsFixture(t);
+  view.ensure();
+  t.mock.method(view.panel, "position", () => {});
+  view.panel.root.hidden = false;
+  view.render();
+  const select = view.viewModeSelect;
+  const inputs = [...view.inputs.keys()];
+  const visibleInputs = () => inputs.filter((input) => isSettingsControlVisible(view, input)).map((input) => input.name);
+  const visibleTabs = () => [...view.tabs].filter(([, button]) => !button.hidden).map(([key]) => key);
+  assert.equal(select.value, SettingsViewMode.CONCISE);
+  assert.equal(select.parentElement, view.panels.get("features").firstElementChild);
+  assert.deepEqual(visibleInputs(), ["description", "inPageNavigation"]);
+  assert.deepEqual(visibleTabs(), ["features", "actions"]);
+  assert.equal(isSettingsControlVisible(view, view.languageSelect), true);
+  assert.equal(isSettingsControlVisible(view, view.activationInput), true);
+
+  const saved = { ...controller.preferences,
+    features: { ...controller.preferences.features, thumbnails: false, operationHistory: true, performance: true },
+    sources: { ...controller.preferences.sources, history: false },
+    pinnedActions: { ...controller.preferences.pinnedActions, like: false } };
+  controller.setPreferences(saved);
+  const reconciles = controller.scheduleReconcile.mock.callCount();
+  const refreshes = controller.refreshAccountSources.mock.callCount();
+  const fullInputs = ["description", "thumbnails", "inPageNavigation", "favoriteToSelectedFolder",
+    "refreshRailOnStart", "operationHistory", "parts", "collection", "recommendations", "favorites", "watch_later", "history"];
+  select.focus();
+  for (const [viewMode, expectedInputs] of [
+    [SettingsViewMode.FULLY_FLEDGED, fullInputs],
+    [SettingsViewMode.ADVANCED, [...fullInputs, "performance"]],
+    [SettingsViewMode.CONCISE, ["description", "inPageNavigation"]]
+  ]) {
+    select.value = viewMode;
+    select.dispatch("change");
+    assert.deepEqual(visibleInputs(), expectedInputs);
+    assert.deepEqual(visibleTabs(), ["features", "actions", "operation_history", "performance"]);
+    assert.deepEqual(SettingsPreference.read(), { ...saved, viewMode });
+    assert.equal(document.activeElement, select);
+    assert.equal(view.viewModeSelect, select);
+    assert.deepEqual([...view.inputs.keys()], inputs);
+  }
+  assert.equal(controller.performance.enabled, true);
+  assert.equal(controller.operationHistory.enabled, true);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), reconciles);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), refreshes);
+  assert.equal(view.performanceView.status, undefined, "revealing diagnostics does not capture a snapshot");
+});
+
+test("view mode changes preserve other tabs, focus, keyboard navigation, and saved selection", (t) => {
+  const { view, controller, document } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
+  view.ensure();
+  t.mock.method(view.panel, "position", () => {});
+  view.panel.root.hidden = false;
+  controller.setPreferences({ ...controller.preferences,
+    features: { ...controller.preferences.features, operationHistory: true } });
+  for (const tab of ["actions", "operation_history", "performance"]) {
+    view.selectTab(tab);
+    const control = tab === "actions" ? view.actions.get(WatchActionKind.LIKE).button
+      : tab === "performance" ? view.performanceView.copyButton : view.tabs.get(tab);
+    control.focus();
+    for (const viewMode of [SettingsViewMode.FULLY_FLEDGED, SettingsViewMode.ADVANCED, SettingsViewMode.CONCISE]) {
+      SettingsPreference.write({ ...controller.preferences, viewMode });
+      controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
+      assert.equal(view.tab, tab);
+      assert.equal(SettingsTabPreference.read(), tab);
+      assert.equal(document.activeElement, control);
+      assert.equal(isSettingsControlVisible(view, control), true);
+      assert.equal(isSettingsControlVisible(view, view.viewModeSelect), false);
+      assert.ok([...view.tabs.values()].every((button) => !button.hidden));
+    }
+  }
+
+  const restored = new global.__bibililiSettings.SettingsView(document, view.options);
+  restored.update(SettingsPreference.read(), true, "en");
+  restored.ensure();
+  restored.render();
+  assert.equal(restored.viewModeSelect.value, SettingsViewMode.CONCISE);
+  assert.equal(restored.tab, "performance");
+  for (const [key, expected] of [
+    ["Home", "features"], ["ArrowRight", "actions"], ["ArrowRight", "operation_history"],
+    ["End", "performance"], ["ArrowLeft", "operation_history"]
+  ]) {
+    restored.tabs.get(restored.tab).dispatch("keydown", { key, preventDefault() {} });
+    assert.equal(restored.tab, expected);
+    assert.equal(document.activeElement, restored.tabs.get(expected));
+  }
+});
+
+test("a view mode change from another tab moves focus out of a hidden feature or source row", (t) => {
+  const { view, controller, document } = settingsFixture(t, { viewMode: SettingsViewMode.FULLY_FLEDGED });
+  view.ensure();
+  t.mock.method(view.panel, "position", () => {});
+  view.panel.root.hidden = false;
+  for (const name of ["thumbnails", "favorites"]) {
+    controller.setPreferences({ ...controller.preferences, viewMode: SettingsViewMode.FULLY_FLEDGED });
+    const input = [...view.inputs.keys()].find((input) => input.name === name);
+    input.focus();
+    SettingsPreference.write({ ...controller.preferences, viewMode: SettingsViewMode.CONCISE });
+    controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
+    assert.equal(isSettingsControlVisible(view, input), false);
+    assert.equal(document.activeElement, view.viewModeSelect);
+    assert.equal(view.viewModeSelect.value, SettingsViewMode.CONCISE);
+  }
+});
+
+test("view mode selection survives blocked storage and restoring defaults keeps the selected view", (t) => {
+  const { view, controller } = settingsFixture(t);
+  view.ensure();
+  global.localStorage = new ThrowingStorage();
+  view.viewModeSelect.value = SettingsViewMode.FULLY_FLEDGED;
+  view.viewModeSelect.dispatch("change");
+  assert.equal(controller.preferences.viewMode, SettingsViewMode.FULLY_FLEDGED);
+  assert.equal(view.statusKey, UiMessage.SETTINGS_PAGE_ONLY_LABEL);
+  view.selectTab("actions");
+  view.actions.get(WatchActionKind.LIKE).button.dispatch("click");
+  view.panel.root.querySelector(".bibilili-settings-restore").dispatch("click");
+  assert.deepEqual(controller.preferences, { ...SettingsPreference.defaults(), viewMode: SettingsViewMode.FULLY_FLEDGED });
+  assert.equal(view.tab, "actions");
+  assert.equal(view.viewModeSelect.value, SettingsViewMode.FULLY_FLEDGED);
+});
+
 test("performance toggles recording without reconciliation and snapshots refresh only on demand", (t) => {
-  const { controller, view } = settingsFixture(t);
+  const { controller, view } = settingsFixture(t, { viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   const snapshots = t.mock.method(controller, "performanceSnapshot");
   assert.equal(view.performanceView.status, undefined, "other tabs do not allocate statistics DOM");
@@ -138,7 +279,7 @@ test("performance toggles recording without reconciliation and snapshots refresh
 });
 
 test("unavailable Performance tabs are skipped by keyboard navigation and saved selection", (t) => {
-  const { view, controller, document } = settingsFixture(t);
+  const { view, controller, document } = settingsFixture(t, { viewMode: SettingsViewMode.FULLY_FLEDGED });
   view.ensure();
   view.selectTab("actions");
   const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
@@ -164,7 +305,7 @@ test("unavailable Performance tabs are skipped by keyboard navigation and saved 
 });
 
 test("a recording change from another tab moves focus out of hidden statistics and preserves totals", (t) => {
-  const { view, controller, document } = settingsFixture(t, { performance: true });
+  const { view, controller, document } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   t.mock.method(view.panel, "position", () => {});
   view.panel.root.hidden = false;
@@ -181,7 +322,7 @@ test("a recording change from another tab moves focus out of hidden statistics a
 });
 
 test("all three settings tabs support roving keyboard focus and persisted selection", (t) => {
-  const { view, document } = settingsFixture(t, { performance: true });
+  const { view, document } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   view.selectTab("features");
   const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
@@ -204,7 +345,7 @@ test("all three settings tabs support roving keyboard focus and persisted select
 });
 
 test("copy exports the displayed snapshot and reports clipboard failures", async (t) => {
-  const { controller, view } = settingsFixture(t, { performance: true });
+  const { controller, view } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   view.selectTab("performance");
   const performance = view.performanceView;
@@ -292,7 +433,7 @@ test("disabling recording during widget copy prevents a stale success from clear
 });
 
 test("report clipboard fallback stays inside settings and restores focus even on failure", (t) => {
-  const { view, document } = settingsFixture(t, { performance: true });
+  const { view, document } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   view.selectTab("performance");
   document.body.append(view.panel.root);
@@ -326,7 +467,7 @@ test("language preferences accept only packaged languages and default to automat
 test("the language selector updates labels in place and restores automatic detection", async (t) => {
   t.mock.method(global, "fetch", async (url) => ({ ok: true, json: async () => require(`../${url}`) }));
   await UiStrings.loadSupported();
-  const { view, controller, document } = settingsFixture(t);
+  const { view, controller, document } = settingsFixture(t, { viewMode: SettingsViewMode.FULLY_FLEDGED });
   document.body.setAttribute("lang", "zh-CN");
   t.mock.method(view.panel, "position", () => {});
   t.mock.method(controller, "isWatchPage", () => true);
@@ -336,6 +477,7 @@ test("the language selector updates labels in place and restores automatic detec
   controller.setPreferences({ ...controller.preferences, sources: { ...controller.preferences.sources, history: false } });
   const select = view.languageSelect;
   const options = [...select.children];
+  const viewOptions = [...view.viewModeSelect.children];
   assert.equal(select.value, "");
   assert.equal(controller.uiLanguage, UiLanguage.SIMPLIFIED_CHINESE);
   assert.equal(options[0].textContent, "自动");
@@ -348,6 +490,11 @@ test("the language selector updates labels in place and restores automatic detec
     assert.equal(SettingsPreference.read().language, language);
     assert.equal(view.panel.root.lang, language);
     assert.equal(view.panel.root.getAttribute("aria-label"), UiStrings.message(UiMessage.SETTINGS_LABEL, language));
+    assert.deepEqual(viewOptions.map((option) => option.textContent), [
+      UiMessage.SETTINGS_VIEW_CONCISE, UiMessage.SETTINGS_VIEW_FULLY_FLEDGED, UiMessage.SETTINGS_VIEW_ADVANCED
+    ].map((key) => UiStrings.message(key, language)));
+    assert.equal(view.viewModeSelect.value, SettingsViewMode.FULLY_FLEDGED);
+    assert.deepEqual([...view.viewModeSelect.children], viewOptions);
     assert.equal(controller.loadingCover.resolveLanguage(), language);
     assert.equal(controller.preferences.sources.history, false);
     assert.equal(document.body.getAttribute("lang"), "zh-CN");

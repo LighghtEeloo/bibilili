@@ -5,10 +5,17 @@
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
   const { PerformanceView, PerformanceWidget } = window.__bibililiPerformanceView;
   const { OperationHistoryView } = window.__bibililiOperationHistory;
-  const { SettingsPreference, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
+  const { SettingsPreference, SettingsViewMode, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
+
+  /** Ordered view modes; each includes the controls of the preceding one. */
+  const SETTINGS_VIEW_MODES = Object.freeze([
+    { kind: SettingsViewMode.CONCISE, message: UiMessage.SETTINGS_VIEW_CONCISE },
+    { kind: SettingsViewMode.FULLY_FLEDGED, message: UiMessage.SETTINGS_VIEW_FULLY_FLEDGED },
+    { kind: SettingsViewMode.ADVANCED, message: UiMessage.SETTINGS_VIEW_ADVANCED }
+  ]);
 
   /**
-   * Renders persisted language, feature, and placement preferences in a reusable popup.
+   * Renders persisted preferences in a reusable popup with selectable levels of detail.
    * Native action icons are supplied by the layout's existing visual renderer.
    */
   class SettingsView {
@@ -31,6 +38,7 @@
       this.actions = new Map();
       this.tabs = new Map();
       this.panels = new Map();
+      this.viewModeElements = new Map();
       this.statusKey = UiMessage.SETTINGS_AUTOSAVE_LABEL;
       this.button = null;
     }
@@ -109,23 +117,29 @@
         this.panels.set(key, panel);
       }
       const features = this.panels.get(SettingsTab.FEATURES);
-      features.append(this.languageRow());
+      features.append(this.viewModeRow(), this.languageRow());
       features.append(this.text("h3", UiMessage.SETTINGS_WATCH_PAGE_LABEL));
-      for (const [key, message, hint] of [
-        ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL],
+      for (const [key, message, hint, viewMode = SettingsViewMode.FULLY_FLEDGED] of [
+        ["description", UiMessage.SETTINGS_DESCRIPTION_LABEL, null, SettingsViewMode.CONCISE],
         ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
-        ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL, UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT],
+        ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL,
+          UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT, SettingsViewMode.CONCISE],
         ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT],
         ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL],
         ["operationHistory", UiMessage.OPERATION_HISTORY_LABEL, UiMessage.OPERATION_HISTORY_HINT]
-      ]) this.addPreferenceSwitch(features, "features", key, message, hint);
-      features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
+      ]) this.addPreferenceSwitch(features, "features", key, message, hint, viewMode);
+      const sources = this.element("section", "bibilili-settings-section");
+      this.viewModeElements.set(sources, SettingsViewMode.FULLY_FLEDGED);
+      sources.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {
-        this.addPreferenceSwitch(features, "sources", source.kind, source.message);
+        this.addPreferenceSwitch(sources, "sources", source.kind, source.message);
       }
-      features.append(this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint"));
-      features.append(this.text("h3", UiMessage.PERFORMANCE_LABEL, "bibilili-settings-performance-heading"));
-      this.addPreferenceSwitch(features, "features", "performance", UiMessage.PERFORMANCE_TOGGLE, UiMessage.PERFORMANCE_TOGGLE_HINT);
+      sources.append(this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint"));
+      const diagnostics = this.element("section", "bibilili-settings-section");
+      this.viewModeElements.set(diagnostics, SettingsViewMode.ADVANCED);
+      diagnostics.append(this.text("h3", UiMessage.PERFORMANCE_LABEL));
+      this.addPreferenceSwitch(diagnostics, "features", "performance", UiMessage.PERFORMANCE_TOGGLE, UiMessage.PERFORMANCE_TOGGLE_HINT);
+      features.append(sources, diagnostics);
 
       const actions = this.panels.get(SettingsTab.ACTIONS);
       this.addPreferenceSwitch(actions, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
@@ -150,7 +164,7 @@
       this.status = this.element("span", "bibilili-settings-status");
       this.status.setAttribute("role", "status");
       const restore = UiControl.button(this.document, "bibilili-settings-restore", () => {
-        this.options.onChange(SettingsPreference.defaults());
+        this.options.onChange({ ...SettingsPreference.defaults(), viewMode: this.preferences.viewMode });
       });
       this.labels.set(restore, UiMessage.SETTINGS_RESTORE_LABEL);
       footer.append(this.status, restore);
@@ -169,6 +183,28 @@
       const element = this.element(tag, className);
       this.labels.set(element, message);
       return element;
+    }
+
+    /** Creates the Features view selector without changing feature values or tab availability. */
+    viewModeRow() {
+      const row = this.element("div", "bibilili-settings-row bibilili-settings-row-with-help");
+      const name = this.element("span", "bibilili-settings-name");
+      this.viewModeSelect = this.element("select", "bibilili-settings-select");
+      this.viewModeSelect.id = "bibilili-settings-view-mode";
+      this.viewModeSelect.name = "viewMode";
+      const label = this.text("label", UiMessage.SETTINGS_VIEW_LABEL);
+      label.setAttribute("for", this.viewModeSelect.id);
+      name.append(label, this.helpControl("view-mode", UiMessage.SETTINGS_VIEW_LABEL, UiMessage.SETTINGS_VIEW_HINT));
+      for (const { kind, message } of SETTINGS_VIEW_MODES) {
+        const option = this.text("option", message);
+        option.value = kind;
+        this.viewModeSelect.append(option);
+      }
+      this.viewModeSelect.addEventListener("change", () => {
+        this.options.onChange({ ...this.preferences, viewMode: this.viewModeSelect.value });
+      });
+      row.append(name, this.viewModeSelect);
+      return row;
     }
 
     /** Creates a native language selector with each language named in its own language. */
@@ -229,10 +265,11 @@
       return help;
     }
 
-    /** Adds one switch from the shared preference record. */
-    addPreferenceSwitch(parent, group, key, message, hint = null) {
+    /** Adds one switch with the least detailed view mode that exposes it. */
+    addPreferenceSwitch(parent, group, key, message, hint = null, viewMode = SettingsViewMode.CONCISE) {
       const { row, input } = this.switchRow(key, message, (checked) => this.change(group, key, checked), hint);
       this.inputs.set(input, { group, key });
+      this.viewModeElements.set(row, viewMode);
       parent.append(row);
     }
 
@@ -251,10 +288,29 @@
       this.panel.position();
     }
 
-    /** Optional history and performance tabs follow their feature switches. */
+    /** Returns whether the selected view is detailed enough to include a control. */
+    includesViewMode(viewMode) {
+      return SETTINGS_VIEW_MODES.findIndex(({ kind }) => kind === this.preferences.viewMode) >=
+        SETTINGS_VIEW_MODES.findIndex(({ kind }) => kind === viewMode);
+    }
+
+    /** Optional tabs follow their feature switches independently of the Features view mode. */
     isTabAvailable(tab) {
       if (tab === SettingsTab.OPERATION_HISTORY) return this.preferences.features.operationHistory;
-      return tab !== SettingsTab.PERFORMANCE || this.preferences.features.performance;
+      if (tab === SettingsTab.PERFORMANCE) return this.preferences.features.performance;
+      return tab === SettingsTab.FEATURES || tab === SettingsTab.ACTIONS;
+    }
+
+    /** Hides controls in place and moves focus to the selector if a focused row disappears. */
+    syncViewModeVisibility() {
+      const focused = this.document.activeElement;
+      let moveFocus = false;
+      for (const [element, viewMode] of this.viewModeElements) {
+        const hidden = !this.includesViewMode(viewMode);
+        if (hidden && element.contains(focused)) moveFocus = true;
+        element.hidden = hidden;
+      }
+      if (moveFocus && this.panel.isOpen) this.viewModeSelect.focus({ preventScroll: true });
     }
 
     /** Falls back from an unavailable saved tab and keeps focus out of hidden content. */
@@ -312,6 +368,7 @@
     render() {
       if (!this.panel.root) return;
       this.syncSelectedTab();
+      this.syncViewModeVisibility();
       const message = (key) => UiStrings.message(key, this.language);
       this.panel.root.lang = this.language;
       this.panel.root.setAttribute("aria-label", message(UiMessage.SETTINGS_LABEL));
@@ -328,6 +385,7 @@
         if (option.textContent !== label) option.textContent = label;
       }
       const languageValue = this.preferences.language ?? "";
+      if (this.viewModeSelect.value !== this.preferences.viewMode) this.viewModeSelect.value = this.preferences.viewMode;
       if (this.languageSelect.value !== languageValue) this.languageSelect.value = languageValue;
       this.activationInput.checked = this.enabled;
       for (const [input, { group, key }] of this.inputs) input.checked = this.preferences[group][key];

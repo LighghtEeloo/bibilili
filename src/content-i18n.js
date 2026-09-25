@@ -20,6 +20,11 @@
   const UiMessage = Object.freeze({
     EXTENSION_NAME: "extensionName",
     SETTINGS_LABEL: "settingsLabel",
+    SETTINGS_VIEW_LABEL: "settingsViewLabel",
+    SETTINGS_VIEW_HINT: "settingsViewHint",
+    SETTINGS_VIEW_CONCISE: "settingsViewConcise",
+    SETTINGS_VIEW_FULLY_FLEDGED: "settingsViewFullyFledged",
+    SETTINGS_VIEW_ADVANCED: "settingsViewAdvanced",
     OPERATION_HISTORY_LABEL: "operationHistoryLabel",
     OPERATION_HISTORY_HINT: "operationHistoryHint",
     OPERATION_HISTORY_EMPTY: "operationHistoryEmpty",

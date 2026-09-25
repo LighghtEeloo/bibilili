@@ -1716,9 +1716,6 @@
   }
 }
 
-.bibilili-settings-body .bibilili-settings-performance-heading {
-  margin-top: 16px;
-}
 
 .bibilili-performance-status {
   margin: 0 0 6px;
@@ -1811,6 +1808,12 @@
 }
 
 .bibilili-settings-row + h3 {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bibilili-border);
+}
+
+.bibilili-settings-section {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--bibilili-border);

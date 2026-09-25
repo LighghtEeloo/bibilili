@@ -281,6 +281,22 @@
     "message": "设置",
     "description": "Label for the settings popup and its launcher."
   },
+  "settingsViewLabel": {
+    "message": "设置视图",
+    "description": "Selects how many settings are shown."
+  },
+  "settingsViewHint": {
+    "message": "简洁显示基本观看设置，完整增加其余功能设置，高级还显示性能记录。其他选项卡和已保存的设置保持不变。"
+  },
+  "settingsViewConcise": {
+    "message": "简洁"
+  },
+  "settingsViewFullyFledged": {
+    "message": "完整"
+  },
+  "settingsViewAdvanced": {
+    "message": "高级"
+  },
   "closeLabel": {
     "message": "关闭",
     "description": "Accessible label for closing a popup."
