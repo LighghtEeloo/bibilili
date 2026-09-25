@@ -225,6 +225,58 @@
     "message": "自动",
     "description": "Language option that uses page and browser language detection."
   },
+  "operationHistoryLabel": {
+    "message": "操作历史",
+    "description": "Feature toggle and settings tab for recorded operations."
+  },
+  "operationHistoryHint": {
+    "message": "在当前标签页中保留最近 100 条视频访问、直接收藏和列表移除记录，刷新页面后仍可查看。收藏和移除操作可以撤销。",
+    "description": "Explains tab-local operation history and its undo scope."
+  },
+  "operationHistoryEmpty": {
+    "message": "暂无操作记录。",
+    "description": "Empty operation history."
+  },
+  "operationHistoryVisit": {
+    "message": "已访问",
+    "description": "A video visit in operation history."
+  },
+  "operationHistoryFavorite": {
+    "message": "已收藏",
+    "description": "A direct favorite save in operation history."
+  },
+  "operationHistoryRemove": {
+    "message": "已从稍后再看移除",
+    "description": "A rail removal in operation history."
+  },
+  "operationHistoryUndo": {
+    "message": "撤销",
+    "description": "Reverses the recorded operation."
+  },
+  "operationHistoryRedo": {
+    "message": "重做",
+    "description": "Repeats a successfully undone operation."
+  },
+  "operationHistoryUndone": {
+    "message": "已撤销",
+    "description": "Feedback after undo succeeds."
+  },
+  "operationHistoryRedone": {
+    "message": "已重做",
+    "description": "Feedback after redo succeeds."
+  },
+  "operationHistoryFailed": {
+    "message": "操作失败，请重试。",
+    "description": "Fallback error beside an undo or redo button."
+  },
+  "operationHistoryAccountChanged": {
+    "message": "请登录执行此操作的账号。",
+    "description": "Undo or redo cannot mutate a different account."
+  },
+  "operationHistoryDisabled": {
+    "message": "操作历史已关闭。",
+    "description": "History was disabled while preparing a request."
+  },
   "settingsLabel": {
     "message": "设置",
     "description": "Label for the settings popup and its launcher."

@@ -52,6 +52,7 @@
         "src/content-performance.js",
         "src/content-performance-monitor.js",
         "src/content-performance-view.js",
+        "src/content-operation-history.js",
         "src/content-settings.js",
         "src/content-theme.js",
         "src/content-scheduler.js",

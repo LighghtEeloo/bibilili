@@ -135,6 +135,27 @@ function mountFixture(t) {
   return { controller, cover, document, regions, timers, frames, paintFrame, runTimers };
 }
 
+test("operation history records settled visits once and waits for navigation to finish", (t) => {
+  const { controller, document, regions } = mountFixture(t);
+  controller.operationHistory.setEnabled(true);
+  regions.player = document.createElement("div");
+  document.body.append(regions.player);
+  regions.title = "Original video";
+  controller.prepareMount();
+  controller.reconcile(false);
+  controller.reconcile(false);
+  assert.equal(controller.operationHistory.entries.length, 1);
+  global.location = new URL("https://www.bilibili.com/video/av456");
+  controller.navigation.pending = {};
+  controller.reconcile(false);
+  assert.equal(controller.operationHistory.entries.length, 1);
+  controller.navigation.pending = null;
+  regions.title = "Next video";
+  controller.reconcile(false);
+  assert.equal(controller.operationHistory.entries.length, 2);
+  assert.equal(controller.operationHistory.entries[0].title, "Next video");
+});
+
 /** Exercises real layout moves while stubbing unrelated metadata and dock UI. */
 function commentNavigationFixture(t) {
   const fixture = mountFixture(t);

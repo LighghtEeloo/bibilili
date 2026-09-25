@@ -272,7 +272,7 @@ test("direct favorites resolve BV ids and submit only an addition with the exist
   const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => ({ code: 0 }));
   const result = await store.addFavoriteItem("https://www.bilibili.com/video/BV1aa411c7mD", "101", () => true, new AbortController().signal);
   await new Promise(setImmediate);
-  assert.deepEqual(result, { aid: "123", accountId: "77", alreadySaved: false });
+  assert.deepEqual(result, { aid: "123", accountId: "77", folderId: "101", alreadySaved: false });
   const [url, body] = post.mock.calls[0].arguments;
   assert.equal(url, "https://api.bilibili.com/x/v3/fav/resource/deal");
   assert.deepEqual(Object.fromEntries(body), {
@@ -289,7 +289,7 @@ test("an already favored archive does not post even when the native star is stal
   data.favorite = { code: 0, data: { favoured: true } };
   const post = t.mock.method(AccountSourceStore, "postApiPayload", async () => { throw new Error("unexpected save"); });
   const result = await store.addFavoriteItem("https://www.bilibili.com/video/av123", "101", () => true, new AbortController().signal);
-  assert.deepEqual(result, { aid: "123", accountId: "77", alreadySaved: true });
+  assert.deepEqual(result, { aid: "123", accountId: "77", folderId: "101", alreadySaved: true });
   assert.equal(post.mock.callCount(), 0);
   assert.equal(requests.some(({ url }) => url.pathname === "/x/web-interface/view"), false);
 });

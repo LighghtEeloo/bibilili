@@ -12,11 +12,13 @@
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
   const SETTINGS_TAB_STORAGE_KEY = "bibilili:settings-tab";
   /** Closed settings tabs shared by the view and its persisted navigation state. */
-  const SettingsTab = Object.freeze({ FEATURES: "features", ACTIONS: "actions", PERFORMANCE: "performance" });
+  const SettingsTab = Object.freeze({
+    FEATURES: "features", ACTIONS: "actions", OPERATION_HISTORY: "operation_history", PERFORMANCE: "performance"
+  });
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, inPageNavigation: true,
     favoriteToSelectedFolder: true, refreshRailOnStart: true,
-    moreButton: true, performance: false
+    moreButton: true, operationHistory: false, performance: false
   });
   const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
 
@@ -506,7 +508,7 @@
   /**
    * @typedef {object} SettingsPreferenceRecord
    * @property {string | null} language Supported UI language; null uses automatic detection.
-   * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, moreButton: boolean, performance: boolean }} features Optional presentations, video switching, recording, and action behavior.
+   * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
    */

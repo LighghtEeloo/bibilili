@@ -4,6 +4,7 @@
   const { UiControl, PopupPanel } = window.__bibililiControls;
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
   const { PerformanceView, PerformanceWidget } = window.__bibililiPerformanceView;
+  const { OperationHistoryView } = window.__bibililiOperationHistory;
   const { SettingsPreference, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
 
   /**
@@ -17,6 +18,7 @@
       this.options = options;
       this.performanceView = new PerformanceView(document, options.performance);
       this.performanceWidget = new PerformanceWidget(document, options.performance);
+      this.operationHistoryView = new OperationHistoryView(document, options.operationHistory);
       this.panel = new PopupPanel(document, "bibilili-settings");
       this.tab = SettingsTabPreference.read();
       this.preferences = SettingsPreference.defaults();
@@ -81,6 +83,7 @@
       for (const [key, message] of [
         [SettingsTab.FEATURES, UiMessage.SETTINGS_FEATURES_LABEL],
         [SettingsTab.ACTIONS, UiMessage.SETTINGS_ACTION_BAR_LABEL],
+        [SettingsTab.OPERATION_HISTORY, UiMessage.OPERATION_HISTORY_LABEL],
         [SettingsTab.PERFORMANCE, UiMessage.PERFORMANCE_LABEL]
       ]) {
         const button = UiControl.button(this.document, "bibilili-settings-tab", () => this.selectTab(key));
@@ -113,7 +116,8 @@
         ["thumbnails", UiMessage.SETTINGS_THUMBNAILS_LABEL],
         ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL, UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT],
         ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT],
-        ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL]
+        ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL],
+        ["operationHistory", UiMessage.OPERATION_HISTORY_LABEL, UiMessage.OPERATION_HISTORY_HINT]
       ]) this.addPreferenceSwitch(features, "features", key, message, hint);
       features.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {
@@ -247,8 +251,9 @@
       this.panel.position();
     }
 
-    /** Performance is available only while its recording feature is enabled. */
+    /** Optional history and performance tabs follow their feature switches. */
     isTabAvailable(tab) {
+      if (tab === SettingsTab.OPERATION_HISTORY) return this.preferences.features.operationHistory;
       return tab !== SettingsTab.PERFORMANCE || this.preferences.features.performance;
     }
 
@@ -288,6 +293,13 @@
     refreshPerformance() {
       this.performanceView.mount(this.panels.get(SettingsTab.PERFORMANCE));
       this.performanceView.refresh();
+    }
+
+    /** Refreshes operation results only while their tab is visible. */
+    refreshOperationHistory() {
+      if (!this.panel.isOpen || this.tab !== SettingsTab.OPERATION_HISTORY) return;
+      this.operationHistoryView.render(this.language);
+      this.panel.position();
     }
 
     /** Reports persistence failure without undoing the current page's choices. */
@@ -335,6 +347,10 @@
         this.options.renderIcon(kind, visual);
       }
       this.status.textContent = message(this.statusKey);
+      if (this.tab === SettingsTab.OPERATION_HISTORY) {
+        this.operationHistoryView.mount(this.panels.get(SettingsTab.OPERATION_HISTORY));
+        this.operationHistoryView.render(this.language);
+      }
       this.performanceView.render(this.language);
     }
 
@@ -355,6 +371,7 @@
    * @property {() => void} onOpen Dismisses another action popup before opening settings.
    * @property {(kind: string, visual: Element) => void} renderIcon Shared action visual renderer.
    * @property {PerformanceViewOptions} performance On-demand diagnostics operations.
+   * @property {OperationHistoryViewOptions} operationHistory Recorded operations and their inverses.
    */
 
   window.__bibililiSettings = Object.freeze({ SettingsView });

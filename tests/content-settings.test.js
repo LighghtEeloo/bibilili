@@ -58,7 +58,7 @@ test("settings enable features, sources, and pins while recording defaults off",
   for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
-  assert.deepEqual(defaults.features, { description: true, thumbnails: true, inPageNavigation: true, favoriteToSelectedFolder: true, refreshRailOnStart: true, moreButton: true, performance: false });
+  assert.deepEqual(defaults.features, { description: true, thumbnails: true, inPageNavigation: true, favoriteToSelectedFolder: true, refreshRailOnStart: true, moreButton: true, operationHistory: false, performance: false });
   const value = SettingsPreference.normalize({
     features: { description: false, thumbnails: "false", inPageNavigation: "false", unknown: true },
     sources: { collection: false, history: 0 }, pinnedActions: { like: false, unknown: true }

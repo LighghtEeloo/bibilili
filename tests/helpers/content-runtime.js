@@ -75,6 +75,7 @@ function loadContentRuntime() {
   require("../../src/content-performance.js");
   require("../../src/content-performance-monitor.js");
   require("../../src/content-performance-view.js");
+  require("../../src/content-operation-history.js");
   require("../../src/content-settings.js");
   require("../../src/content-theme.js");
   require("../../src/content-scheduler.js");

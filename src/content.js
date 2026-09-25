@@ -4,6 +4,7 @@
   const { DomProbe } = window.__bibililiDom;
   const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
   const { SettingsView } = window.__bibililiSettings;
+  const { OperationHistory, OperationKind } = window.__bibililiOperationHistory;
   const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause, DiscoveryStep, DiscoveryProfile } =
     window.__bibililiPerformance;
   const { PerformanceMonitor } = window.__bibililiPerformanceMonitor;
@@ -1096,7 +1097,7 @@
   ]);
 
   /**
-   * Shared loading presentation for startup, comments, and counted actions.
+   * Shared loading presentation for startup, comments, counted actions, and operation history.
    * Callers supply text slots and placement; one indicator owns bar markup.
    */
   class LoadingView {
@@ -4264,7 +4265,7 @@
      * @param {string | null} folderId Current selection, or null to restore it on demand.
      * @param {() => boolean} canAdd
      * @param {AbortSignal} signal Cancels reads; a submitted save finishes independently.
-     * @returns {Promise<{ aid: string, accountId: string, alreadySaved: boolean } | null>}
+     * @returns {Promise<{ aid: string, accountId: string, folderId: string, alreadySaved: boolean } | null>}
      */
     async addFavoriteItem(targetUrl, folderId, canAdd, signal) {
       const identity = SourceAdapter.archiveIdentityForUrl(targetUrl);
@@ -4295,7 +4296,7 @@
       if (!current()) return null;
       const alreadySaved = await AccountSourceStore.isFavorite(aid, signal, this.performance);
       if (!current()) return null;
-      if (alreadySaved) return { aid, accountId, alreadySaved: true };
+      if (alreadySaved) return { aid, accountId, folderId, alreadySaved: true };
 
       const body = AccountSourceStore.csrfApiBody();
       body.set("rid", aid);
@@ -4315,7 +4316,36 @@
         }
         void this.loadFavoriteFolderDirectory(true);
       }
-      return { aid, accountId, alreadySaved: false };
+      return { aid, accountId, folderId, alreadySaved: false };
+    }
+
+    /**
+     * Replays one favorite membership change in its original folder.
+     * Note: Bilibili's deal endpoint adds and removes membership by folder id.
+     * @param {string} aid
+     * @param {string} folderId
+     * @param {boolean} present
+     */
+    async setFavoriteMembership(aid, folderId, present) {
+      const directory = this.favoriteFolders;
+      const body = AccountSourceStore.csrfApiBody();
+      body.set("rid", aid);
+      body.set("type", String(FAVORITE_ARCHIVE_TYPE));
+      body.set("add_media_ids", present ? folderId : "");
+      body.set("del_media_ids", present ? "" : folderId);
+      body.set("platform", "web");
+      const payload = await AccountSourceStore.postApiPayload(FAVORITE_ADD_URL, body, this.performance);
+      if (!AccountSourceStore.isSuccessfulPayload(payload)) {
+        throw new Error(typeof payload?.message === "string" && payload.message !== "0"
+          ? payload.message : UiStrings.message(UiMessage.OPERATION_HISTORY_FAILED, this.language));
+      }
+      if (this.favoriteFolders !== directory) return;
+      const record = this.favoriteRecords.get(folderId);
+      if (record) {
+        record.loaded = false;
+        void this.refreshRecord(record);
+      }
+      if (directory.requested) void this.loadFavoriteFolderDirectory(true);
     }
 
     /**
@@ -8517,7 +8547,8 @@
       ));
       if (!this.isVideoLoading && WATCH_ACTION_STATEFUL_KINDS.has(kind)) {
         const current = action ?? this.currentActions.find((candidate) => candidate.kind === kind);
-        button.setAttribute("aria-pressed", String(Boolean(current?.isActive || favorite?.saved)));
+        button.setAttribute("aria-pressed", String(Boolean(favorite?.confirmed
+          ? favorite.saved : current?.isActive || favorite?.saved)));
       } else {
         button.removeAttribute("aria-pressed");
       }
@@ -11222,6 +11253,7 @@
       }, this.performance);
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
+      this.operationHistory = new OperationHistory(() => this.settingsView?.refreshOperationHistory());
       /** @type {FavoriteActionState | null} */
       this.favoriteActionState = null;
       this.favoritesView = new FavoritesView(document, {
@@ -11248,6 +11280,11 @@
         ],
         onChange: (preferences) => this.setPreferences(preferences),
         onEnabledChange: (enabled) => this.setEnabled(enabled),
+        operationHistory: {
+          store: this.operationHistory,
+          onApply: (entry, undo) => this.applyHistoryOperation(entry, undo),
+          createLoading: () => LoadingView.create(document, { inline: true })
+        },
         performance: {
           onSnapshot: () => this.performanceSnapshot(),
           onReset: () => { this.performance.reset(); this.performanceMonitor.reset(); },
@@ -11563,6 +11600,9 @@
       }
 
       this.cancelPlayerRecovery();
+      if (!this.videoLoading.active && !this.navigation.pending) {
+        this.operationHistory.visit(window.location.href, regions.title);
+      }
       regions.sources = sources;
       const sourceRouteState = this.nextPageSourceRouteState;
       const mountedComments = this.layout.currentMountedComments();
@@ -12044,7 +12084,7 @@
       const runtimeChanged = previous.language !== this.preferences.language ||
         ["features", "sources", "pinnedActions"].some((group) =>
           Object.keys(this.preferences[group]).some((key) =>
-            !(group === "features" && (key === "performance" || key === "inPageNavigation" ||
+            !(group === "features" && (key === "performance" || key === "operationHistory" || key === "inPageNavigation" ||
               key === "refreshRailOnStart")) &&
             previous[group][key] !== this.preferences[group][key]));
       const saved = !persist || SettingsPreference.write(this.preferences);
@@ -12058,12 +12098,14 @@
 
     /** Shares one preference snapshot with layout and demand-driven stores. */
     applyFeaturePreferences() {
+      this.operationHistory.setEnabled(this.preferences.features.operationHistory);
       this.performance.setState(this.enabled, this.document.hidden);
       this.performance.setEnabled(this.preferences.features.performance);
       this.performanceMonitor.setEnabled(this.preferences.features.performance);
       this.performanceMonitor.setActive(Boolean(this.started && this.enabled && this.isWatchPage()));
       this.layout.preferences = this.preferences;
-      if (this.favoriteActionState && !this.favoriteActionState.saved &&
+      if (this.favoriteActionState && (this.favoriteActionState.pending ||
+          this.favoriteActionState.clickTimer !== null || !this.favoriteActionState.confirmed) &&
           this.favoriteActionState.directOnSingle !== this.preferences.features.favoriteToSelectedFolder) {
         this.clearFavoriteActionState();
       }
@@ -12087,7 +12129,7 @@
       }
       const previous = this.favoriteActionState;
       if (previous?.pending) return true;
-      if (previous?.saved || BibililiController.isFavoriteActionActive(action)) {
+      if (previous?.saved || (!previous?.confirmed && BibililiController.isFavoriteActionActive(action))) {
         if (previous?.saved) this.expectNativeFavoriteDialog(previous);
         else if (previous) this.clearFavoriteActionState();
         return false;
@@ -12108,7 +12150,7 @@
         pageKey: this.currentPageKey(), accountId: this.accountSources.favoriteFolders.accountId,
         targetUrl, folderId: this.accountSources.currentFavoriteFolderId(),
         directOnSingle: this.preferences.features.favoriteToSelectedFolder, clickTimer: null,
-        aid: null, pending: false, saved: false, controller: new AbortController(),
+        aid: null, pending: false, saved: false, confirmed: Boolean(previous?.confirmed), controller: new AbortController(),
         waitingForNative: false, nativeDialog: null, nativeRevision: 0
       };
       this.favoriteActionState = state;
@@ -12135,7 +12177,7 @@
         if (this.favoriteActionState === state) this.clearFavoriteActionState();
         return;
       }
-      if (!direct || BibililiController.isFavoriteActionActive(action)) {
+      if (!direct || (!state.confirmed && BibililiController.isFavoriteActionActive(action))) {
         this.clearFavoriteActionState();
         this.layout.forwardWatchAction(action);
         return;
@@ -12144,16 +12186,24 @@
       this.layout.morePanel?.close(true);
       state.pending = true;
       this.updateFavoriteActionButton();
+      const historyDetails = this.operationHistory.enabled ? {
+        targetUrl: state.targetUrl, title: this.discovery.findWatchTitle() || state.targetUrl
+      } : null;
       const canAdd = () => this.isFavoriteActionCurrent(state) &&
-        !this.layout.isVideoLoading && action.trigger.isConnected && !BibililiController.isFavoriteActionActive(action);
+        !this.layout.isVideoLoading && action.trigger.isConnected &&
+        (state.confirmed || !BibililiController.isFavoriteActionActive(action));
       void this.accountSources.addFavoriteItem(state.targetUrl, state.folderId, canAdd, state.controller.signal)
         .then((result) => {
+          if (historyDetails && result && !result.alreadySaved) {
+            this.operationHistory.record(OperationKind.FAVORITE, { ...historyDetails, ...result });
+          }
           if (!this.isFavoriteActionCurrent(state) ||
               (result && result.accountId !== this.accountSources.favoriteFolders.accountId)) return;
           if (result) {
             state.aid = result.aid;
             state.accountId = result.accountId;
             state.saved = true;
+            state.confirmed = true;
           }
           if (!this.layout.isVideoLoading && action.trigger.isConnected && (result?.alreadySaved || !result)) {
             if (state.saved) this.expectNativeFavoriteDialog(state);
@@ -12187,8 +12237,10 @@
     /** @param {FavoriteActionState} state @returns {boolean} The originating page, account, and gesture remain current. */
     isFavoriteActionCurrent(state) {
       return this.favoriteActionState === state && !state.controller.signal.aborted && this.enabled &&
-        (!state.accountId || state.accountId === this.accountSources.favoriteFolders.accountId) &&
-        (state.saved || state.directOnSingle === this.preferences.features.favoriteToSelectedFolder) &&
+        (!state.accountId || !this.accountSources.favoriteFolders.accountId ||
+          state.accountId === this.accountSources.favoriteFolders.accountId) &&
+        (state.saved || (state.confirmed && !state.pending && state.clickTimer === null) ||
+          state.directOnSingle === this.preferences.features.favoriteToSelectedFolder) &&
         this.currentPageKey() === state.pageKey && Boolean(this.layout.root?.isConnected);
     }
 
@@ -12230,7 +12282,8 @@
         return;
       }
       const action = actions.find(({ kind }) => kind === WatchActionKind.FAVORITE);
-      if (!state.pending && !state.waitingForNative && action?.isActive) {
+      if (!state.pending && !state.waitingForNative && action &&
+          (state.confirmed ? state.clickTimer === null && action.isActive === state.saved : action.isActive)) {
         this.clearFavoriteActionState();
         return;
       }
@@ -12246,7 +12299,8 @@
           if (!this.isFavoriteActionCurrent(state) || revision !== state.nativeRevision ||
               state.accountId !== this.accountSources.favoriteFolders.accountId) return;
           state.saved = saved;
-          if (!saved) this.clearFavoriteActionState();
+          state.confirmed = true;
+          if (action?.isActive === saved) this.clearFavoriteActionState();
           this.updateFavoriteActionButton();
           this.scheduleReconcile(false, ReconcilePriority.URGENT);
         }).catch(() => {});
@@ -12344,8 +12398,78 @@
      * @returns {Promise<void>}
      */
     async deleteWatchLaterItem(aid) {
+      const recording = this.operationHistory.enabled;
+      const item = this.accountSources.records.get(SourceKind.WATCH_LATER).items
+        .find((candidate) => candidate.watchLaterAid === aid);
+      const accountId = recording ? await this.operationAccountId() : null;
       await this.accountSources.deleteWatchLaterItem(aid);
+      if (recording) this.operationHistory.record(OperationKind.REMOVE, {
+        aid, accountId, targetUrl: item?.targetUrl || BilibiliRoute.videoUrl({ aid }),
+        title: item?.title || `av${aid}`
+      });
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
+    }
+
+    /** Verifies the signed-in account before recording or reversing an account operation. */
+    async operationAccountId(expected = null) {
+      const payload = await AccountSourceStore.fetchApiPayload(ACCOUNT_NAV_URL, undefined, this.performance);
+      const accountId = FavoriteFolderPreference.normalizeId(payload?.data?.mid);
+      if (payload?.code !== 0 || payload.data?.isLogin !== true || !accountId ||
+          (expected && accountId !== expected)) {
+        throw new Error(UiStrings.message(UiMessage.OPERATION_HISTORY_ACCOUNT_CHANGED, this.uiLanguage));
+      }
+      return accountId;
+    }
+
+    /**
+     * Applies undo or redo to the original account target without creating another history entry.
+     * @param {OperationHistoryEntry} entry
+     * @param {boolean} undo
+     */
+    async applyHistoryOperation(entry, undo) {
+      await this.operationAccountId(entry.accountId);
+      if (!this.operationHistory.enabled) {
+        throw new Error(UiStrings.message(UiMessage.OPERATION_HISTORY_DISABLED, this.uiLanguage));
+      }
+      if (entry.kind === OperationKind.FAVORITE) {
+        await this.accountSources.setFavoriteMembership(entry.aid, entry.folderId, !undo);
+        await this.syncHistoryFavoriteAction(entry, !undo);
+      } else if (entry.kind === OperationKind.REMOVE) {
+        if (undo) {
+          await this.accountSources.addWatchLaterItem(BilibiliRoute.videoUrl({ aid: entry.aid }), this.uiLanguage);
+        } else {
+          await this.accountSources.deleteWatchLaterItem(entry.aid);
+        }
+      } else {
+        throw new Error("Unknown reversible operation");
+      }
+      this.scheduleReconcile(false, ReconcilePriority.URGENT);
+    }
+
+    /** Keeps the current extension star consistent with a completed history operation. */
+    async syncHistoryFavoriteAction(entry, saved) {
+      const pageKey = this.currentPageKey();
+      if (!this.enabled || this.layout.isVideoLoading ||
+          (this.favoriteActionState?.aid !== entry.aid &&
+            BilibiliRoute.playableIdentityForUrl(window.location.href) !==
+              BilibiliRoute.playableIdentityForUrl(entry.targetUrl))) return;
+      if (!saved) {
+        try {
+          // Another native save may have added the archive to a different folder.
+          saved = await AccountSourceStore.isFavorite(entry.aid, undefined, this.performance);
+        } catch (_error) {
+          // The membership mutation already succeeded; a status read cannot undo it.
+        }
+      }
+      if (!this.enabled || this.layout.isVideoLoading || this.currentPageKey() !== pageKey) return;
+      this.clearFavoriteActionState();
+      this.favoriteActionState = {
+        pageKey, targetUrl: entry.targetUrl, accountId: entry.accountId, folderId: entry.folderId,
+        directOnSingle: this.preferences.features.favoriteToSelectedFolder, clickTimer: null,
+        aid: entry.aid, pending: false, saved, confirmed: true, controller: new AbortController(),
+        waitingForNative: false, nativeDialog: null, nativeRevision: 0
+      };
+      this.updateFavoriteActionButton();
     }
 
     /**
@@ -12497,6 +12621,7 @@
    * @property {string | null} aid Resolved archive id after a successful check or save.
    * @property {boolean} pending Disables duplicate direct saves.
    * @property {boolean} saved Confirmed favorite state until native state catches up.
+   * @property {boolean} confirmed Whether the API result also overrides a stale native active star.
    * @property {AbortController} controller Cancels preparatory and status reads.
    * @property {boolean} waitingForNative A native dialog has been requested.
    * @property {Element | null} nativeDialog Observed page-owned dialog.

@@ -225,6 +225,58 @@
     "message": "Automatic",
     "description": "Language option that uses page and browser language detection."
   },
+  "operationHistoryLabel": {
+    "message": "Operation history",
+    "description": "Feature toggle and settings tab for recorded operations."
+  },
+  "operationHistoryHint": {
+    "message": "Keep the last 100 video visits, direct favorite saves, and rail removals in this tab across page loads. Favorites and removals can be undone.",
+    "description": "Explains tab-local operation history and its undo scope."
+  },
+  "operationHistoryEmpty": {
+    "message": "No operations recorded yet.",
+    "description": "Empty operation history."
+  },
+  "operationHistoryVisit": {
+    "message": "Visited",
+    "description": "A video visit in operation history."
+  },
+  "operationHistoryFavorite": {
+    "message": "Favorited",
+    "description": "A direct favorite save in operation history."
+  },
+  "operationHistoryRemove": {
+    "message": "Removed from Watch later",
+    "description": "A rail removal in operation history."
+  },
+  "operationHistoryUndo": {
+    "message": "Undo",
+    "description": "Reverses the recorded operation."
+  },
+  "operationHistoryRedo": {
+    "message": "Redo",
+    "description": "Repeats a successfully undone operation."
+  },
+  "operationHistoryUndone": {
+    "message": "Undone",
+    "description": "Feedback after undo succeeds."
+  },
+  "operationHistoryRedone": {
+    "message": "Redone",
+    "description": "Feedback after redo succeeds."
+  },
+  "operationHistoryFailed": {
+    "message": "Operation failed. Try again.",
+    "description": "Fallback error beside an undo or redo button."
+  },
+  "operationHistoryAccountChanged": {
+    "message": "Sign in to the account that performed this operation.",
+    "description": "Undo or redo cannot mutate a different account."
+  },
+  "operationHistoryDisabled": {
+    "message": "Operation history is turned off.",
+    "description": "History was disabled while preparing a request."
+  },
   "settingsLabel": {
     "message": "Settings",
     "description": "Label for the settings popup and its launcher."

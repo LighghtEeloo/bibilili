@@ -22,6 +22,8 @@ width, navigation-origin, source-route state, and the last favorite folder per
 account. `src/content-controls.js` defines shared controls, expandable search,
 extension icon paths, and popup positioning and focus.
 `src/content-favorites.js` owns the favorite-folder picker.
+`src/content-operation-history.js` retains tab-local operation records and
+renders their undo and redo controls in Settings.
 `src/content-performance.js` aggregates runtime measurements in fixed-size
 records for each document. `src/content-performance-monitor.js` records bounded
 diagnostic events and retains a trace across page loads.
@@ -81,7 +83,8 @@ account list DOM.
 
 Bibilili may add and remove watch-later account records through Bilibili's
 account API. The current-video favorite action may add an unsaved archive to the
-selected favorite folder. These operations are account-list mutations.
+selected favorite folder. Operation history can reverse and repeat these
+favorite saves and rail removals. These operations are account-list mutations.
 
 Bibilili hands archive card navigation to Bilibili's native player API when
 in-page switching is enabled. Otherwise, card links load a new document. The
@@ -174,16 +177,19 @@ storage is available. Storage events apply changes to other open Bilibili tabs.
 Settings manages extension preferences on the watch page. Its button follows
 the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
-with Features, Action bar, and Performance tabs. It remembers the last selected
-tab across videos and page reloads in origin-local storage. Features is the initial tab
-when no valid selection is saved. Tab selection is stored independently of
+with Features, Action bar, Operation history, and Performance tabs. Operation
+history and Performance appear while their respective features are enabled.
+Settings remembers the last selected tab across videos and page reloads in
+origin-local storage. Features is the initial tab when no valid selection is
+saved. Tab selection is stored independently of
 feature preferences and is retained when restoring defaults.
 
 Features begins with the UI language selector. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
 enrichment, in-page video switching, single-click favorite saves, rail refresh on return
-to start, each video source, and performance recording. These features default to
-enabled except performance recording, which defaults to off.
+to start, each video source, operation history, and performance recording. These
+features default to enabled except operation history and performance recording,
+which default to off.
 
 Disabling the description restores its native node and removes its extension
 presentation.
@@ -224,6 +230,35 @@ positioning, outside-click dismissal, Escape handling, and focus return to
 their launcher. Their keyboard events stay
 within extension controls. The settings popup remains available while the
 layout is disabled. Popups are excluded from native DOM discovery.
+
+## Operation History
+
+Operation history records video visits, successful direct favorite saves, and
+successful Watch later rail removals. Its Settings tab precedes Performance.
+Each record contains the original video title, watch URL, operation kind, and
+completion time. Account mutations also retain the account and archive ids;
+favorite saves retain the destination folder id.
+
+The history retains the newest 100 records in tab-local session storage across
+page loads. Records appear newest first. Visits are recorded after navigation
+settles and a watch title is available; ordinary reconciliation does not repeat
+them. Failed operations and attempts to favorite an already saved archive do not
+create records. Disabling the feature stops capture, hides its tab, and retains
+existing records. Disabling a selected history tab returns Settings to Features.
+
+Favorite saves and rail removals expose Undo. Undo removes a favorite from its
+original folder or adds a removed archive back to Watch later. Redo reapplies
+the original operation. Each request verifies the original account before
+submitting a mutation. Undo and redo update the same history record and refresh
+the affected account source. Restoring a Watch later item uses Bilibili's normal
+add order.
+
+One history mutation runs at a time. Its row uses the shared loading bar and
+disables mutation buttons while pending. Success shows a green checkmark and
+switches Undo to Redo or Redo to Undo. Failure shows the request error beside the
+unchanged retry button. A submitted mutation finishes if the history view closes
+or the feature is disabled. Its completed state remains available when history
+reopens.
 
 ## Runtime Measurements
 
@@ -610,7 +645,8 @@ and add-to-watch-later controls.
 The selected folder is also the destination for direct saves from the
 current-video star. Its selection remains current when the rail is closed,
 another source is shown, or the Favorites source is disabled. Native favorite
-controls own removals and folder management.
+controls own folder management. Operation history can undo a direct save from
+its original folder.
 
 ## Video Item
 
