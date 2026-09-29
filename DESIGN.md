@@ -161,8 +161,9 @@ locations, removes the layout root, and leaves the floating activation control
 mounted. Enabling Bibilili starts or retries a transformed page session.
 
 The off state stops page mutation observation, URL polling, media-load
-observation, account-list loading, and preview demand. Settings and event-based
-activation remain available. Enabling samples the current route before mounting.
+observation, watch-later request observation, account-list loading, and preview
+demand. Settings and event-based activation remain available. Enabling samples
+the current route before mounting.
 
 Activation applies through an urgent reconciliation request after the current
 input task when the player region is available. The layout mounts independently
@@ -616,6 +617,18 @@ derive a to-view add identity from their archive target URL. A successful card
 addition refreshes watch later at its current expansion depth and hides the
 card add control for that target during the current layout session. The current
 watch action remains available after a successful addition.
+
+While the watch-later source is enabled on an active watch page, a resource
+observer detects completions of fetch and XMLHttpRequest calls to the to-view
+add endpoint. Each completion signals a possible account change. The source
+refreshes through its list endpoint at the retained expansion depth. Observation
+continues in hidden tabs and uses no polling or historical resource replay.
+
+Completions newer than an in-flight list request coalesce into one follow-up
+refresh. Extension-owned additions supply their own refresh on success. Delayed
+resource events already covered by a newer list request require no further
+refresh. Disabling observation clears pending follow-up work. Browsers without
+resource observation retain explicit additions and manual list refreshes.
 
 ## Favorite Folders
 

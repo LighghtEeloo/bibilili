@@ -19,7 +19,7 @@ function activityFixture(t, { enabled = true, hidden = false } = {}) {
   };
   const previous = Object.fromEntries([
     "location", "localStorage", "sessionStorage", "MutationObserver", "matchMedia",
-    "addEventListener", "removeEventListener"
+    "addEventListener", "removeEventListener", "PerformanceObserver"
   ].map((key) => [key, global[key]]));
   Object.assign(global, {
     location: new URL(TEST_WATCH_HREF),
@@ -27,6 +27,12 @@ function activityFixture(t, { enabled = true, hidden = false } = {}) {
     addEventListener: add, removeEventListener: remove,
     matchMedia: () => ({ addEventListener: add, removeEventListener: remove }),
     MutationObserver: class {
+      constructor(callback) { this.callback = callback; }
+      observe() { this.connected = true; }
+      disconnect() { this.connected = false; }
+    },
+    PerformanceObserver: class {
+      static supportedEntryTypes = ["resource"];
       constructor(callback) { this.callback = callback; }
       observe() { this.connected = true; }
       disconnect() { this.connected = false; }
@@ -69,6 +75,7 @@ test("off startup leaves polling, page observation, media, and account loading s
   const { controller, timers, intervals, listeners } = activityFixture(t, { enabled: false });
   controller.start();
   assert.equal(controller.observer, null);
+  assert.equal(controller.accountSources.watchLaterObserver, null);
   assert.equal(intervals.size, 0);
   assert.equal(controller.settlingTimers.length, 0);
   assert.equal(controller.navigation.start.mock.callCount(), 0);
@@ -83,11 +90,14 @@ test("switching off stops recurring work and reactivation samples the current ro
   const { controller, timers, intervals, listeners } = activityFixture(t);
   controller.start();
   const observer = controller.observer;
+  const watchLaterObserver = controller.accountSources.watchLaterObserver;
   assert.equal(intervals.size, 1);
   assert.equal(listeners.get("loadstart").size, 1);
   controller.setEnabled(false, false);
   assert.equal(observer.connected, false);
   assert.equal(controller.observer, null);
+  assert.equal(watchLaterObserver.connected, false);
+  assert.equal(controller.accountSources.watchLaterObserver, null);
   assert.equal(intervals.size, 0);
   assert.equal(timers.size, 0);
   assert.equal(listeners.get("loadstart").size, 0);
@@ -98,11 +108,46 @@ test("switching off stops recurring work and reactivation samples the current ro
   controller.setEnabled(true, false);
   assert.equal(controller.pageKey, "video:av222:p1");
   assert.equal(controller.observer.connected, true);
+  assert.equal(controller.accountSources.watchLaterObserver.connected, true);
   assert.equal(intervals.size, 1);
   assert.equal(controller.reconcileScheduler.pendingResetSourceRoute, true);
   controller.updateRuntimeActivity();
   assert.equal(intervals.size, 1, "resuming does not duplicate polling");
   assert.equal(listeners.get("loadstart").size, 1);
+});
+
+test("watch-later observation follows source preferences and watch routes while remaining active in hidden tabs", (t) => {
+  const { controller, visibility, intervals } = activityFixture(t);
+  controller.start();
+  const first = controller.accountSources.watchLaterObserver;
+  visibility(true);
+  visibility(false);
+  assert.equal(controller.accountSources.watchLaterObserver, first);
+  assert.equal(first.connected, true);
+  assert.equal(intervals.size, 1, "resource observation adds no polling");
+
+  controller.setPreferences({ ...controller.preferences,
+    sources: { ...controller.preferences.sources, [SourceKind.WATCH_LATER]: false } }, false);
+  assert.equal(first.connected, false);
+  assert.equal(controller.accountSources.watchLaterObserver, null);
+  controller.setPreferences({ ...controller.preferences,
+    sources: { ...controller.preferences.sources, [SourceKind.WATCH_LATER]: true } }, false);
+  const resumed = controller.accountSources.watchLaterObserver;
+  assert.equal(resumed.connected, true);
+  global.location = new URL("https://www.bilibili.com/video/av222");
+  controller.handlePotentialNavigation();
+  assert.equal(controller.accountSources.watchLaterObserver, resumed);
+  global.location = new URL("https://www.bilibili.com/");
+  controller.handlePotentialNavigation();
+  assert.equal(resumed.connected, false);
+  assert.equal(controller.accountSources.watchLaterObserver, null);
+  global.location = new URL(TEST_WATCH_HREF);
+  controller.handlePotentialNavigation();
+  const returned = controller.accountSources.watchLaterObserver;
+  assert.equal(returned.connected, true);
+  controller.stop();
+  assert.equal(returned.connected, false);
+  assert.equal(controller.accountSources.watchLaterObserver, null);
 });
 
 test("hidden pages reconcile mutations and detect navigation before returning", (t) => {

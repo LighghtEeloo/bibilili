@@ -3664,6 +3664,8 @@
       this.favoriteRecords = new Map();
       /** @type {FavoriteFolderDirectory | null} Owned folders and directory request state. */
       this.favoriteFolders = null;
+      /** @type {PerformanceObserver | null} Current-document watch-later additions. */
+      this.watchLaterObserver = null;
       this.language = null;
       this.stop();
     }
@@ -3780,6 +3782,60 @@
         if (kind === SourceKind.FAVORITES && !this.favoriteActionsEnabled) this.cancelFavoriteFolderRequest();
       }
       this.enabledKinds = enabled;
+      if (!enabled.has(SourceKind.WATCH_LATER)) this.setWatchLaterObservationActive(false);
+    }
+
+    /**
+     * Observes new add-request completions while the watch-later source is active.
+     * Note: Bilibili's native controls use the same to-view add endpoint as the dock.
+     * Resource timing signals possible changes; the list response supplies account state.
+     * @param {boolean} active
+     */
+    setWatchLaterObservationActive(active) {
+      if (!active || !this.enabledKinds.has(SourceKind.WATCH_LATER)) {
+        this.watchLaterObserver?.disconnect();
+        this.watchLaterObserver = null;
+        const changes = this.records.get(SourceKind.WATCH_LATER)?.watchLaterChanges;
+        if (changes) changes.pendingRefresh = false;
+        return;
+      }
+      if (this.watchLaterObserver ||
+          !window.PerformanceObserver?.supportedEntryTypes?.includes("resource")) return;
+      const observer = new window.PerformanceObserver((list) => {
+        if (this.watchLaterObserver !== observer) return;
+        this.handleWatchLaterResources(list.getEntries());
+      });
+      this.watchLaterObserver = observer;
+      observer.observe({ type: "resource" });
+    }
+
+    /**
+     * Coalesces add completions newer than the latest list request into one refresh.
+     * Request timestamps also absorb delayed events from extension-owned additions.
+     * @param {PerformanceResourceTiming[]} entries
+     */
+    handleWatchLaterResources(entries) {
+      const record = this.records.get(SourceKind.WATCH_LATER);
+      const changes = record.watchLaterChanges;
+      if (!entries.some((entry) =>
+        (entry.initiatorType === "fetch" || entry.initiatorType === "xmlhttprequest") &&
+        entry.name.split(/[?#]/u, 1)[0] === WATCH_LATER_ADD_URL &&
+        entry.responseEnd > changes.refreshStartedAt
+      )) return;
+      changes.pendingRefresh = true;
+      void this.refreshPendingWatchLaterChanges(record);
+    }
+
+    /**
+     * Runs one pending refresh after list loading and extension additions settle.
+     * @param {AccountSourceRecord} record
+     * @returns {Promise<void>}
+     */
+    async refreshPendingWatchLaterChanges(record) {
+      if (!this.watchLaterObserver || this.records.get(SourceKind.WATCH_LATER) !== record ||
+          !record.watchLaterChanges.pendingRefresh || record.watchLaterChanges.pendingAdditions ||
+          record.controller) return;
+      await this.refreshSource(SourceKind.WATCH_LATER);
     }
 
     /**
@@ -3815,16 +3871,23 @@
       }
 
       const records = this.records;
-      await AccountSourceStore.addWatchLaterApiItem(identity, this.performance);
+      const record = records.get(SourceKind.WATCH_LATER);
+      record.watchLaterChanges.pendingAdditions += 1;
+      try {
+        await AccountSourceStore.addWatchLaterApiItem(identity, this.performance);
 
-      if (records !== this.records) {
-        return;
-      }
+        if (records !== this.records) {
+          return;
+        }
 
-      if (this.language !== UiStrings.normalizeLanguage(language)) {
-        await this.refresh(language);
-      } else {
-        await this.refreshSource(SourceKind.WATCH_LATER);
+        if (this.language !== UiStrings.normalizeLanguage(language)) {
+          await this.refresh(language);
+        } else {
+          await this.refreshSource(SourceKind.WATCH_LATER);
+        }
+      } finally {
+        record.watchLaterChanges.pendingAdditions -= 1;
+        await this.refreshPendingWatchLaterChanges(record);
       }
     }
 
@@ -3904,8 +3967,10 @@
       const normalizedLanguage = UiStrings.normalizeLanguage(language);
 
       if (this.language !== normalizedLanguage) {
+        const observingWatchLater = this.watchLaterObserver !== null;
         this.stop();
         this.language = normalizedLanguage;
+        this.setWatchLaterObservationActive(observingWatchLater);
       }
 
       await Promise.all(ACCOUNT_SOURCE_ORDER.map((kind) => {
@@ -3944,6 +4009,10 @@
       if (!this.enabledKinds.has(kind)) return;
       const controller = this.beginRequest(record);
       const url = AccountSourceStore.sourceUrl(record);
+      if (record.watchLaterChanges) {
+        record.watchLaterChanges.refreshStartedAt = window.performance.now();
+        record.watchLaterChanges.pendingRefresh = false;
+      }
 
       try {
         const result = await AccountSourceStore.fetchSourceRecord(
@@ -3967,6 +4036,7 @@
           record.loaded = true;
           record.controller = null;
           this.onChange();
+          if (record.watchLaterChanges) await this.refreshPendingWatchLaterChanges(record);
         }
       }
     }
@@ -4072,6 +4142,7 @@
      * Cancels account work and resets the retained lists and expansion state.
      */
     stop() {
+      this.setWatchLaterObservationActive(false);
       for (const record of this.records.values()) {
         record.controller?.abort();
       }
@@ -4094,6 +4165,8 @@
         visibleCount: kind === SourceKind.WATCH_LATER ? ACCOUNT_WATCH_LATER_INITIAL_SIZE
           : kind === SourceKind.FAVORITES ? ACCOUNT_FAVORITES_PAGE_SIZE : ACCOUNT_HISTORY_PAGE_SIZE,
         cursor: null, cursorKeys: new Set(), watchLaterCount: null,
+        watchLaterChanges: kind === SourceKind.WATCH_LATER
+          ? { refreshStartedAt: -1, pendingRefresh: false, pendingAdditions: 0 } : null,
         loaded: false, status: AccountSourceStatus.READY, controller: null
       };
     }
@@ -11786,6 +11859,7 @@
       this.performance.setState(this.enabled, this.document.hidden);
       if (!this.started) return;
       this.performanceMonitor.setActive(this.enabled && this.isWatchPage());
+      this.updateWatchLaterObservation();
       if (this.enabled) {
         this.navigation.start();
         this.videoLoading.start();
@@ -11813,6 +11887,13 @@
       this.videoPreviews.setDemand([]);
       this.navigation.stop();
       this.videoLoading.stop();
+    }
+
+    /** Observes account additions only on active watch pages with Watch later enabled. */
+    updateWatchLaterObservation() {
+      this.accountSources.setWatchLaterObservationActive(
+        Boolean(this.started && this.enabled && this.isWatchPage())
+      );
     }
 
     /** Updates loading presentation on visibility changes and resamples returning pages. */
@@ -11858,6 +11939,7 @@
       this.performanceMonitor.finishWaiting("route_change");
       this.performanceMonitor.event("route_change");
       this.performanceMonitor.setActive(this.enabled && this.isWatchPage());
+      this.updateWatchLaterObservation();
       this.lazyPrimer.stop(false);
       this.clearFavoriteActionState();
       this.cancelPlayerRecovery();
@@ -12116,6 +12198,7 @@
       this.videoPreviews.setEnabled(this.preferences.features.thumbnails);
       this.accountSources.setFavoriteActionsEnabled(this.enabled);
       this.accountSources.setEnabledKinds(ACCOUNT_SOURCE_ORDER.filter((kind) => this.preferences.sources[kind]));
+      this.updateWatchLaterObservation();
     }
 
     /**
@@ -12681,9 +12764,17 @@
    * @property {HistoryCursor | number | null} cursor Next history cursor or favorite page.
    * @property {Set<string>} cursorKeys Successfully consumed account continuations.
    * @property {number | null} watchLaterCount Full watch-later count when available.
+   * @property {WatchLaterChanges | null} watchLaterChanges Add observation and refresh state.
    * @property {boolean} loaded Initial load completed, including advisory failure.
    * @property {string} status Closed AccountSourceStatus value.
    * @property {AbortController | null} controller Current source request.
+   */
+
+  /**
+   * @typedef {object} WatchLaterChanges
+   * @property {number} refreshStartedAt Latest list-request time in the document performance timeline.
+   * @property {boolean} pendingRefresh An observed addition needs a newer list request.
+   * @property {number} pendingAdditions Extension additions that will refresh on success.
    */
 
   /**
