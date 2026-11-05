@@ -552,7 +552,9 @@ provides folder selection and account recovery when no videos are loaded.
 A parts source is the ordered page list within the current archive. Each item
 targets the current BV or AV with its one-based `p` route. Native part labels
 may be short values such as `1`. Bibilili derives parts from explicit multipage
-links or the nested page rows in Bilibili's video-pod.
+links, standalone multipart rows, or nested page rows in Bilibili's video-pod.
+Standalone multipart rows carry CID keys; their list order supplies the page
+number.
 
 A collection source is an ordered list of distinct playable archives. Its items
 target separate BV or AV routes. Nested part rows do not become collection

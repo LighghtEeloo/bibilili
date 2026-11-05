@@ -293,6 +293,8 @@
     ".multip-list-item"
   ].join(",");
 
+  const VIDEO_POD_MULTIPART_LIST_SELECTOR = ".video-pod__list.multip";
+
   const CURRENT_SOURCE_ITEM_ATTR_SELECTOR = [
     "[aria-current='page']",
     "[aria-current='true']",
@@ -870,7 +872,7 @@
       kind: SourceKind.PARTS,
       selectors: [
         "#multi_page",
-        // Note: Bilibili nests the current archive's part rows in video-pod.
+        // Note: Bilibili uses video-pod for both flat and nested part rows.
         VIDEO_POD_SELECTOR
       ],
       pattern: /(?:\u5206P|\u5206\u96c6|\u9009\u96c6|parts?)/i
@@ -2146,11 +2148,10 @@
     }
 
     /**
-     * Finds the current archive's nested page rows in a video-pod.
+     * Finds the current archive's flat or nested page rows in a video-pod.
      *
-     * Note: Bilibili places every page row below one archive element carrying
-     * the BV id. Those rows remain distinct part targets even though the archive
-     * ancestor is itself a playable data target.
+     * Note: Standalone multipart videos use a flat multip list with CID data
+     * keys. Collections nest page rows below an archive carrying the BV id.
      *
      * @param {Element} root
      * @param {SourceDiscoveryPass | null} [scan]
@@ -2160,12 +2161,32 @@
       const archive = SourceAdapter.currentVideoPodArchiveTarget(root, scan);
 
       if (!archive) {
-        return [];
+        return SourceAdapter.flatVideoPodPartTargetsIn(root);
       }
 
       return DomProbe.queryAll(archive, VIDEO_PART_ITEM_SELECTOR)
         .filter((target) => !DomProbe.isOwned(target))
         .filter((target) => !target.querySelector(VIDEO_PART_ITEM_SELECTOR))
+        .filter((target) => Boolean(DomProbe.compactText(target)));
+    }
+
+    /**
+     * Reads standalone multipart rows in native page order.
+     *
+     * Note: Numeric data-key values here are CIDs, not archive ids or page
+     * numbers. The row index supplies the one-based p route. The multip marker
+     * distinguishes these rows from collection archives with similar classes.
+     *
+     * @param {Element} root
+     * @returns {Element[]}
+     */
+    static flatVideoPodPartTargetsIn(root) {
+      return DomProbe.queryAll(root, VIDEO_POD_MULTIPART_LIST_SELECTOR)
+        .filter((list) => !list.closest(VIDEO_POD_ARCHIVE_ITEM_SELECTOR))
+        .flatMap((list) => Array.from(list.children))
+        .filter((target) => target.matches(VIDEO_POD_ARCHIVE_ITEM_SELECTOR))
+        .filter((target) => !DomProbe.isOwned(target))
+        .filter((target) => !SourceAdapter.hasNestedVideoPodItem(target))
         .filter((target) => Boolean(DomProbe.compactText(target)));
     }
 

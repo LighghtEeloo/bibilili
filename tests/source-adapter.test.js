@@ -191,6 +191,24 @@ function videoPodDocument(...archives) {
   };
 }
 
+/** Mirrors the standalone multipart pod observed on BV1TwHL6CEL9. */
+function flatMultipartDocument(count = 18) {
+  const list = new FakeElement({}, { className: "video-pod__list multip list" });
+  for (let index = 0; index < count; index += 1) {
+    const row = new FakeElement(
+      { "data-key": String(43034609689 + index) },
+      { className: `simple-base-item video-pod__item normal${index === 0 ? " active" : ""}` }
+    );
+    const title = index < 10 ? String(index + 1) : `第二季${index - 9}`;
+    row.append(
+      new FakeElement({ title }, { className: "title", text: title }),
+      new FakeElement({}, { className: "stat-item duration", text: index === 1 ? "30:30" : "30:55" })
+    );
+    list.append(row);
+  }
+  return { ...videoPodDocument(list), list };
+}
+
 function recommendationCard(id, title = `Video ${id}`) {
   const card = new FakeElement({}, { className: "video-page-card-small recommend-video-card" });
   card.append(
@@ -434,6 +452,58 @@ test("extracts nested video-pod pages as a separate parts source", () => {
       }
     ]
   );
+});
+
+test("discovers all 18 flat CID-keyed multipart rows without a collection source", (t) => {
+  const previousHref = global.location.href;
+  t.after(() => { global.location.href = previousHref; });
+  global.location.href = "https://www.bilibili.com/video/BV1TwHL6CEL9?p=4";
+  const { document } = flatMultipartDocument();
+  const sources = new RegionDiscovery(document).findSources();
+
+  assert.deepEqual(sources.map((source) => source.kind), [SourceKind.PARTS]);
+  assert.equal(sources[0].items.length, 18);
+  assert.deepEqual(sources[0].items.map((item) => item.targetUrl),
+    Array.from({ length: 18 }, (_, index) => `https://www.bilibili.com/video/BV1TwHL6CEL9?p=${index + 1}`));
+  assert.deepEqual(sources[0].items.map((item) => item.title),
+    Array.from({ length: 18 }, (_, index) => index < 10 ? String(index + 1) : `第二季${index - 9}`));
+  assert.equal(sources[0].items[0].duration, "30:55");
+  assert.equal(sources[0].items[1].duration, "30:30");
+});
+
+test("flat multipart discovery refreshes lazy rows and survives page navigation", (t) => {
+  const previousHref = global.location.href;
+  t.after(() => { global.location.href = previousHref; });
+  const { document, list } = flatMultipartDocument(1);
+  const discovery = new RegionDiscovery(document);
+  assert.deepEqual(discovery.findSources(), [], "one part does not expose a source button");
+
+  const next = flatMultipartDocument(2).list.children[1];
+  list.append(next);
+  assert.equal(discovery.findSources()[0].items.length, 2);
+
+  global.location.href = `${previousHref}?p=2`;
+  list.children[0].className = "simple-base-item video-pod__item normal";
+  next.className += " active";
+  assert.deepEqual(discovery.findSources()[0].items.map((item) => item.targetUrl),
+    [`${previousHref}?p=1`, `${previousHref}?p=2`]);
+});
+
+test("flat multipart extraction requires the native multip list marker", () => {
+  const { root, list } = flatMultipartDocument(2);
+  list.className = "video-pod__list";
+  assert.deepEqual(new SourceAdapter(SourceKind.PARTS, root).extractItems(), []);
+  assert.deepEqual(new SourceAdapter(SourceKind.COLLECTION, root).extractItems(), []);
+});
+
+test("flat multipart rows nested under another archive do not become current parts", () => {
+  const { list } = flatMultipartDocument(2);
+  const { root } = videoPodDocument(
+    archiveElement("BV1xx411c7mD", "Other video", [list]),
+    archiveElement("BV1yy411c7mD", "Another video")
+  );
+  assert.deepEqual(new SourceAdapter(SourceKind.PARTS, root).extractItems(), []);
+  assert.equal(new SourceAdapter(SourceKind.COLLECTION, root).extractItems().length, 2);
 });
 
 test("keeps parts before a navigable multi-video collection", () => {
