@@ -20,6 +20,10 @@ function wheelEvent(overrides = {}) {
   };
 }
 
+function flushAsync() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 test("vertical wheel input scrolls the rail in both directions and normalizes units", () => {
   const { layout, source, rail } = railFixture(LayoutRoot, 80);
   layout.renderRail(source, true);
@@ -126,6 +130,7 @@ test("rail geometry centers directly and minimally reveals keyboard targets", ()
 test("large rails create only window cards and preserve full scrolling width", () => {
   const fixture = railFixture(LayoutRoot, 10000);
   const { layout, rail, source, card, cards, demands } = fixture;
+  layout.preferences.features.silentRailLoading = false;
   layout.renderRail(source, true);
   assert.equal(cards().length, 8);
   assert.equal(card(0).style.left, "0px");
@@ -137,6 +142,209 @@ test("large rails create only window cards and preserve full scrolling width", (
   assert.equal(card(5000).style.left, "1000000px");
   assert.equal(demands.at(-1)[0], source.items[5000]);
   assert.ok(demands.at(-1).every((item) => source.items.indexOf(item) >= 4997));
+});
+
+test("silent loading renders a skeleton sentinel instead of Show more", () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.renderRail(source, true);
+  const tail = rail.querySelector(".bibilili-source-tail");
+  assert.ok(tail);
+  assert.equal(tail.dataset.bibililiRailSentinel, "true");
+  assert.equal(tail.dataset.state, "ready");
+  assert.equal(tail.disabled, true);
+  assert.equal(tail.style.left, "16000px");
+  assert.ok(tail.querySelector(".bibilili-source-tail-skeleton"));
+  assert.equal(rail.querySelector(".bibilili-source-more-button"), null);
+
+  layout.renderRail({ ...source, pagination: { hasMore: false, status: "ready" } }, true);
+  assert.equal(rail.querySelector(".bibilili-source-tail"), null);
+});
+
+test("silent loading requests one continuation near the tail", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  const calls = [];
+  let resolveRequest;
+  const pending = new Promise((resolve) => { resolveRequest = resolve; });
+  layout.onSourceMore = (kind) => {
+    calls.push(kind);
+    return pending;
+  };
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.deepEqual(calls, [SourceKind.HISTORY]);
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(calls.length, 1);
+  resolveRequest();
+  await pending;
+  await flushAsync();
+  assert.equal(layout.railAutoLoadKey, null);
+});
+
+test("a silent continuation without new cards falls back to Show more", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  let calls = 0;
+  layout.onSourceMore = async () => {
+    calls += 1;
+    return 80;
+  };
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(layout.railAutoLoadStalledKey, SourceKind.HISTORY);
+
+  layout.renderRailWindow();
+  assert.equal(rail.querySelector(".bibilili-source-tail"), null);
+  assert.ok(fixture.more());
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(calls, 1);
+});
+
+test("a silent continuation that adds cards keeps the skeleton tail", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.onSourceMore = async () => 81;
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(layout.railAutoLoadStalledKey, null);
+  assert.ok(rail.querySelector(".bibilili-source-tail"));
+  assert.equal(rail.querySelector(".bibilili-source-more-button"), null);
+});
+
+test("switching sources resets a stalled silent continuation", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.onSourceMore = async () => 80;
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(layout.railAutoLoadStalledKey, SourceKind.HISTORY);
+
+  layout.renderRail({ ...source, kind: SourceKind.WATCH_LATER }, true);
+  assert.equal(layout.railAutoLoadStalledKey, null);
+});
+
+test("manual progress clears a stalled silent continuation", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.onSourceMore = async () => 80;
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(layout.railAutoLoadStalledKey, SourceKind.HISTORY);
+
+  layout.renderRailWindow();
+  const button = fixture.more();
+  layout.onSourceMore = async () => 90;
+  await layout.handleSourceMoreClick(SourceKind.HISTORY, button, { detail: 1 });
+  assert.equal(layout.railAutoLoadStalledKey, null);
+  layout.renderRailWindow();
+  assert.ok(rail.querySelector(".bibilili-source-tail"));
+  assert.equal(rail.querySelector(".bibilili-source-more-button"), null);
+});
+
+test("silent loading waits while the visible window is far from the tail", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, source } = fixture;
+  const calls = [];
+  layout.onSourceMore = async (kind) => { calls.push(kind); };
+  layout.renderRail(source, true);
+  await flushAsync();
+  assert.deepEqual(calls, []);
+  assert.equal(layout.railAutoLoadKey, null);
+});
+
+test("a closed rail does not start silent loading", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  const calls = [];
+  layout.onSourceMore = async (kind) => { calls.push(kind); };
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.isRailOpen = false;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.deepEqual(calls, []);
+});
+
+test("disabling silent loading keeps the explicit continuation button", () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.preferences.features.silentRailLoading = false;
+  layout.renderRail(source, true);
+  assert.ok(fixture.more());
+  assert.equal(rail.querySelector(".bibilili-source-tail"), null);
+});
+
+test("search keeps the explicit continuation control", () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  layout.railSearchQuery = "Video 1";
+  layout.renderRail(layout.searchRailSource(source), true);
+  assert.ok(fixture.more());
+  assert.equal(rail.querySelector(".bibilili-source-tail"), null);
+});
+
+test("a failed silent continuation exposes one retry action", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  const calls = [];
+  layout.onSourceMore = async (kind) => { calls.push(kind); };
+  layout.renderRail({ ...source, pagination: { hasMore: true, status: "error" } }, true);
+  const tail = rail.querySelector(".bibilili-source-tail");
+  assert.equal(tail.dataset.state, "error");
+  assert.equal(tail.disabled, false);
+  assert.equal(tail.getAttribute("aria-hidden"), null);
+
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.deepEqual(calls, []);
+
+  tail.dispatch("click");
+  await flushAsync();
+  assert.deepEqual(calls, [SourceKind.HISTORY]);
+});
+
+test("a source switch cancels a queued silent continuation", async () => {
+  const fixture = railFixture(LayoutRoot, 80);
+  const { layout, rail, source } = fixture;
+  const calls = [];
+  layout.onSourceMore = async (kind) => { calls.push(kind); };
+  layout.renderRail(source, true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  layout.renderRail({ ...source, kind: SourceKind.WATCH_LATER }, true);
+  await flushAsync();
+  assert.deepEqual(calls, []);
+  assert.equal(layout.railAutoLoadKey, null);
+});
+
+test("silent watch-later continuation reveals cached items without a request", async (t) => {
+  const fixture = await watchLaterRailFixture(t, -1);
+  const { layout, store, requests, rail } = fixture;
+  layout.preferences.features.silentRailLoading = true;
+  layout.onSourceMore = async (kind) => {
+    await store.loadMore(kind);
+    layout.renderRail(store.currentSource(kind), false);
+  };
+  layout.renderRail(store.currentSource(SourceKind.WATCH_LATER), true);
+  rail.scrollLeft = 1e9;
+  layout.renderRailWindow();
+  await flushAsync();
+  assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 110);
+  assert.equal(requests.length, 2);
 });
 
 test("current-video positioning renders the destination without intermediate cards", () => {
@@ -430,6 +638,7 @@ test("Tab crosses a virtual gap to the adjacent logical card", () => {
 test("keyboard expansion focuses the first appended card and keeps the scroll position", async () => {
   const fixture = railFixture(LayoutRoot, 110);
   const { layout, rail, document, card } = fixture;
+  layout.preferences.features.silentRailLoading = false;
   const initial = { ...fixture.source, items: fixture.source.items.slice(0, 80) };
   layout.renderRail(initial, true);
   rail.scrollLeft = 100000;
@@ -447,6 +656,7 @@ test("keyboard expansion focuses the first appended card and keeps the scroll po
 test("exhausted continuation moves keyboard focus before removing its button", async () => {
   const fixture = railFixture(LayoutRoot, 80);
   const { layout, source, document, card } = fixture;
+  layout.preferences.features.silentRailLoading = false;
   layout.renderRail(source, true);
   const button = fixture.more();
   button.focus();

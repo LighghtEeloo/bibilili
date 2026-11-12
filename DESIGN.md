@@ -184,10 +184,10 @@ history and Performance require their respective features to be enabled.
 The Settings view selector starts the Features tab. Concise is the default and
 shows UI language, description and tags, and in-page video switching.
 Fully fledged adds thumbnail enrichment, favorite click behavior, rail refresh,
-video sources, and operation history. Advanced adds performance recording,
-exposing every feature setting. View modes control the rows in Features and
-preserve tab availability, the selected tab, feature values, source choices,
-and action placements.
+automatic rail continuation, video sources, and operation history. Advanced
+adds performance recording, exposing every feature setting. View modes control
+the rows in Features and preserve tab availability, the selected tab, feature
+values, source choices, and action placements.
 
 Settings remembers the last selected tab across videos and page reloads in
 origin-local storage. Features is the initial tab when no valid selection is
@@ -196,10 +196,10 @@ tabs and rows. Tab selection is stored independently of feature preferences.
 
 The UI language selector follows Settings view. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
-enrichment, in-page video switching, single-click favorite saves, rail refresh on return
-to start, each video source, operation history, and performance recording. These
-features default to enabled except operation history and performance recording,
-which default to off.
+enrichment, in-page video switching, single-click favorite saves, rail refresh
+on return to start, automatic rail continuation, each video source, operation
+history, and performance recording. These features default to enabled except
+operation history and performance recording, which default to off.
 
 Disabling the description restores its native node and removes its extension
 presentation.
@@ -588,6 +588,8 @@ cursors end continuation; a page whose entries are all filtered can continue.
 
 Watch-later expansion can advance directly to the batch containing a cached
 target. It retains any deeper expansion and leaves an absent target unchanged.
+Automatic rail continuation uses the same local reveal path before any account
+request.
 
 Expansion survives source switches, ordinary reconciliation, and same-document
 video navigation. Disabling the extension, replacing the document, or changing
@@ -998,16 +1000,32 @@ Cards retain their logical order and fixed positions within the full row.
 Keyboard navigation reveals adjacent items across window boundaries. Resizing
 preserves the logical scroll position when card dimensions change.
 
-Account-backed favorite, history, and watch-later groups end with a Show more
-button while additional items are available. The button uses the video card
-dimensions and stays at the end as cards are appended. It keeps its DOM identity during
-reconciliation, presents Loading while a request is active, and presents Retry
-after a continuation failure. It is removed when continuation ends.
+Account-backed favorite, history, and watch-later groups end with a card-sized
+continuation tail while additional items are available. The tail stays at the
+end as cards are appended and keeps its DOM identity during reconciliation. It
+is removed when continuation ends.
+
+Automatic rail continuation loads the next batch when the visible window
+reaches within two cards of the tail. Watch later reveals its retained items
+without a request; favorites and history request their next page. The tail is a
+decorative skeleton in transit. A failed continuation exposes a localized Retry
+control in the same slot and is not retried automatically.
+
+An automatic continuation that adds no cards stops automatic loading for that
+source and exposes the explicit Show more button instead. A manual continuation
+that adds cards restores automatic loading. Switching or closing the source
+clears the stopped state.
+
+Search keeps the explicit Show more button in the same slot. Disabling
+automatic rail continuation also restores that button. The button uses the
+video card dimensions, presents Loading while a request is active, and presents
+Retry after a continuation failure. Keyboard activation focuses the first
+appended card if focus remains on the button when loading completes. If
+continuation ends without adding a card, focus moves to the last existing card
+before the button is removed.
 
 Expansion preserves the rail scroll position and does not recenter the current
-video. Keyboard activation focuses the first appended card if focus remains on
-the button when loading completes. If continuation ends without adding a card,
-focus moves to the last existing card before the button is removed.
+video.
 
 When an origin route selects the destination source, the rail opens with that
 source's cards. The behavior applies to extension-owned bottom-rail card links;

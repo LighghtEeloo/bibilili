@@ -216,6 +216,11 @@
   .bibilili-loading-view .bibilili-loading-indicator::after {
     transform: translateX(16px);
   }
+
+  .bibilili-source-tail[data-state="loading"] .bibilili-source-tail-cover,
+  .bibilili-source-tail[data-state="loading"] .bibilili-source-tail-line {
+    animation: none;
+  }
 }
 
 :root.bibilili-mounted,
@@ -1106,9 +1111,92 @@
 }
 
 .bibilili-card-row > .bibilili-video-card,
-.bibilili-card-row > .bibilili-source-more-button {
+.bibilili-card-row > .bibilili-source-more-button,
+.bibilili-card-row > .bibilili-source-tail {
   position: absolute;
   top: 0;
+}
+
+.bibilili-source-tail {
+  box-sizing: border-box;
+  display: block;
+  width: var(--bibilili-card-width);
+  height: 126px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--bibilili-card-border);
+  border-radius: 6px;
+  color: var(--bibilili-muted);
+  background: var(--bibilili-panel-raised);
+  font: inherit;
+  cursor: default;
+}
+
+.bibilili-source-tail[data-state="error"] {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  border-color: var(--bibilili-button-border);
+  color: var(--bibilili-text);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.bibilili-source-tail[data-state="error"]:hover {
+  border-color: var(--bibilili-button-hover-border);
+}
+
+.bibilili-source-tail:focus-visible {
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: 2px;
+}
+
+.bibilili-source-tail-skeleton {
+  display: grid;
+  grid-template-rows: 72px 52px;
+  width: 100%;
+  height: 100%;
+}
+
+.bibilili-source-tail-cover {
+  display: block;
+  background: var(--bibilili-thumb-bg);
+}
+
+.bibilili-source-tail-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+}
+
+.bibilili-source-tail-line {
+  display: block;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--bibilili-thumb-bg);
+  opacity: 0.72;
+}
+
+.bibilili-source-tail-line-title {
+  width: 82%;
+}
+
+.bibilili-source-tail-line-meta {
+  width: 52%;
+  height: 7px;
+  opacity: 0.5;
+}
+
+.bibilili-source-tail[data-state="loading"] .bibilili-source-tail-cover,
+.bibilili-source-tail[data-state="loading"] .bibilili-source-tail-line {
+  animation: bibilili-source-tail-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes bibilili-source-tail-pulse {
+  50% { opacity: 0.38; }
 }
 
 .bibilili-source-more-button {

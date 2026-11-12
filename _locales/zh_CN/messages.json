@@ -361,6 +361,14 @@
     "message": "回到开头时刷新列表",
     "description": "Switch for refreshing the selected rail source when returning to its beginning."
   },
+  "settingsSilentRailLoadingLabel": {
+    "message": "自动加载更多视频",
+    "description": "Switch for loading the next account video batch when the rail nears its end."
+  },
+  "settingsSilentRailLoadingHint": {
+    "message": "接近列表末尾时自动加载下一批账号视频。关闭后使用「加载更多」按钮。",
+    "description": "Explains automatic rail continuation and the manual alternative."
+  },
   "settingsHelpLabel": {
     "message": "说明：$1",
     "description": "Accessible name for a settings help button, including the setting name."

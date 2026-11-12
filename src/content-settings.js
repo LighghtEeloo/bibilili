@@ -126,6 +126,8 @@
           UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT, SettingsViewMode.CONCISE],
         ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT],
         ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL],
+        ["silentRailLoading", UiMessage.SETTINGS_SILENT_RAIL_LOADING_LABEL,
+          UiMessage.SETTINGS_SILENT_RAIL_LOADING_HINT],
         ["operationHistory", UiMessage.OPERATION_HISTORY_LABEL, UiMessage.OPERATION_HISTORY_HINT]
       ]) this.addPreferenceSwitch(features, "features", key, message, hint, viewMode);
       const sources = this.element("section", "bibilili-settings-section");

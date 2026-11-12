@@ -195,6 +195,7 @@ test("a restored closed Favorites route survives loading and retains its folder 
 
 test("favorite cards retain folder identity and reuse current-card highlighting and load more", (t) => {
   const { layout, source, card, more } = fixture(t);
+  layout.preferences.features.silentRailLoading = false;
   source.items[2].targetUrl = global.location.href;
   layout.renderRail(source, true);
   assert.equal(card(2).isCurrent, true);

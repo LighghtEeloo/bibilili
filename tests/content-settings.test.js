@@ -67,7 +67,7 @@ test("settings enable features, sources, and pins while recording defaults off",
   for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
   }
-  assert.deepEqual(defaults.features, { description: true, thumbnails: true, inPageNavigation: true, favoriteToSelectedFolder: true, refreshRailOnStart: true, moreButton: true, operationHistory: false, performance: false });
+  assert.deepEqual(defaults.features, { description: true, thumbnails: true, inPageNavigation: true, favoriteToSelectedFolder: true, refreshRailOnStart: true, silentRailLoading: true, moreButton: true, operationHistory: false, performance: false });
   const value = SettingsPreference.normalize({
     features: { description: false, thumbnails: "false", inPageNavigation: "false", unknown: true },
     sources: { collection: false, history: 0 }, pinnedActions: { like: false, unknown: true }
@@ -78,6 +78,10 @@ test("settings enable features, sources, and pins while recording defaults off",
   assert.equal(SettingsPreference.normalize({ features: { thumbnails: false } }).features.inPageNavigation, true);
   assert.equal(value.features.favoriteToSelectedFolder, true);
   assert.equal(value.features.refreshRailOnStart, true);
+  assert.equal(value.features.silentRailLoading, true);
+  assert.equal(SettingsPreference.normalize({
+    features: { silentRailLoading: false }
+  }).features.silentRailLoading, false);
   assert.equal(value.sources.collection, false);
   assert.equal(value.sources.history, true);
   assert.equal(value.pinnedActions.like, false);
@@ -97,6 +101,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   value.features.inPageNavigation = false;
   value.features.favoriteToSelectedFolder = false;
   value.features.refreshRailOnStart = false;
+  value.features.silentRailLoading = false;
   value.features.performance = true;
   value.pinnedActions.coin = false;
   value.language = UiLanguage.TRADITIONAL_CHINESE;
@@ -145,7 +150,7 @@ test("view modes reveal settings progressively while retaining feature values an
   const reconciles = controller.scheduleReconcile.mock.callCount();
   const refreshes = controller.refreshAccountSources.mock.callCount();
   const fullInputs = ["description", "thumbnails", "inPageNavigation", "favoriteToSelectedFolder",
-    "refreshRailOnStart", "operationHistory", "parts", "collection", "recommendations", "favorites", "watch_later", "history"];
+    "refreshRailOnStart", "silentRailLoading", "operationHistory", "parts", "collection", "recommendations", "favorites", "watch_later", "history"];
   select.focus();
   for (const [viewMode, expectedInputs] of [
     [SettingsViewMode.FULLY_FLEDGED, fullInputs],
@@ -569,6 +574,31 @@ for (const feature of ["inPageNavigation", "refreshRailOnStart"]) {
     assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
   });
 }
+
+test("silent rail loading persists and refreshes the rail without reloading account lists", (t) => {
+  const { view, controller, layout } = settingsFixture(t);
+  view.ensure();
+  view.render();
+  const input = [...view.inputs.keys()].find((input) => input.name === "silentRailLoading");
+  assert.equal(input.checked, true);
+  assert.ok(view.panels.get("features").contains(input));
+  input.checked = false;
+  input.dispatch("change");
+  assert.equal(controller.preferences.features.silentRailLoading, false);
+  assert.equal(SettingsPreference.read().features.silentRailLoading, false);
+  assert.equal(layout.preferences.features.silentRailLoading, false);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 1);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  controller.setPreferences(SettingsPreference.defaults());
+  assert.equal(input.checked, true);
+});
+
+test("account continuation reports the revealed count for auto-load progress", async (t) => {
+  const { controller } = settingsFixture(t);
+  t.mock.method(controller.accountSources, "loadMore", async () => {});
+  t.mock.method(controller.accountSources, "currentSource", () => ({ items: [1, 2, 3] }));
+  assert.equal(await controller.loadMoreAccountSource(SourceKind.HISTORY), 3);
+});
 
 test("the direct-favorite switch uses the shared settings row and persistence", (t) => {
   const { view, controller } = settingsFixture(t);

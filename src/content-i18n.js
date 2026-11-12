@@ -128,6 +128,8 @@
     SETTINGS_FAVORITE_FOLDER_LABEL: "settingsFavoriteFolderLabel",
     SETTINGS_FAVORITE_FOLDER_HINT: "settingsFavoriteFolderHint",
     SETTINGS_REFRESH_RAIL_ON_START_LABEL: "settingsRefreshRailOnStartLabel",
+    SETTINGS_SILENT_RAIL_LOADING_LABEL: "settingsSilentRailLoadingLabel",
+    SETTINGS_SILENT_RAIL_LOADING_HINT: "settingsSilentRailLoadingHint",
     SETTINGS_SOURCES_LABEL: "settingsSourcesLabel",
     SETTINGS_SOURCES_HINT: "settingsSourcesHint",
     SETTINGS_FIXED_HINT: "settingsFixedHint",

@@ -361,6 +361,14 @@
     "message": "Refresh list when returning to start",
     "description": "Switch for refreshing the selected rail source when returning to its beginning."
   },
+  "settingsSilentRailLoadingLabel": {
+    "message": "Load more videos automatically",
+    "description": "Switch for loading the next account video batch when the rail nears its end."
+  },
+  "settingsSilentRailLoadingHint": {
+    "message": "Load the next account batch as you approach the end of the rail. Turn this off to use the Show more button.",
+    "description": "Explains automatic rail continuation and the manual alternative."
+  },
   "settingsHelpLabel": {
     "message": "Help: $1",
     "description": "Accessible name for a settings help button, including the setting name."

@@ -67,7 +67,19 @@
   const ACCOUNT_MORE_BATCH_SIZE = 30;
   const MAX_CONCURRENT_VIDEO_PREVIEW_FETCHES = 4;
   const RAIL_WINDOW_BUFFER = 3;
+  /** Number of trailing cards that may remain before continuation starts. */
+  const RAIL_PREFETCH_CARDS = 2;
   const RAIL_WHEEL_LINE_PX = 16;
+  const SOURCE_TAIL_CLASS = "bibilili-source-tail";
+  const SOURCE_TAIL_SELECTOR = ".bibilili-source-tail";
+  const SOURCE_TAIL_SKELETON_CLASS = "bibilili-source-tail-skeleton";
+  const SOURCE_TAIL_SKELETON_SELECTOR = ".bibilili-source-tail-skeleton";
+  const SOURCE_MORE_BUTTON_CLASS = "bibilili-source-more-button";
+  const SOURCE_MORE_SELECTOR = ".bibilili-source-more-button";
+  /** Closed visual states for the account-source continuation tail. */
+  const SourceTailState = Object.freeze({
+    READY: "ready", LOADING: "loading", ERROR: "error"
+  });
   const COMMENT_PANE_WIDTH_PROPERTY = "--bibilili-comment-pane-width";
   const COMMENT_PANE_MIN_WIDTH = 240;
   const COMMENT_PANE_MAX_WIDTH = 640;
@@ -6608,6 +6620,10 @@
       this.railEntryIndexes = new Map();
       this.railStride = 0;
       this.railRenderFrame = null;
+      /** Source instance with an automatic or retry continuation in flight. */
+      this.railAutoLoadKey = null;
+      /** Source instance whose automatic continuation made no progress. */
+      this.railAutoLoadStalledKey = null;
       this.railResizeObserver = null;
       this.railPointerCard = null;
       this.railPointerEndHandler = null;
@@ -6682,7 +6698,7 @@
      * @param {(sourceKind: string, targetUrl: string, event: MouseEvent, folderId?: string) => void} onVideoCardNavigate
      * @param {(state: SourceRouteState) => void} onSourceRouteChange
      * @param {SourceRouteState | null} sourceRouteState
-     * @param {(sourceKind: string) => Promise<void>} onSourceMore
+     * @param {(sourceKind: string) => Promise<number | void>} onSourceMore Revealed item count for automatic progress.
      * @param {() => VideoListSource | null} onWatchLaterReveal
      * @param {() => VideoListSource | null} onWatchLaterSearchSource
      * @param {(source: VideoListSource) => Promise<void>} onRailRefresh
@@ -6757,6 +6773,8 @@
       this.endCommentPaneResize();
       this.railPointerCard = null;
       this.pendingSourceMore = null;
+      this.railAutoLoadKey = null;
+      this.railAutoLoadStalledKey = null;
       this.renderedSourceKey = null;
       this.locatedCurrentRouteKeys.clear();
       this.completedWatchLaterAddKeys.clear();
@@ -8035,6 +8053,8 @@
       } else {
         this.renderedSourceKey = null;
         this.pendingSourceMore = null;
+        this.railAutoLoadKey = null;
+        this.railAutoLoadStalledKey = null;
         this.railSource = null;
         this.railEntries = [];
         this.railLocateIndex = -1;
@@ -10024,6 +10044,8 @@
       this.railPointerEndHandler = null;
       this.railPointerCard = null;
       this.railSource = null;
+      this.railAutoLoadKey = null;
+      this.railAutoLoadStalledKey = null;
       this.railEntries = [];
       this.railLocateIndex = -1;
       this.renderRailLocate();
@@ -10045,6 +10067,12 @@
       }
 
       const sourceKey = LayoutRoot.sourceKey(source);
+      if (resetScroll && this.railAutoLoadKey !== sourceKey) {
+        this.railAutoLoadKey = null;
+      }
+      if (resetScroll && this.railAutoLoadStalledKey !== sourceKey) {
+        this.railAutoLoadStalledKey = null;
+      }
       const moreInteraction = this.pendingSourceMore?.key === sourceKey
         ? this.pendingSourceMore
         : null;
@@ -10233,9 +10261,9 @@
       }
       this.railStride = geometry.stride;
 
-      const previewIndexes = geometry.previewIndexes(
-        this.rail.scrollLeft - rowStart, viewportWidth
-      );
+      const viewportStart = this.rail.scrollLeft - rowStart;
+      const visibleRange = geometry.range(viewportStart, viewportWidth);
+      const previewIndexes = geometry.previewIndexes(viewportStart, viewportWidth);
       this.videoPreviews.setDemand(previewIndexes.map(
         (index) => this.railEntries[index].item
       ));
@@ -10288,11 +10316,14 @@
       } else if (activeCard && activeElement.isConnected && this.document.activeElement !== activeElement) {
         activeElement.focus({ preventScroll: true });
       }
-      this.renderSourceMore(source, row);
-      const moreButton = row.querySelector(".bibilili-source-more-button");
-      if (moreButton) {
-        moreButton.style.left = `${this.railEntries.length * geometry.stride}px`;
+      this.renderSourceTail(source, row);
+      const sourceTail = row.querySelector(SOURCE_TAIL_SELECTOR);
+      const moreButton = row.querySelector(SOURCE_MORE_SELECTOR);
+      const trailingControl = sourceTail ?? moreButton;
+      if (trailingControl) {
+        trailingControl.style.left = `${this.railEntries.length * geometry.stride}px`;
       }
+      this.requestSilentSourceLoad(source, visibleRange);
     }
 
     /**
@@ -10313,7 +10344,8 @@
           return;
         }
         focusIndex = Number(card.dataset.bibililiCardIndex) + (event.shiftKey ? -1 : 1);
-      } else if (event.shiftKey && event.target.matches?.(".bibilili-source-more-button")) {
+      } else if (event.shiftKey && (event.target.matches?.(SOURCE_MORE_SELECTOR) ||
+        event.target.matches?.(SOURCE_TAIL_SELECTOR))) {
         focusIndex = this.railEntries.length - 1;
       } else {
         return;
@@ -10337,22 +10369,54 @@
     }
 
     /**
-     * Reuses a trailing account-source button while continuation is available.
+     * Renders the trailing continuation control for an account source.
+     *
+     * Silent loading uses a card-sized skeleton sentinel and triggers when the
+     * visible window nears the end. The explicit button remains available when
+     * the preference is disabled, while a search query is active, or for an
+     * unavailable account state.
+     *
+     * @param {VideoListSource} source
+     * @param {HTMLElement} row
+     */
+    renderSourceTail(source, row) {
+      const tail = row.querySelector(SOURCE_TAIL_SELECTOR);
+      const button = row.querySelector(SOURCE_MORE_SELECTOR);
+      if (source.root !== null || !source.pagination?.hasMore) {
+        if (this.railAutoLoadStalledKey === LayoutRoot.sourceKey(source)) {
+          this.railAutoLoadStalledKey = null;
+        }
+        tail?.remove();
+        button?.remove();
+        return;
+      }
+
+      const status = source.pagination?.status ?? AccountSourceStatus.READY;
+      const silent = this.preferences.features.silentRailLoading &&
+        !this.railSearchQuery.trim() &&
+        this.railAutoLoadStalledKey !== LayoutRoot.sourceKey(source) &&
+        status !== AccountSourceStatus.SIGNED_OUT;
+      if (silent) {
+        button?.remove();
+        this.renderSilentSourceTail(source, row);
+      } else {
+        tail?.remove();
+        this.renderSourceMore(source, row);
+      }
+    }
+
+    /**
+     * Reuses the explicit account-source continuation button.
      *
      * @param {VideoListSource} source
      * @param {HTMLElement} row
      */
     renderSourceMore(source, row) {
-      let button = row.querySelector(".bibilili-source-more-button");
-      if (source.root !== null || !source.pagination?.hasMore) {
-        button?.remove();
-        return;
-      }
-
+      let button = row.querySelector(SOURCE_MORE_SELECTOR);
       if (!button) {
         button = UiControl.button(
           this.document,
-          "bibilili-source-more-button",
+          SOURCE_MORE_BUTTON_CLASS,
           (event) => {
             void this.handleSourceMoreClick(source.kind, button, event);
           }
@@ -10362,6 +10426,185 @@
       }
 
       this.updateSourceMoreButton(button, source.kind, source.pagination.status);
+    }
+
+    /**
+     * Reuses one skeleton sentinel while an account source can continue.
+     *
+     * @param {VideoListSource} source
+     * @param {HTMLElement} row
+     */
+    renderSilentSourceTail(source, row) {
+      let tail = row.querySelector(SOURCE_TAIL_SELECTOR);
+      if (!tail) {
+        tail = this.document.createElement("button");
+        tail.type = "button";
+        tail.className = SOURCE_TAIL_CLASS;
+        tail.dataset.bibililiRailSentinel = "true";
+        tail.setAttribute("aria-controls", LIST_RAIL_ID);
+        tail.addEventListener("click", () => {
+          void this.handleSilentSourceRetry(tail);
+        });
+        row.append(tail);
+      }
+
+      this.updateSilentSourceTail(tail, source);
+    }
+
+    /**
+     * Applies the continuation state to the skeleton sentinel.
+     *
+     * Note: The sentinel stays aria-hidden while it is decorative; only a
+     * failed continuation exposes a focusable retry control.
+     *
+     * @param {HTMLButtonElement} tail
+     * @param {VideoListSource} source
+     */
+    updateSilentSourceTail(tail, source) {
+      const status = source.pagination?.status ?? AccountSourceStatus.READY;
+      const state = status === AccountSourceStatus.LOADING ? SourceTailState.LOADING
+        : status === AccountSourceStatus.ERROR ? SourceTailState.ERROR
+          : SourceTailState.READY;
+      const changed = tail.dataset.state !== state;
+      if (!changed && state !== SourceTailState.ERROR &&
+          tail.querySelector(SOURCE_TAIL_SKELETON_SELECTOR)) {
+        return;
+      }
+      tail.dataset.state = state;
+
+      if (state === SourceTailState.ERROR) {
+        const label = UiStrings.message(UiMessage.SOURCE_MORE_RETRY_LABEL, this.language);
+        if (changed) tail.replaceChildren();
+        tail.disabled = false;
+        tail.removeAttribute("aria-hidden");
+        tail.removeAttribute("aria-busy");
+        LayoutRoot.setStableText(tail, label);
+        UiControl.setLabel(tail, UiStrings.message(
+          UiMessage.SOURCE_MORE_BUTTON_LABEL,
+          this.language,
+          [label, UiStrings.sourceLabel(source.kind, this.language)]
+        ));
+        return;
+      }
+
+      tail.disabled = true;
+      tail.setAttribute("aria-hidden", "true");
+      tail.setAttribute("aria-busy", String(state === SourceTailState.LOADING));
+      tail.removeAttribute("title");
+      tail.removeAttribute("aria-label");
+      if (!tail.querySelector(SOURCE_TAIL_SKELETON_SELECTOR)) {
+        tail.replaceChildren(this.createSourceTailSkeleton());
+      }
+    }
+
+    /** @returns {HTMLElement} Decorative cover and text bars for the tail. */
+    createSourceTailSkeleton() {
+      const skeleton = this.document.createElement("span");
+      skeleton.className = SOURCE_TAIL_SKELETON_CLASS;
+      skeleton.setAttribute("aria-hidden", "true");
+      const cover = this.document.createElement("span");
+      cover.className = "bibilili-source-tail-cover";
+      const body = this.document.createElement("span");
+      body.className = "bibilili-source-tail-body";
+      const title = this.document.createElement("span");
+      title.className = "bibilili-source-tail-line bibilili-source-tail-line-title";
+      const meta = this.document.createElement("span");
+      meta.className = "bibilili-source-tail-line bibilili-source-tail-line-meta";
+      body.append(title, meta);
+      skeleton.append(cover, body);
+      return skeleton;
+    }
+
+    /**
+     * Retries a failed silent continuation from its exposed control.
+     *
+     * @param {HTMLButtonElement} tail
+     */
+    handleSilentSourceRetry(tail) {
+      const source = this.railSource;
+      if (!source || !this.onSourceMore || tail.disabled || this.railAutoLoadKey !== null) {
+        return;
+      }
+      if (source.root !== null || !source.pagination?.hasMore ||
+          source.pagination.status !== AccountSourceStatus.ERROR) {
+        return;
+      }
+
+      tail.setAttribute("aria-busy", "true");
+      this.startSourceMore(true);
+    }
+
+    /**
+     * Starts one automatic continuation for the displayed account source.
+     *
+     * Note: The request is deferred one microtask so a reconciliation pass does
+     * not start account work while it is still building the rail.
+     *
+     * @param {boolean} [retry] Allows a failed continuation to be requested again.
+     */
+    startSourceMore(retry = false) {
+      if (this.railAutoLoadKey !== null) return;
+      const key = LayoutRoot.sourceKey(this.railSource);
+      if (!key) return;
+      this.railAutoLoadKey = key;
+      let countAtStart = null;
+      let nextCount = null;
+
+      void Promise.resolve()
+        .then(() => {
+          const source = this.railSource;
+          if (!this.onSourceMore || !this.isRailOpen || this.railSearchQuery.trim() ||
+              !source || LayoutRoot.sourceKey(source) !== key ||
+              source.root !== null || !source.pagination?.hasMore) {
+            return undefined;
+          }
+          const status = source.pagination.status ?? AccountSourceStatus.READY;
+          if (status !== AccountSourceStatus.READY &&
+              !(retry && status === AccountSourceStatus.ERROR)) {
+            return undefined;
+          }
+          countAtStart = this.railEntries.length;
+          return this.onSourceMore(source.kind);
+        })
+        .then((count) => {
+          if (typeof count === "number") nextCount = count;
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (this.railAutoLoadKey === key) this.railAutoLoadKey = null;
+          if (countAtStart === null || nextCount === null ||
+              LayoutRoot.sourceKey(this.railSource) !== key) {
+            return;
+          }
+          if (nextCount > countAtStart) {
+            if (this.railAutoLoadStalledKey === key) this.railAutoLoadStalledKey = null;
+          } else {
+            this.railAutoLoadStalledKey = key;
+          }
+        });
+    }
+
+    /**
+     * Requests the next account batch when the visible rail window is near its
+     * logical end. Watch later reveals retained items locally; favorites and
+     * history request their next page.
+     *
+     * Note: The rail renders only a bounded window, so proximity is computed
+     * from logical card geometry rather than an intersection observer.
+     *
+     * @param {VideoListSource} source
+     * @param {{ start: number, end: number }} visibleRange
+     */
+    requestSilentSourceLoad(source, visibleRange) {
+      if (!this.preferences.features.silentRailLoading ||
+          !this.isRailOpen || !this.onSourceMore || this.railSearchQuery.trim() ||
+          this.railAutoLoadStalledKey === LayoutRoot.sourceKey(source) ||
+          source.root !== null || !source.pagination?.hasMore ||
+          (source.pagination?.status ?? AccountSourceStatus.READY) !== AccountSourceStatus.READY) {
+        return;
+      }
+      if (visibleRange.end < this.railEntries.length - RAIL_PREFETCH_CARDS) return;
+      this.startSourceMore(false);
     }
 
     /**
@@ -10406,14 +10649,20 @@
         return;
       }
 
+      const key = LayoutRoot.sourceKey(this.railSource);
+      const countAtStart = this.railEntries.length;
       this.pendingSourceMore = {
-        key: LayoutRoot.sourceKey(this.railSource),
+        key,
         button,
         keyboard: event.detail === 0,
         cardKeys: new Set(this.railEntries.map((entry) => entry.key))
       };
       this.updateSourceMoreButton(button, kind, AccountSourceStatus.LOADING);
-      await this.onSourceMore(kind);
+      const count = await this.onSourceMore(kind);
+      if (typeof count === "number" && count > countAtStart &&
+          this.railAutoLoadStalledKey === key) {
+        this.railAutoLoadStalledKey = null;
+      }
     }
 
     /**
@@ -12190,14 +12439,20 @@
         ["features", "sources", "pinnedActions"].some((group) =>
           Object.keys(this.preferences[group]).some((key) =>
             !(group === "features" && (key === "performance" || key === "operationHistory" || key === "inPageNavigation" ||
-              key === "refreshRailOnStart")) &&
+              key === "refreshRailOnStart" || key === "silentRailLoading")) &&
             previous[group][key] !== this.preferences[group][key]));
+      /*
+       * Note: Silent rail loading changes only the continuation presentation;
+       * it reconciles the rail without refreshing loaded account lists.
+       */
+      const railPresentationChanged =
+        previous.features.silentRailLoading !== this.preferences.features.silentRailLoading;
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();
       this.settingsView.update(this.preferences, this.enabled, this.resolveUiLanguage());
       if (persist) this.settingsView.showSaveResult(saved);
-      if (!runtimeChanged) return;
-      this.refreshAccountSources();
+      if (!runtimeChanged && !railPresentationChanged) return;
+      if (runtimeChanged) this.refreshAccountSources();
       this.scheduleReconcile(false, ReconcilePriority.URGENT, ReconcileCause.SETTINGS);
     }
 
@@ -12477,11 +12732,12 @@
      * Expands an account source and reconciles its current rail.
      *
      * @param {string} sourceKind
-     * @returns {Promise<void>}
+     * @returns {Promise<number>} Revealed item count after the request.
      */
     async loadMoreAccountSource(sourceKind) {
       await this.accountSources.loadMore(sourceKind);
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
+      return this.accountSources.currentSource(sourceKind)?.items.length ?? 0;
     }
 
     /**

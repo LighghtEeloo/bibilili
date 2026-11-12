@@ -25,7 +25,8 @@
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, inPageNavigation: true,
     favoriteToSelectedFolder: true, refreshRailOnStart: true,
-    moreButton: true, operationHistory: false, performance: false
+    silentRailLoading: true, moreButton: true, operationHistory: false,
+    performance: false
   });
   const CARD_NAVIGATION_ORIGIN_TTL_MS = 120000;
 
@@ -523,7 +524,7 @@
    * @property {string} viewMode Closed SettingsViewMode controlling settings visibility.
    * @property {string | null} language Supported UI language; null uses automatic detection.
    * @property {number} operationHistoryLimit Maximum retained operations; one of OPERATION_HISTORY_LIMITS.
-   * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, recording, and action behavior.
+   * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, silentRailLoading: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, rail continuation, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
    */
