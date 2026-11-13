@@ -10405,7 +10405,7 @@
       this.renderRailLocate();
       this.renderRailStart(available);
       this.renderRailRefresh();
-      this.railSearchButton.hidden = !available;
+      // Search stays mounted so it retracts and extends with the other bar tools.
       this.railSearchButton.disabled = !available || !source || source.items.length === 0;
       this.railSearchButton.setAttribute("aria-expanded",
         String(Boolean(this.browsePanel?.isOpen)));

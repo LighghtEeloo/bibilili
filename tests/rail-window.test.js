@@ -461,6 +461,8 @@ test("Search is enabled only for an open rail with valid source items", () => {
   layout.isRailOpen = false;
   layout.renderSourceDock([source], null);
   assert.equal(layout.railSearchButton.disabled, true);
+  assert.equal(layout.railSearchButton.parentElement, layout.railActionGroup);
+  assert.notEqual(layout.railSearchButton.hidden, true);
 
   layout.isRailOpen = true;
   layout.renderRailActions(true, { ...source, items: [] });

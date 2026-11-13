@@ -203,6 +203,8 @@
   #bibilili-loading-cover,
   #bibilili-layout-root,
   #bibilili-layout-root .bibilili-comment-pane,
+  .bibilili-rail-action-group,
+  .bibilili-rail-action-group > .bibilili-action-button,
   .bibilili-action-native-visual,
   .bibilili-action-count,
   .bibilili-loading-overlay,
@@ -882,6 +884,42 @@
   margin-left: 4px;
   padding-left: 4px;
   border-left: 1px solid var(--bibilili-border);
+}
+
+/* Bar tools retract toward the watch action group instead of dimming. */
+.bibilili-rail-action-group {
+  transition:
+    gap var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    margin-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    padding-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    border-left-width var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing);
+}
+
+.bibilili-rail-action-group > .bibilili-action-button {
+  overflow: hidden;
+  transition:
+    width var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    padding-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    padding-right var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    border-left-width var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
+    border-right-width var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing);
+}
+
+#bibilili-layout-root.bibilili-has-controls-dock .bibilili-rail-action-group {
+  gap: 0;
+  margin-left: 0;
+  padding-left: 0;
+  border-left-width: 0;
+}
+
+#bibilili-layout-root.bibilili-has-controls-dock
+  .bibilili-rail-action-group > .bibilili-action-button {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-left-width: 0;
+  border-right-width: 0;
+  opacity: 1;
 }
 
 .bibilili-action-button {
