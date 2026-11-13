@@ -62,15 +62,16 @@ become page metadata.
 
 Video-list sources contain page-owned list data or Bilibili account list data.
 Bibilili reads them into uniform list items and routes one source at a time
-into the bottom dock.
+into the bottom dock. The selected source also opens as a full list in the
+browse panel.
 
 ## DOM Ownership
 
 Bibilili owns the loading cover, layout root, stage, panes, video header, list dock,
 source bar, video description presentation, watch action group,
-current-video watch-later control, list rail, video cards, watch-later mutation
-controls, Settings, More, and favorite-folder popups, extension classes, and
-bookkeeping attributes.
+current-video watch-later control, list rail, browse panel, video cards,
+watch-later mutation controls, Settings, More, and favorite-folder popups,
+extension classes, and bookkeeping attributes.
 Bilibili owns the player, comments, source roots, links, native watch metadata,
 native uploader card, watch action triggers, account controls, account lists,
 and network-backed content.
@@ -106,8 +107,8 @@ Bibilili removes only nodes it owns.
 ## Layout Root
 
 The layout root is the extension-owned container for the transformed page. It
-contains the stage and list dock. The stage contains the player pane and
-comment pane; the list dock sits below the stage.
+contains the stage and list dock and hosts the browse panel overlay. The stage
+contains the player pane and comment pane; the list dock sits below the stage.
 
 The layout root owns viewport-level sizing. It assigns bounded height to the
 list dock and gives the remaining height to the stage.
@@ -218,8 +219,9 @@ hover or keyboard focus; activating the help button also reveals it for touch
 input.
 
 Action bar controls whether each watch action or list tool appears on the bar
-or in More. All actions default to the bar. Show More button defaults to enabled
-and displays the launcher when More contains available actions. Disabling it
+or in More. List tools are Locate, Start, Refresh, and Search. All
+actions default to the bar. Show More button defaults to enabled and displays the
+launcher when More contains available actions. Disabling it
 hides the launcher and closes its popup while retaining action placements.
 Source order and the Power and Settings entry points have fixed placement.
 
@@ -634,6 +636,13 @@ resource events already covered by a newer list request require no further
 refresh. Disabling observation clears pending follow-up work. Browsers without
 resource observation retain explicit additions and manual list refreshes.
 
+The browse panel continues the selected source through the same record and
+cursor as the rail. A panel continuation or full-source scan shares the
+source's single active request. The scan requests pages until the cursor ends
+or the scan stops. An empty page that advances the cursor remains a valid scan
+step. Retained items and the cursor survive a closed panel, so a later
+continuation resumes from the same position.
+
 ## Favorite Folders
 
 A favorite folder is one account-owned list identified by its Bilibili media-list
@@ -649,11 +658,10 @@ a folder picker above the dock without changing stage geometry. The picker uses
 the shared popup lifecycle, keyed folder buttons, and the page theme.
 
 The picker's search button expands into a field that matches folder names. The
-field replaces the heading and fills the header beside the close button. It
-shares expansion and keyboard behavior with rail search: Escape clears the
-query and restores the button; an empty field collapses on blur. Opening the
-picker focuses the selected or first visible folder unless a search query is
-active. Zero-count folders remain selectable.
+field replaces the heading and fills the header beside the close button.
+Escape clears the query and restores the button; an empty field collapses on
+blur. Opening the picker focuses the selected or first visible folder unless a
+search query is active. Zero-count folders remain selectable.
 
 The directory loads when Favorites is first opened, a stored folder route
 needs restoration, or a direct save needs the current selection. Loading the
@@ -691,6 +699,12 @@ target URL, title, thumbnail when available, source kind, and optional metadata
 such as duration, author, view count, or progress. The target URL and title are
 required; source adapters skip items missing either field.
 
+A video item may carry a `timestamp` field in Unix milliseconds. It is the
+list's own ordering time: history `view_at`, favorite `fav_time`, or watch-later
+`add_time` when Bilibili exposes it. The browse panel uses it for date sections.
+Cards do not display it. A source without a usable timestamp renders as one
+ungrouped section.
+
 For page-owned sources, the target URL resolves to a playable Bilibili watch
 route. Video archive routes and bangumi play routes are valid targets. Profile,
 submission, and sidebar navigation routes do not produce video items. Page-owned
@@ -713,11 +727,13 @@ as the thumbnail. Page-owned thumbnails have precedence over fetched covers.
 Placeholder, loading, and static page assets are not page-owned thumbnails.
 They fall through to fetched covers when an archive id is available.
 
-Preview demand contains visible items from the open rail and up to three
-adjacent items on each side. Visible items have request priority. The preview
+Preview demand contains visible items from the active list surface and, for
+the rail, up to three adjacent items on each side. While the browse panel is
+open, its visible card rows supply demand instead of the rail; closing the
+panel restores rail demand. Visible items have request priority. The preview
 store allows four active metadata requests and cancels queued or active work
-when an item leaves demand. Closing the rail clears demand. Completed results
-remain cached for the page session.
+when an item leaves demand. Closing both list surfaces clears demand. Completed
+results remain cached for the page session.
 
 Preview fetches do not block rendering. Failed, unsupported, private, deleted,
 or unavailable videos keep the title placeholder for the page session.
@@ -727,7 +743,8 @@ or unavailable videos keep the title placeholder for the page session.
 The list dock is the bottom container for the selected video-list source. It
 contains the source bar and list rail, and it is the canonical visual placement
 for parts, collections, recommendations, favorite folders, watch-later entries,
-and history entries.
+and history entries. The browse panel presents the same source as an alternate
+full-list surface.
 
 The list dock has bounded height and owns horizontal scrolling through the list
 rail. Document, player-pane, and comment-pane scrolling remain independent.
@@ -910,10 +927,13 @@ removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 The rail action group follows the watch action group, separated by a vertical
-border. Pinned tools retain Locate, Start, Refresh, Search order. More and
-Settings remain at the trailing edge of the bar. Their leading separator
-appears when More is visible. The bar uses equal horizontal edge padding before
-the activation control and after Settings, including while its contents scroll.
+border. Pinned tools retain Locate, Start, Refresh, Search order. The Search
+tool opens the browse panel for the selected source. It follows the same
+placement preference as other list tools and is unavailable while the rail is
+closed or the source has no valid items. More and Settings remain at the
+trailing edge of the bar. Their leading separator appears when More is visible.
+The bar uses equal horizontal edge padding before the activation control and
+after Settings, including while its contents scroll.
 
 More contains unpinned watch actions followed by unpinned list tools, with
 visible action labels. Each action keeps one button node, count, loading state,
@@ -922,12 +942,10 @@ the placement preference. Opening a native action dialog dismisses More first.
 
 ## Rail Locate
 
-The Locate button starts the rail action group. It presents a crosshair icon
-with a localized tooltip and accessible name. It centers the current video in
-the displayed rail. It is disabled when the rail is closed or the displayed
-items contain no current video,
-including when a search query excludes it. Locate preserves the selected
-source, search query, and account expansion depth.
+The Locate button presents a crosshair icon with a localized tooltip and
+accessible name. It centers the current video in the displayed rail. It is
+disabled when the rail is closed or the displayed items contain no current
+video. Locate preserves the selected source and account expansion depth.
 
 Locate matches the current watch route or the collection's native current-row
 marker. Reconciliation records the first matching item's logical index while
@@ -939,7 +957,7 @@ window through the existing rail positioning path.
 The Back to start button returns the rail to its beginning. It presents a left
 chevron and vertical bar with a localized tooltip and accessible name. It is
 disabled when the rail is closed. Activation renders the first rail window and
-preserves the selected source and search query.
+preserves the selected source.
 
 Refresh list when returning to start is enabled by default. Activation uses the
 Rail Refresh behavior after resetting the scroll position. An in-flight refresh
@@ -950,34 +968,28 @@ depth and returns to the first window without refreshing the source.
 
 The Refresh button reloads the selected rail source. It presents a circular-arrow
 icon with a localized tooltip and accessible name. It is disabled while the rail is closed or a refresh is
-pending. Refresh preserves the search query and selected route while that
-source remains available. Scroll position is retained within the updated
-rail's bounds.
+pending. Refresh preserves the selected source while it remains available.
+Scroll position is retained within the updated rail's bounds.
 
 Loaded account lists refresh through one request to their list endpoint.
 Watch later retains its expansion budget. History and Favorites restart from
-the first page and use Show more for subsequent entries. Failed requests retain
-usable items.
+the first page; subsequent entries follow the rail's continuation behavior.
+Failed requests retain usable items.
 Page-owned sources are re-extracted from Bilibili's current list markup.
 Refresh updates the dock without reloading the page or remounting the player
 and comments.
 
-## Rail Search
+## Search Entry
 
-The search control is available while a rail is open. Activation presents a
-focused search input on the bar, including when the shortcut was in More.
-An expanded search remains on the bar until collapsed. Escape clears the query
-and returns focus to the pinned button, the More launcher, or Settings when
-More is hidden. An empty input collapses when focus leaves it.
+The Search tool is available while a rail is open. It presents a search icon
+with a localized tooltip and accessible name. Activation opens the browse panel
+with its search field focused, including when the tool was in More. The tool
+declares a dialog popup with `aria-haspopup`, exposes the panel's open state
+with `aria-expanded`, and references the panel with `aria-controls`.
 
-Search filters the selected source by title or author using a case-insensitive,
-Unicode-normalized substring. Watch later searches the full retained account
-list, including items beyond the revealed batches. Other sources search their
-currently exposed items. Favorites labels this scope as loaded favorites.
-History and Favorites continuation remain available during search.
-Clearing the query restores the source's expansion depth. Source changes clear
-the query; ordinary reconciliation preserves it. An empty result keeps the rail
-open and displays a localized no-matches heading.
+The rail does not filter its own cards. The browse panel owns the query for the
+selected source. Closing the panel leaves the rail's route, open state, and
+scroll position unchanged.
 
 ## List Rail
 
@@ -1016,13 +1028,17 @@ source and exposes the explicit Show more button instead. A manual continuation
 that adds cards restores automatic loading. Switching or closing the source
 clears the stopped state.
 
-Search keeps the explicit Show more button in the same slot. Disabling
-automatic rail continuation also restores that button. The button uses the
+Disabling automatic rail continuation restores the explicit Show more button. The button uses the
 video card dimensions, presents Loading while a request is active, and presents
 Retry after a continuation failure. Keyboard activation focuses the first
 appended card if focus remains on the button when loading completes. If
 continuation ends without adding a card, focus moves to the last existing card
 before the button is removed.
+
+Opening the browse panel suspends the rail's proximity trigger; the panel owns
+continuation while it is open. Opening or closing the panel leaves the rail's
+route, open state, and scroll position unchanged. Retained items the panel adds
+remain available to the rail.
 
 Expansion preserves the rail scroll position and does not recenter the current
 video.
@@ -1052,8 +1068,8 @@ destination window directly.
 ## Video Card
 
 A video card is the extension-owned rendering of one video item. It uses a
-fixed card width and stable thumbnail aspect ratio. Card content keeps the rail
-height stable.
+fixed card width and stable thumbnail aspect ratio. The same card renders in the
+rail and the browse panel. Card content keeps rows stable on both surfaces.
 
 The card links to the item's target URL. Plain same-tab archive activation uses
 the configured video-switching behavior for every source kind. Modified clicks,
@@ -1083,6 +1099,199 @@ Add controls use the same captured native watch-later visual as the
 current-video watch-later action. Removal controls always use an
 extension-owned trash icon. Activating the rest of the card follows the card
 link.
+
+## Browse Panel
+
+The browse panel is the vertical, full-source presentation of the selected
+video-list source. It renders the source's video items as a grid of the same
+cards used by the list rail, grouped by source date when timestamps are
+available.
+
+The panel opens from the Search tool in the rail action group. The tool is
+available while a rail is open and its source has valid items. Activating it
+from More closes More before the panel opens. The tool declares a dialog popup
+with `aria-haspopup`, exposes the panel's open state with `aria-expanded`, and
+references the panel with `aria-controls`.
+
+The panel is an extension-owned modal dialog anchored to the bottom of the
+layout root. It is centered horizontally and spans the layout width less a
+narrow gutter, up to a maximum width. It occupies up to 78% of the layout root
+height, leaves a small top gutter within the layout root, and keeps at least
+enough height for its header, search row, and one card row. On tall viewports
+its top edge leaves a strip of the stage visible. A translucent scrim covers
+the layout behind it and consumes the pointer activation that dismisses it, so
+the underlying player control does not receive that click. The panel and scrim
+paint above the dock and stage. The panel is positioned within the layout root
+and changes neither stage nor dock dimensions. It is not a list-dock state;
+the dock keeps its open or controls-only state beneath it. The player remains
+mounted and playback continues beneath the panel.
+
+The panel covers the dock and the lower stage. Its scrim and focus containment
+make the covered surfaces unavailable to pointer and keyboard input until it
+closes. Keyboard events inside the panel do not reach Bilibili's player
+shortcuts.
+
+The panel presents the selected source instance. Favorites presents the
+selected folder and searches that folder. A source route change, a closed rail,
+a disabled source or layout, a lost player, an account change, or the start of
+same-tab navigation closes the panel. When a source or rail change closes the
+panel, focus moves to the selected source button or the activation control.
+Same-tab navigation hands focus to the destination page. Ordinary
+reconciliation updates an open panel in place. The panel is excluded from
+native DOM discovery; its changes are extension-owned mutations.
+
+A source instance first opens the panel at the top. It retains its panel scroll
+position and query while the page session and layout session continue, and a
+reopened panel restores the first visible card by key when it still exists and
+otherwise opens at the top. A new page session starts at the top. The panel's
+open state does not survive a document load. The panel does not move to the
+current video; the rail retains that positioning behavior.
+
+The panel header shows the source label, the Favorites folder title when
+present, and the number of renderable items. Counts describe renderable items,
+not account or folder metadata totals. The header and search row stay fixed;
+the card grid owns the panel's vertical scroll. Panel labels and date sections
+use the UI language; folder titles keep Bilibili's wording.
+
+Browse cards are the rail's cards rendered into a different geometry. The panel
+uses the same card renderer and item key, the same current-card match, the same
+thumbnail state, the same watch-later add or removal controls, and the same
+navigation callbacks. Within a card, focus follows the rail's link and mutation
+control order. Each surface owns and reconciles its own card nodes; the panel
+never moves a rail card. The panel adds no card actions.
+
+The panel uses the extension's dialog focus, Escape, and focus-return rules with
+layout-anchored geometry rather than the shared popup positioning.
+
+## Browse Date Groups
+
+The panel groups items by the source timestamp's calendar date in the browser's
+local time zone. Sections follow the order in which their first item appears in
+the source, and items keep their source order within a section.
+
+Sections use Today and Yesterday labels when those dates are present. Other
+sections use a localized month and day, adding the year when it differs from
+the current year. Today and Yesterday are UI message keys; other labels use
+`Intl.DateTimeFormat` with the UI language. Date labels are computed when
+sections are built, when the panel opens, and when the document becomes visible.
+Each section header shows its label and the number of renderable items it
+contains. Section headers are headings in the grid.
+
+An item without a valid timestamp joins the section of the nearest preceding
+timestamped item. Items before the first timestamped item join the first dated
+section. A source with no timestamps at all renders one ungrouped section.
+
+Date headers are layout rows in the virtual grid and scroll with the cards. The
+panel header shows the date group of the first visible card row while the grid
+scrolls, so the current date remains identifiable without a pinned header.
+
+Search filters items before sections are built. Section headers and counts
+describe the filtered result. Section boundaries follow source order; the panel
+does not reorder items by timestamp.
+
+## Browse Virtual Grid
+
+The panel lays out cards in a vertical grid using the rail's card width, card
+height, and gap. The column count is the largest whole number of cards that fit
+the panel's content width, with a minimum of one. Rows have a fixed height;
+empty cells at the end of a row are not rendered.
+
+The panel virtualizes over layout rows: a date header row, a card row, and a
+tail row. Fixed row heights let the scroll surface know the full content height
+without measuring cards. The panel mounts the rows intersecting the viewport and
+one row of overscan above and below. A focused card's row and a row with an
+active pointer press stay mounted until the interaction ends.
+
+Scrolling and resizing update the window once per animation frame,
+independently of page discovery. Resizing recomputes the column count and keeps
+the first visible item at the top rather than preserving the row index.
+Appending items extends the content without moving the current scroll position.
+
+The panel requests its next continuation when the rendered content approaches
+its end, or when the content is shorter than the viewport and more items remain.
+A tail skeleton row marks a request in flight. A failed continuation keeps the
+rendered items and replaces the tail with a localized retry row. Retry is
+explicit and resumes from the retained cursor. An automatic continuation that
+adds no cards stops automatic loading for that source and exposes the explicit
+continuation control instead; an explicit continuation that adds cards restores
+automatic loading. One continuation request per source is active; the panel and
+the rail share the source's request state.
+
+A source refresh or an account mutation reconciles the open grid in place. The
+panel preserves the first visible item and the focused item by card key. If the
+source shrinks past the current position, the grid clamps to its new end.
+
+Changing the query rebuilds the layout rows and returns the panel to the top.
+Clearing the query rebuilds the unfiltered rows at the top. Matches that arrive
+from a scan extend the rows without moving the current scroll position.
+
+## Browse Search
+
+The panel has its own persistent search field. Its accessible name and
+placeholder state the full-source scope. It searches the complete selected
+source rather than the items retained by the rail. Matching uses the rail's
+case-insensitive, Unicode-normalized substring over title and author. Favorites
+searches the selected folder.
+
+Page-owned sources and account sources with no continuation filter locally. An
+account source with a continuation starts a full-source scan after a short input
+debounce. The scan requests one continuation page at a time through the source's
+normal request path and adds matches to their date sections as pages complete.
+An empty continuation page that advances the cursor remains a scan step; a
+missing or repeated cursor ends the scan.
+
+The panel reports the scan as provisional. The result count updates as pages
+arrive, and the no-matches state appears only when the scan reaches the end. A
+progress row shows a busy indicator and the number of scanned items. Matches
+keep source order and are not ranked by relevance.
+
+Changing the query, closing the panel, changing the source, or starting
+navigation stops the scan after its in-flight page. The in-flight page is
+retained, the cursor stays usable, and the source remains ready for a later
+continuation. A scan failure keeps the matches already found and exposes a
+localized retry; retry resumes from the retained cursor.
+
+The scan uses the same source record and cursor as the rail. A completed scan
+leaves the source fully retained, and the rail renders the expanded list after
+the panel closes. Scan pages update the panel and the source store without a
+page discovery pass or a player, comment, or dock remount.
+
+The panel owns the list query. Closing and reopening the panel retains the
+query while the source instance continues. Reopening a panel with a retained
+query resumes its scan when the source can continue.
+
+## Browse Keyboard and Focus
+
+The panel is a modal dialog labelled by its source title. Opening moves focus to
+its search field. The Close control precedes the search field in tab order.
+Focus stays within the panel: Tab and Shift+Tab move through the Close control,
+the search field, and the rendered cards, wrapping at the ends. Keyboard events
+inside the panel do not reach Bilibili's player shortcuts.
+
+Tab or Shift+Tab that crosses a rendered card row mounts the adjacent card row
+and moves focus to its first or last control, matching the rail's cross-window
+behavior. A focused card's row stays mounted while the grid scrolls. When focus
+is in the grid, Home and End move to the first and last card of the filtered
+list, and PageUp and PageDown scroll one viewport without moving focus. Moving
+focus reveals its target row.
+
+Escape with a non-empty query clears it and focuses the search field. Escape
+with an empty query closes the panel. The Close control always closes. Closing
+by Escape or the Close control returns focus to the Search tool, to the More
+launcher when the tool is unpinned, or to the selected source button or
+activation control when the tool is no longer available. A scrim pointer
+dismissal closes without forcing focus.
+
+A plain same-tab card activation closes the panel before navigation; focus
+follows the destination navigation. Modified and new-tab activations leave the
+panel open. When an account mutation or source refresh removes the focused
+card, focus moves to the next card in reading order, then the previous card,
+then the search field. Result-count changes and scan completion are coalesced
+into a polite status region; search failures are announced there. Date changes
+caused by scrolling are not announced.
+
+The panel opens and closes with a short slide and fade. Reduced motion removes
+the transition.
 
 ## Video Navigation
 
@@ -1124,6 +1333,7 @@ watched video changes with in-page switching enabled, it starts a new page
 session and reconciles discovered regions in the mounted layout. The comment
 scroll position and source-route interaction state reset for the destination
 video. Full-page switching reloads the new watch route before reconciliation.
+Same-tab navigation closes the browse panel before the destination transition.
 
 Enabled documents retain mutation observation, URL polling, native navigation,
 account loading, preview demand, and scheduled reconciliation while hidden.
@@ -1174,7 +1384,8 @@ changes. Document-root classes and theme attributes are written only when their
 values change, so reconciliation settles after page activity stops.
 
 When a source root changes or an account source finishes loading, that source is
-re-extracted and the list rail is re-rendered from the current source route.
+re-extracted and the list rail and any open browse panel are re-rendered from
+the current source route.
 When the comment region changes, the comment pane receives the current
 page-owned comment tree. When the watch title, uploader, or publish date
 changes, the video header receives the current values.
@@ -1196,6 +1407,11 @@ document-body scrolling.
 The expanded list dock height fits one row of cards and the source bar. The
 height is fixed or clamped, keeping late metadata from resizing the player.
 
+The browse panel is an absolute overlay within the layout root. Its height is a
+fraction of the layout root and does not contribute to stage or dock sizing. Its
+card grid uses the shared card dimensions and a fixed row height, and owns the
+panel's vertical scroll. The document body remains non-scrolling.
+
 The controls-only list dock height is the source bar height. When the list dock
 is absent, its height contribution is zero.
 
@@ -1211,6 +1427,11 @@ header field is available, the comment pane follows its comment state alone.
 
 If no video-list source yields valid video items, the list dock is shown only
 as the enabled activation surface.
+
+The browse panel is unavailable when no source has valid items. An open panel
+closes when its source is no longer selected or no longer has valid items. A
+continuation failure inside the panel keeps rendered cards and exposes an
+explicit retry row.
 
 If a later mutation provides comments or valid list items, the missing component
 is mounted during reconciliation.

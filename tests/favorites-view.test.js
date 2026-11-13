@@ -143,7 +143,7 @@ test("split source controls precede watch later and survive ordinary reconciliat
   assert.equal(layout.isRailOpen, true);
 });
 
-test("folder switches restore scroll independently and clear the previous folder search", (t) => {
+test("folder switches restore scroll independently", (t) => {
   const { layout, rail, source } = fixture(t);
   layout.currentActivationControl = {};
   layout.renderSourceDock([source], {});
@@ -152,9 +152,7 @@ test("folder switches restore scroll independently and clear the previous folder
   layout.renderSourceDock([other], {});
   assert.equal(rail.scrollLeft, 0);
   rail.scrollLeft = 1200;
-  layout.railSearchQuery = "something";
   layout.renderSourceDock([source], {});
-  assert.equal(layout.railSearchQuery, "");
   assert.equal(rail.scrollLeft, 2200);
   layout.renderSourceDock([other], {});
   assert.equal(rail.scrollLeft, 1200);

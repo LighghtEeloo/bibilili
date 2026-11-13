@@ -2,7 +2,8 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { loadContentRuntime } = require("./helpers/content-runtime.js");
 const { RailElement, railFixture } = require("./helpers/rail-dom.js");
-const { AccountSourceStore, LayoutRoot, RailWindow, SourceKind } = loadContentRuntime();
+const { AccountSourceStore, BrowsePanel, LayoutRoot, RailWindow, SourceKind } = loadContentRuntime();
+const { UiMessage, UiStrings } = global.__bibililiI18n;
 
 global.HTMLElement = RailElement;
 global.getComputedStyle = (element) => ({
@@ -287,15 +288,6 @@ test("disabling silent loading keeps the explicit continuation button", () => {
   assert.equal(rail.querySelector(".bibilili-source-tail"), null);
 });
 
-test("search keeps the explicit continuation control", () => {
-  const fixture = railFixture(LayoutRoot, 80);
-  const { layout, rail, source } = fixture;
-  layout.railSearchQuery = "Video 1";
-  layout.renderRail(layout.searchRailSource(source), true);
-  assert.ok(fixture.more());
-  assert.equal(rail.querySelector(".bibilili-source-tail"), null);
-});
-
 test("a failed silent continuation exposes one retry action", async () => {
   const fixture = railFixture(LayoutRoot, 80);
   const { layout, rail, source } = fixture;
@@ -383,23 +375,16 @@ test("Locate jumps to a cached current item in a large rail without rebuilding e
   }
 });
 
-test("Locate follows search results and disables for absent videos and closed rails", () => {
+test("Locate disables for absent videos and closed rails", () => {
   const { layout, source, rail } = railFixture(LayoutRoot, 100, SourceKind.HISTORY);
   layout.createRailLocate();
   source.items[90].targetUrl = global.location.href;
   layout.renderRail(source, true);
   assert.equal(layout.railLocateButton.disabled, false);
-
-  layout.railSearchQuery = "Video 1";
-  layout.refreshRailSearch();
-  assert.equal(layout.railLocateButton.disabled, true);
+  assert.equal(layout.railLocateIndex, 90);
   layout.locateCurrentRailItem();
-  assert.equal(rail.scrollLeft, 0);
-  assert.equal(layout.railSearchQuery, "Video 1");
+  assert.ok(rail.scrollLeft > 0);
 
-  layout.railSearchQuery = "";
-  layout.refreshRailSearch();
-  assert.equal(layout.railLocateButton.disabled, false);
   layout.isRailOpen = false;
   layout.renderSourceDock([source], null);
   assert.equal(layout.railLocateButton.disabled, true);
@@ -425,22 +410,83 @@ test("Locate accepts a collection current marker and preserves control placement
   assert.equal(layout.railActionGroup.firstChild, button);
   assert.equal(button.nextSibling, layout.railStartButton);
   assert.equal(layout.railStartButton.nextSibling, layout.railRefreshButton);
-  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
+  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearchButton);
   layout.renderSourceDock([source], null);
   assert.equal(layout.railLocateButton, button);
   assert.equal(actions.nextSibling, layout.railActionGroup);
   assert.equal(button.nextSibling, layout.railStartButton);
   assert.equal(layout.railStartButton.nextSibling, layout.railRefreshButton);
-  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearch);
+  assert.equal(layout.railRefreshButton.nextSibling, layout.railSearchButton);
 });
 
-test("Back to start refreshes the selected list once and preserves its search", async () => {
+test("Search is enabled only for an open rail with valid source items", () => {
+  const { layout, source } = railFixture(LayoutRoot, 3, SourceKind.HISTORY);
+  layout.createRailControls();
+  layout.isRailOpen = true;
+  layout.renderSourceDock([source], null);
+
+  assert.equal(layout.railSearchButton.disabled, false);
+  assert.equal(layout.railSearchButton.getAttribute("aria-haspopup"), "dialog");
+  assert.equal(layout.railSearchButton.getAttribute("aria-expanded"), "false");
+  assert.equal(layout.railSearchButton.getAttribute("aria-controls"), "bibilili-browse-panel");
+  assert.equal(
+    layout.railSearchButton.getAttribute("aria-label"),
+    UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, "en")
+  );
+
+  layout.isRailOpen = false;
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.railSearchButton.disabled, true);
+
+  layout.isRailOpen = true;
+  layout.renderRailActions(true, { ...source, items: [] });
+  assert.equal(layout.railSearchButton.disabled, true);
+});
+
+test("Search opens the browse panel and closes it when the rail or source changes", () => {
+  const { layout, source, document } = railFixture(LayoutRoot, 3, SourceKind.HISTORY);
+  layout.createRailControls();
+  layout.browsePanel = new BrowsePanel(document, layout.sourceBar, {
+    onClose: () => layout.railSearchButton.setAttribute("aria-expanded", "false"),
+    onFocusFallback: () => layout.focusBrowseFallback()
+  });
+  layout.isRailOpen = true;
+  layout.renderSourceDock([source], null);
+
+  assert.equal(layout.railSearchButton.getAttribute("aria-controls"), layout.browsePanel.panel.id);
+  layout.railSearchButton.dispatch("click");
+  assert.equal(layout.browsePanel.isOpen, true);
+  assert.equal(layout.railSearchButton.getAttribute("aria-expanded"), "true");
+  assert.equal(layout.browsePanel.title.textContent,
+    UiStrings.sourceLabel(SourceKind.HISTORY, "en"));
+
+  layout.browsePanel.handleKeydown({
+    key: "Escape",
+    isComposing: false,
+    preventDefault() {},
+    stopPropagation() {}
+  });
+  assert.equal(layout.browsePanel.isOpen, false);
+  assert.equal(layout.railSearchButton.getAttribute("aria-expanded"), "false");
+
+  layout.railSearchButton.dispatch("click");
+  layout.isRailOpen = false;
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.browsePanel.isOpen, false);
+  assert.equal(layout.railSearchButton.getAttribute("aria-expanded"), "false");
+
+  layout.isRailOpen = true;
+  layout.renderSourceDock([source], null);
+  layout.railSearchButton.dispatch("click");
+  layout.selectedSourceKind = SourceKind.COLLECTION;
+  layout.renderSourceDock([{ ...source, kind: SourceKind.COLLECTION }], null);
+  assert.equal(layout.browsePanel.isOpen, false);
+});
+
+test("Back to start refreshes the selected list once", async () => {
   const { layout, source, rail, card } = railFixture(LayoutRoot, 100);
   layout.createRailControls();
   layout.renderSourceDock([source], null);
-  layout.railSearchQuery = "Video";
-  layout.railSearchInput.value = "Video";
-  layout.refreshRailSearch();
   rail.scrollLeft = 8000;
   let finish;
   let requests = 0;
@@ -465,8 +511,6 @@ test("Back to start refreshes the selected list once and preserves its search", 
   assert.equal(rail.scrollLeft, 0);
   assert.equal(card(0).renderedItem.title, "Video 1 updated");
   assert.equal(layout.selectedSourceKind, source.kind);
-  assert.equal(layout.railSearchQuery, "Video");
-  assert.equal(layout.railSearchInput.value, "Video");
   assert.equal(layout.railRefreshButton.disabled, false);
 });
 
@@ -676,54 +720,4 @@ test("closing the rail releases its cards and preview demand", () => {
   assert.equal(cards().length, 0);
   assert.deepEqual(demands.at(-1), []);
   assert.equal(layout.railSource, null);
-});
-
-test("watch-later search finds unrevealed videos and restores the visible budget", async (t) => {
-  const { layout, store, requests, cards } = await watchLaterRailFixture(t, -1);
-  const kind = SourceKind.WATCH_LATER;
-  const source = store.currentSource(kind);
-  const target = store.currentSource(kind, true).items[200];
-  layout.onWatchLaterSearchSource = () => store.currentSource(kind, true);
-  layout.railSearchQuery = target.title;
-  const results = layout.searchRailSource(source);
-  assert.ok(results.items.some((item) => item.targetUrl === target.targetUrl));
-  assert.equal(results.pagination.hasMore, false);
-  layout.renderRail(results, true);
-  assert.ok(cards().length > 0);
-  assert.equal(store.currentSource(kind).items.length, 80);
-  layout.railSearchQuery = "";
-  assert.equal(layout.searchRailSource(source), source);
-  assert.equal(requests.length, 2);
-});
-
-test("search normalizes titles and authors and safely renders empty results", () => {
-  const { layout, source, cards, demands } = railFixture(LayoutRoot, 3, SourceKind.HISTORY);
-  source.items[0].title = "ＦＯＯ tutorial";
-  source.items[1].author = "Foo Studio";
-  layout.railSearchQuery = "  fOo  ";
-  const results = layout.searchRailSource(source);
-  assert.deepEqual(results.items, source.items.slice(0, 2));
-  assert.equal(results.pagination, source.pagination);
-  layout.renderRail(results, true);
-  layout.railSearchQuery = "no matching title";
-  layout.renderRail(layout.searchRailSource(source), true);
-  assert.equal(cards().length, 0);
-  assert.deepEqual(demands.at(-1), []);
-  assert.equal(source.items.length, 3);
-});
-
-test("ordinary dock reconciliation preserves search and changing source clears it", () => {
-  const { layout, source } = railFixture(LayoutRoot, 10, SourceKind.HISTORY);
-  layout.currentSources = [source];
-  layout.selectedSourceKind = source.kind;
-  layout.railSearchKey = source.kind;
-  layout.railSearchQuery = "no matching title";
-  layout.renderSourceDock([source], {});
-  assert.equal(layout.railSearchQuery, "no matching title");
-  assert.equal(layout.railEntries.length, 0);
-  const other = { ...source, kind: SourceKind.RECOMMENDATIONS };
-  layout.selectedSourceKind = other.kind;
-  layout.renderSourceDock([source, other], {});
-  assert.equal(layout.railSearchQuery, "");
-  assert.equal(layout.railEntries.length, 10);
 });

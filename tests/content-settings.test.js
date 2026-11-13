@@ -647,6 +647,23 @@ test("More reuses counted action nodes and preserves their identity across recon
   assert.equal(share.disabled, true);
 });
 
+test("Search is on the bar by default and moves to More when unpinned", (t) => {
+  const { layout, controller } = settingsFixture(t);
+  layout.renderControlPlacement();
+  assert.equal(layout.railSearchButton.parentElement, layout.railActionGroup);
+  assert.equal(
+    layout.railSearchButton.querySelector(".bibilili-action-label").textContent,
+    UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, "en")
+  );
+
+  controller.setPreferences({
+    ...controller.preferences,
+    pinnedActions: { ...controller.preferences.pinnedActions, search: false }
+  });
+  layout.renderControlPlacement();
+  assert.equal(layout.railSearchButton.parentElement, layout.moreRailGroup);
+});
+
 test("settings share native and local icon renderers and keep rows stable after changes", (t) => {
   const { view, layout, controller } = settingsFixture(t);
   view.ensure();
@@ -681,23 +698,15 @@ test("source changes reconcile through the saved preference snapshot without rev
   assert.equal(layout.currentSources[0], source);
 });
 
-test("an expanded search stays on the bar even when its shortcut belongs in More", (t) => {
-  const { layout, controller, document } = settingsFixture(t);
+test("Search stays in More while its placement preference is off", (t) => {
+  const { layout, controller } = settingsFixture(t);
   controller.preferences.pinnedActions.search = false;
   layout.renderControlPlacement();
-  assert.equal(layout.railSearch.parentElement, layout.moreRailGroup);
-  layout.railSearchButton.dispatch("click");
-  assert.equal(layout.railSearch.parentElement, layout.railActionGroup);
-  assert.equal(document.activeElement, layout.railSearchInput);
-  layout.railSearchInput.value = "Music";
-  layout.railSearchInput.dispatch("input");
-  assert.equal(layout.railSearchQuery, "Music");
+  assert.equal(layout.railSearchButton.parentElement, layout.moreRailGroup);
+
+  controller.preferences.pinnedActions.search = true;
   layout.renderControlPlacement();
-  assert.equal(layout.railSearch.parentElement, layout.railActionGroup);
-  layout.railSearchInput.dispatch("keydown", { key: "Escape", stopPropagation() {}, preventDefault() {} });
-  assert.equal(layout.railSearch.parentElement, layout.moreRailGroup);
-  assert.equal(layout.railSearchQuery, "");
-  assert.equal(document.activeElement, layout.moreButton);
+  assert.equal(layout.railSearchButton.parentElement, layout.railActionGroup);
 });
 
 test("popup dismissal restores focus and reopening retains the same controls", (t) => {

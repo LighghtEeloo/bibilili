@@ -193,6 +193,51 @@ test("converts account entries into de-duplicated source items", () => {
   );
 });
 
+test("converts account source times into millisecond timestamps", () => {
+  const [history] = AccountSourceAdapter.itemsFromEntries(
+    SourceKind.HISTORY,
+    [{ bvid: "BV1xx411c7mD", title: "History", view_at: 1700000000 }],
+    "en"
+  );
+  assert.equal(history.timestamp, 1700000000000);
+
+  const [favorite] = AccountSourceAdapter.itemsFromEntries(
+    SourceKind.FAVORITES,
+    [{ bvid: "BV1xx411c7mD", title: "Favorite", type: 2, attr: 0, fav_time: "1700000001" }],
+    "en"
+  );
+  assert.equal(favorite.timestamp, 1700000001000);
+
+  const [watchLater] = AccountSourceAdapter.itemsFromEntries(
+    SourceKind.WATCH_LATER,
+    [{ bvid: "BV1xx411c7mD", title: "Watch later", add_time: 1700000002 }],
+    "en"
+  );
+  assert.equal(watchLater.timestamp, 1700000002000);
+
+  const [nestedHistory] = AccountSourceAdapter.itemsFromEntries(
+    SourceKind.HISTORY,
+    [{ bvid: "BV1xx411c7mD", title: "Nested history", history: { view_at: 1700000003 } }],
+    "en"
+  );
+  assert.equal(nestedHistory.timestamp, 1700000003000);
+});
+
+test("omits timestamps when the account source time is absent or invalid", () => {
+  const cases = [
+    [SourceKind.HISTORY, { bvid: "BV1xx411c7mD", title: "History", view_at: 0 }],
+    [SourceKind.HISTORY, { bvid: "BV1xx411c7mD", title: "History", view_at: -1 }],
+    [SourceKind.HISTORY, { bvid: "BV1xx411c7mD", title: "History" }],
+    [SourceKind.FAVORITES, { bvid: "BV1xx411c7mD", title: "Favorite", type: 2, attr: 0 }],
+    [SourceKind.WATCH_LATER, { bvid: "BV1xx411c7mD", title: "Watch later", add_time: "nope" }]
+  ];
+
+  for (const [kind, entry] of cases) {
+    const [item] = AccountSourceAdapter.itemsFromEntries(kind, [entry], "en");
+    assert.equal("timestamp" in item, false);
+  }
+});
+
 test("omits empty account sources", () => {
   assert.equal(
     AccountSourceAdapter.sourceFromPayload(

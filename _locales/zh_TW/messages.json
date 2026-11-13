@@ -193,6 +193,30 @@
     "message": "列表操作",
     "description": "Accessible name for the rail action control group."
   },
+  "browseItemCountLabel": {
+    "message": "條目：$1",
+    "description": "Renderable item count in the browse panel header."
+  },
+  "browseSearchLabel": {
+    "message": "搜尋全部影片",
+    "description": "Accessible name and placeholder for searching the complete selected source."
+  },
+  "browseSearchEmpty": {
+    "message": "沒有符合的影片",
+    "description": "Browse panel grid when the local query has no matches."
+  },
+  "browseAllItemsLabel": {
+    "message": "全部影片",
+    "description": "Date section label for a source without timestamps."
+  },
+  "browseTodayLabel": {
+    "message": "今天",
+    "description": "Date section label for items from the current local day."
+  },
+  "browseYesterdayLabel": {
+    "message": "昨天",
+    "description": "Date section label for items from the previous local day."
+  },
   "railLocateLabel": {
     "message": "定位",
     "description": "Button label for centering the current video in the displayed rail."
@@ -206,12 +230,8 @@
     "description": "Accessible name and tooltip for refreshing the selected rail source."
   },
   "railSearchLabel": {
-    "message": "搜尋目前清單",
-    "description": "Label and placeholder for searching the selected video rail."
-  },
-  "railSearchEmpty": {
-    "message": "沒有符合的影片",
-    "description": "Rail heading when the search has no matches."
+    "message": "搜尋此列表",
+    "description": "Accessible name for the Search tool that opens the browse panel."
   },
   "languageName": {
     "message": "繁體中文",
@@ -424,9 +444,6 @@
   },
   "favoritesSearchLabel": {
     "message": "搜尋收藏夾"
-  },
-  "favoritesSearchVideosLabel": {
-    "message": "搜尋已載入的收藏影片"
   },
   "favoritesRefreshLabel": {
     "message": "重新整理收藏夾"

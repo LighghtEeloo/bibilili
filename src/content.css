@@ -204,7 +204,9 @@
   #bibilili-layout-root .bibilili-comment-pane,
   .bibilili-action-native-visual,
   .bibilili-action-count,
-  .bibilili-loading-overlay {
+  .bibilili-loading-overlay,
+  .bibilili-browse-panel,
+  .bibilili-browse-scrim {
     transition: none;
   }
 
@@ -265,6 +267,7 @@
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
   --bibilili-card-width: 190px;
+  --bibilili-card-height: 126px;
   --bibilili-card-gap: 10px;
   --bibilili-comment-pane-width: clamp(280px, 25vw, 430px);
   --bibilili-comment-resize-width: 8px;
@@ -309,7 +312,11 @@
   pointer-events: none;
 }
 
+/* Note: page-owned player controls carry their own z-index; keep them below extension overlays. */
 .bibilili-stage {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -338,6 +345,8 @@
 .bibilili-player-pane {
   grid-area: 1 / 1;
   position: relative;
+  z-index: 0;
+  isolation: isolate;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -698,6 +707,7 @@
   overflow: hidden;
   border-top: 1px solid var(--bibilili-border);
   background: var(--bibilili-panel);
+  isolation: isolate;
 }
 
 #bibilili-layout-root.bibilili-has-dock .bibilili-list-dock,
@@ -1460,7 +1470,8 @@
 
 .bibilili-rail-locate:disabled,
 .bibilili-rail-start:disabled,
-.bibilili-rail-refresh:disabled {
+.bibilili-rail-refresh:disabled,
+.bibilili-rail-search:disabled {
   cursor: default;
   border-color: transparent;
   color: var(--bibilili-muted);
@@ -1468,36 +1479,7 @@
 }
 
 .bibilili-rail-search {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-}
-
-.bibilili-rail-search[hidden],
-.bibilili-rail-search > [hidden] {
-  display: none;
-}
-
-.bibilili-rail-search > button {
   width: 32px;
-}
-
-.bibilili-rail-search > input {
-  box-sizing: border-box;
-  width: 200px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--bibilili-button-border);
-  border-radius: 6px;
-  color: var(--bibilili-text);
-  background: var(--bibilili-control-bg);
-  font: inherit;
-  font-size: 13px;
-}
-
-.bibilili-rail-search > input:focus-visible {
-  outline: 2px solid var(--bibilili-selected-border);
-  outline-offset: -2px;
 }
 
 .bibilili-action-label {
@@ -1593,6 +1575,266 @@
   display: none;
 }
 
+#bibilili-layout-root .bibilili-browse-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.46);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 0s linear 180ms;
+}
+
+#bibilili-layout-root .bibilili-browse-scrim[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 180ms ease, visibility 0s;
+}
+
+#bibilili-layout-root .bibilili-browse-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+  width: min(1120px, calc(100% - 32px));
+  height: min(78%, calc(100% - 16px));
+  padding: 16px 18px 18px;
+  overflow: hidden;
+  border: 1px solid var(--bibilili-border);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--bibilili-panel-raised);
+  box-shadow: 0 -18px 48px var(--bibilili-shadow);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 18px);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms;
+}
+
+#bibilili-layout-root .bibilili-browse-panel[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s;
+}
+
+.bibilili-browse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bibilili-browse-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bibilili-browse-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--bibilili-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bibilili-browse-count {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--bibilili-border);
+  border-radius: 999px;
+  background: var(--bibilili-panel);
+  color: var(--bibilili-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.bibilili-browse-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 6px;
+  background: var(--bibilili-control-bg);
+  color: var(--bibilili-control-text);
+  cursor: pointer;
+}
+
+.bibilili-browse-close:hover {
+  border-color: var(--bibilili-button-hover-border);
+}
+
+.bibilili-browse-close:focus-visible {
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: 2px;
+}
+
+.bibilili-browse-current-date {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bibilili-selected-bg);
+  color: var(--bibilili-selected-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.bibilili-browse-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.bibilili-browse-search-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--bibilili-control-bg);
+  color: var(--bibilili-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.bibilili-browse-search-input::placeholder {
+  color: var(--bibilili-muted);
+}
+
+.bibilili-browse-search-input:focus-visible {
+  border-color: var(--bibilili-selected-border);
+  box-shadow: 0 0 0 1px var(--bibilili-selected-border);
+}
+
+.bibilili-browse-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--bibilili-border);
+}
+
+.bibilili-browse-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.bibilili-browse-canvas {
+  position: relative;
+  width: 100%;
+}
+
+.bibilili-browse-row {
+  position: absolute;
+  right: 0;
+  left: 0;
+}
+
+.bibilili-browse-header-row {
+  display: flex;
+  align-items: center;
+}
+
+.bibilili-browse-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--bibilili-muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.bibilili-browse-date-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bibilili-browse-date-count {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--bibilili-border);
+  border-radius: 999px;
+  background: var(--bibilili-panel);
+  color: var(--bibilili-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.bibilili-browse-cards-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bibilili-card-gap);
+}
+
+.bibilili-browse-empty-row {
+  display: grid;
+  place-items: center;
+}
+
+.bibilili-browse-empty {
+  margin: 0;
+  color: var(--bibilili-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.bibilili-browse-tail-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.bibilili-browse-tail {
+  height: var(--bibilili-card-height, 126px);
+}
+
+.bibilili-browse-tail[data-state="more"] {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  color: var(--bibilili-muted);
+  background: var(--bibilili-panel);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.bibilili-browse-tail[data-state="more"]:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
+}
 
 .bibilili-popup {
   position: fixed;
@@ -2169,14 +2411,6 @@ label.bibilili-settings-row,
   order: 2;
   margin-left: auto;
   font-size: 12px;
-}
-
-.bibilili-more-popup .bibilili-rail-search {
-  display: block;
-}
-
-.bibilili-more-popup .bibilili-rail-search > input {
-  width: 100%;
 }
 
 

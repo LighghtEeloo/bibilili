@@ -2,7 +2,7 @@
   "use strict";
 
   const { DomProbe } = window.__bibililiDom;
-  const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
+  const { UiControl, PopupPanel } = window.__bibililiControls;
   const { SettingsView } = window.__bibililiSettings;
   const { OperationHistory, OperationKind } = window.__bibililiOperationHistory;
   const { RuntimePerformance, PerformanceCounter, PerformanceWork, ReconcileCause, DiscoveryStep, DiscoveryProfile } =
@@ -38,6 +38,14 @@
   const FLOATING_TOGGLE_ROOT_ID = "bibilili-toggle-root";
   const LOADING_COVER_ID = "bibilili-loading-cover";
   const LIST_RAIL_ID = "bibilili-list-rail";
+  const BROWSE_PANEL_ID = "bibilili-browse-panel";
+  const BROWSE_SEARCH_INPUT_ID = "bibilili-browse-search-input";
+  const BROWSE_GRID_ID = "bibilili-browse-grid";
+  const BROWSE_HEADER_ROW_HEIGHT = 30;
+  const BROWSE_EMPTY_ROW_HEIGHT = 96;
+  const BROWSE_CARD_WIDTH_FALLBACK = 190;
+  const BROWSE_CARD_HEIGHT_FALLBACK = 126;
+  const BROWSE_CARD_GAP_FALLBACK = 10;
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const NATIVE_OVERLAY_ATTR = "data-bibilili-native-overlay";
   const NATIVE_OVERLAY_POSITION_ATTR =
@@ -3329,6 +3337,11 @@
         viewCount: AccountSourceAdapter.viewCountFor(entry, language),
         progress: AccountSourceAdapter.progressFor(entry, language)
       };
+      const timestamp = AccountSourceAdapter.timestampFor(kind, entry);
+
+      if (timestamp !== null) {
+        item.timestamp = timestamp;
+      }
 
       if (kind === SourceKind.WATCH_LATER) {
         const watchLaterAid = AccountSourceAdapter.watchLaterAidFor(entry);
@@ -3339,6 +3352,32 @@
       }
 
       return item;
+    }
+
+    /**
+     * Reads the source's ordering time in Unix milliseconds.
+     *
+     * Note: Bilibili account records expose seconds; video items carry
+     * milliseconds for date grouping.
+     *
+     * @param {string} kind
+     * @param {object} entry
+     * @returns {number | null}
+     */
+    static timestampFor(kind, entry) {
+      let seconds = null;
+
+      if (kind === SourceKind.HISTORY) {
+        seconds = entry.view_at ?? entry.history?.view_at;
+      } else if (kind === SourceKind.FAVORITES) {
+        seconds = entry.fav_time;
+      } else if (kind === SourceKind.WATCH_LATER) {
+        seconds = entry.add_time;
+      }
+
+      const value = AccountSourceAdapter.nonNegativeInteger(seconds);
+
+      return value === null || value === 0 ? null : value * 1000;
     }
 
     /**
@@ -6535,6 +6574,1476 @@
   }
 
   /**
+   * Matches list items by title or author with normalized, case-insensitive
+   * substring search. Rail and browse surfaces share this rule.
+   */
+  class ListSearch {
+    /**
+     * @param {string} text
+     * @returns {string}
+     */
+    static normalize(text) {
+      return String(text ?? "").normalize("NFKC").toLowerCase();
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {string} query
+     * @returns {boolean}
+     */
+    static matches(item, query) {
+      const normalized = ListSearch.normalize(query).trim();
+      if (!normalized) return true;
+      return [item.title, item.author].some((text) =>
+        ListSearch.normalize(text).includes(normalized));
+    }
+
+    /**
+     * @param {VideoItem[]} items
+     * @param {string} query
+     * @returns {VideoItem[]}
+     */
+    static filter(items, query) {
+      const normalized = ListSearch.normalize(query).trim();
+      if (!normalized) return items;
+      return items.filter((item) => ListSearch.matches(item, normalized));
+    }
+  }
+
+  /**
+   * Builds browse date sections from item timestamps in the browser's local
+   * time zone. Section order follows the first item for each date, and item
+   * order within a section follows the source.
+   */
+  class BrowseDateGrouping {
+    /**
+     * @param {Array<{timestamp?: number}>} items Items or browse entries.
+     * @param {string} language
+     * @param {Date} [now]
+     * @returns {Array<{key: string, date: Date | null, label: string, items: object[]}>}
+     */
+    static build(items, language, now = new Date()) {
+      const sections = [];
+      const sectionsByDate = new Map();
+      let current = null;
+      let pending = [];
+
+      for (const item of items) {
+        const date = BrowseDateGrouping.validDate(item.timestamp);
+
+        if (!date) {
+          if (current) current.items.push(item);
+          else pending.push(item);
+          continue;
+        }
+
+        const key = BrowseDateGrouping.dateKey(date);
+        let section = sectionsByDate.get(key);
+
+        if (!section) {
+          section = { key, date, label: "", items: [] };
+          if (pending.length) {
+            section.items.push(...pending);
+            pending = [];
+          }
+          sectionsByDate.set(key, section);
+          sections.push(section);
+        }
+
+        section.items.push(item);
+        current = section;
+      }
+
+      if (pending.length) {
+        if (sections.length) sections[0].items.unshift(...pending);
+        else {
+          sections.push({ key: "undated", date: null, label: "", items: pending });
+        }
+      }
+
+      for (const section of sections) {
+        section.label = BrowseDateGrouping.labelFor(section, language, now);
+      }
+
+      return sections;
+    }
+
+    /**
+     * @param {unknown} timestamp
+     * @returns {Date | null}
+     */
+    static validDate(timestamp) {
+      const value = Number(timestamp);
+      if (!Number.isFinite(value) || value <= 0) return null;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    /**
+     * @param {Date} date
+     * @returns {string}
+     */
+    static dateKey(date) {
+      return date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+    }
+
+    /**
+     * @param {Date} left
+     * @param {Date} right
+     * @returns {boolean}
+     */
+    static sameDate(left, right) {
+      return left.getFullYear() === right.getFullYear() &&
+        left.getMonth() === right.getMonth() &&
+        left.getDate() === right.getDate();
+    }
+
+    /**
+     * @param {{date: Date | null}} section
+     * @param {string} language
+     * @param {Date} now
+     * @returns {string}
+     */
+    static labelFor(section, language, now) {
+      if (!section.date) {
+        return UiStrings.message(UiMessage.BROWSE_ALL_ITEMS_LABEL, language);
+      }
+      if (BrowseDateGrouping.sameDate(section.date, now)) {
+        return UiStrings.message(UiMessage.BROWSE_TODAY_LABEL, language);
+      }
+
+      const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (BrowseDateGrouping.sameDate(section.date, yesterday)) {
+        return UiStrings.message(UiMessage.BROWSE_YESTERDAY_LABEL, language);
+      }
+
+      const options = { month: "short", day: "numeric" };
+      if (section.date.getFullYear() !== now.getFullYear()) options.year = "numeric";
+      return new Intl.DateTimeFormat(
+        UiStrings.numberLocale(language),
+        options
+      ).format(section.date);
+    }
+  }
+
+  /**
+   * Maps grouped browse entries onto fixed-height virtual rows. Header and
+   * card rows share the same gap, and a trailing row can represent pending
+   * continuation state.
+   */
+  class BrowseRowLayout {
+    /**
+     * @param {object} options
+     * @param {Array<{key: string, label: string, items: object[]}>} options.sections
+     * @param {number} options.columns
+     * @param {number} options.cardHeight
+     * @param {number} options.headerHeight
+     * @param {number} options.emptyHeight
+     * @param {number} options.gap
+     * @param {number} [options.tailHeight]
+     */
+    constructor({ sections, columns, cardHeight, headerHeight, emptyHeight, gap, tailHeight = 0 }) {
+      this.rows = [];
+      this.entryRowIndexes = [];
+      let top = 0;
+      let entryIndex = 0;
+
+      const push = (row) => {
+        row.top = top;
+        this.rows.push(row);
+        top += row.height + gap;
+      };
+
+      if (sections.length === 0) {
+        push({ kind: "empty", key: "empty", height: emptyHeight });
+      }
+
+      for (const section of sections) {
+        push({ kind: "header", key: "header:" + section.key, section, height: headerHeight });
+
+        for (let start = 0; start < section.items.length; start += columns) {
+          const end = Math.min(start + columns, section.items.length);
+          const rowIndex = this.rows.length;
+          for (let index = start; index < end; index += 1) {
+            this.entryRowIndexes[entryIndex] = rowIndex;
+            entryIndex += 1;
+          }
+          push({
+            kind: "cards",
+            key: "cards:" + section.key + ":" + start,
+            section,
+            entryStart: start,
+            entryEnd: end,
+            height: cardHeight
+          });
+        }
+      }
+
+      if (tailHeight > 0) {
+        push({ kind: "tail", key: "tail", height: tailHeight });
+      }
+
+      this.totalHeight = this.rows.length ? top - gap : 0;
+    }
+
+    /**
+     * Returns the row containing a vertical offset.
+     *
+     * @param {number} offset
+     * @returns {number}
+     */
+    rowIndexAt(offset) {
+      if (this.rows.length === 0) return -1;
+      let low = 0;
+      let high = this.rows.length - 1;
+
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (this.rows[middle].top <= offset) low = middle;
+        else high = middle - 1;
+      }
+
+      return low;
+    }
+
+    /**
+     * @param {number} entryIndex
+     * @returns {number}
+     */
+    rowIndexForEntry(entryIndex) {
+      return this.entryRowIndexes[entryIndex] ?? -1;
+    }
+  }
+
+  /**
+   * Builds the decorative skeleton shared by the rail and browse tail rows.
+   */
+  class SourceTailSkeleton {
+    /**
+     * @param {Document} document
+     * @returns {HTMLElement}
+     */
+    static create(document) {
+      const skeleton = document.createElement("span");
+      skeleton.className = SOURCE_TAIL_SKELETON_CLASS;
+      skeleton.setAttribute("aria-hidden", "true");
+
+      const cover = document.createElement("span");
+      cover.className = "bibilili-source-tail-cover";
+      const body = document.createElement("span");
+      body.className = "bibilili-source-tail-body";
+      const title = document.createElement("span");
+      title.className = "bibilili-source-tail-line bibilili-source-tail-line-title";
+      const meta = document.createElement("span");
+      meta.className = "bibilili-source-tail-line bibilili-source-tail-line-meta";
+      body.append(title, meta);
+      skeleton.append(cover, body);
+      return skeleton;
+    }
+  }
+
+  /**
+   * @typedef {object} BrowseCardHost
+   * @property {(item: VideoItem, keyCounts: Map<string, number>) => string} keyFor
+   * @property {(source: VideoListSource, item: VideoItem) => boolean} isCurrent
+   * @property {(item: VideoItem) => VideoItem} hydrate
+   * @property {(item: VideoItem, isCurrent: boolean, key: string, sourceKind: string) => HTMLElement} create
+   * @property {(card: HTMLElement, item: VideoItem, isCurrent: boolean, key: string, sourceKind: string) => void} update
+   * @property {(items: VideoItem[]) => void} setDemand
+   * @property {(source: VideoListSource) => Promise<number | void>} [requestMore]
+   */
+
+  /**
+   * @typedef {object} BrowseGridMetrics
+   * @property {number} width
+   * @property {number} height
+   * @property {number} cardWidth
+   * @property {number} cardHeight
+   * @property {number} gap
+   * @property {number} columns
+   */
+
+  /**
+   * Owns the browse panel's vertical virtual grid. It renders date header rows,
+   * card rows, an empty state, and a continuation tail row inside a retained
+   * scroll surface.
+   */
+  class BrowseGrid {
+    /**
+     * @param {Document} document
+     * @param {object} [options]
+     * @param {BrowseCardHost | null} [options.cardHost]
+     * @param {(() => BrowseGridMetrics) | null} [options.measure]
+     * @param {(label: string | null) => void} [options.onVisibleSectionChange]
+     * @param {(() => void) | null} [options.onFocusLoss]
+     */
+    constructor(document, options = {}) {
+      this.document = document;
+      this.cardHost = options.cardHost ?? null;
+      this.measure = options.measure ?? null;
+      this.onVisibleSectionChange = options.onVisibleSectionChange ?? null;
+      this.onFocusLoss = options.onFocusLoss ?? null;
+
+      this.root = document.createElement("div");
+      this.root.id = BROWSE_GRID_ID;
+      this.root.className = "bibilili-browse-grid";
+      this.root.setAttribute("role", "region");
+      this.canvas = document.createElement("div");
+      this.canvas.className = "bibilili-browse-canvas";
+      this.root.append(this.canvas);
+
+      this.data = null;
+      this.entries = [];
+      this.entryIndexByKey = new Map();
+      this.rows = [];
+      this.rowsByKey = new Map();
+      this.cards = new Map();
+      this.layout = null;
+      this.columns = 0;
+      this.metrics = null;
+      this.frame = null;
+      this.isOpen = false;
+      this.pointerCard = null;
+      this.pendingFocus = null;
+      this.lastVisibleSection = null;
+      this.lastRequestCount = null;
+      this.requestInFlight = false;
+      this.stalledKeys = new Set();
+
+      this.root.addEventListener("scroll", () => this.scheduleRender(), { passive: true });
+      this.root.addEventListener("focusin", () => this.scheduleRender());
+      this.root.addEventListener("focusout", () => this.scheduleRender());
+      this.root.addEventListener("pointerdown", (event) => {
+        this.pointerCard = event.target?.closest?.(".bibilili-video-card") ?? null;
+      });
+
+      this.pointerEndHandler = () => {
+        if (!this.pointerCard) return;
+        this.pointerCard = null;
+        this.scheduleRender();
+      };
+      this.document.addEventListener?.("pointerup", this.pointerEndHandler, true);
+      this.document.addEventListener?.("pointercancel", this.pointerEndHandler, true);
+      this.visibilityHandler = () => {
+        if (this.document.visibilityState === "visible") this.scheduleRender();
+      };
+      this.document.addEventListener?.("visibilitychange", this.visibilityHandler);
+
+      if (typeof ResizeObserver === "function") {
+        this.resizeObserver = new ResizeObserver(() => this.scheduleRender());
+        this.resizeObserver.observe(this.root);
+      } else {
+        this.resizeObserver = null;
+      }
+    }
+
+    /**
+     * Replaces the rendered grouping while optionally preserving the current
+     * first visible entry.
+     *
+     * @param {object} data
+     * @param {VideoListSource | null} data.source
+     * @param {string | null} data.sourceKey
+     * @param {Array<{key: string, label: string, items: object[]}>} data.sections
+     * @param {string} data.language
+     * @param {string} data.query
+     * @param {boolean} [data.resetScroll]
+     * @param {boolean} [data.queryChanged]
+     */
+    setData(data) {
+      const previous = this.data;
+      const sameSource = Boolean(previous && previous.sourceKey === data.sourceKey);
+      const anchor = previous && !data.resetScroll ? this.captureAnchor() : null;
+      const previousColumns = this.columns;
+      const previousCardWidth = this.metrics?.cardWidth;
+      const previousCardHeight = this.metrics?.cardHeight;
+      const previousGap = this.metrics?.gap;
+      const activeElement = this.document.activeElement;
+      const activeCard = activeElement?.closest?.(".bibilili-video-card") ?? null;
+      const activeKey = activeCard?.dataset.bibililiCardKey ?? null;
+      const activeIndex = activeKey ? this.entryIndexByKey.get(activeKey) : undefined;
+
+      if (!sameSource) {
+        this.stalledKeys.clear();
+        this.lastRequestCount = null;
+        this.requestInFlight = false;
+      } else if (this.lastRequestCount !== null && !data.queryChanged) {
+        const status = data.source?.pagination?.status ?? AccountSourceStatus.READY;
+        if (status !== AccountSourceStatus.LOADING) {
+          const count = data.sections.reduce((total, section) => total + section.items.length, 0);
+          if (count > this.lastRequestCount) this.stalledKeys.delete(data.sourceKey);
+          else this.stalledKeys.add(data.sourceKey);
+          this.lastRequestCount = null;
+        }
+      } else if (data.queryChanged) {
+        this.lastRequestCount = null;
+      }
+
+      this.data = data;
+      this.entries = data.sections.flatMap((section) => section.items);
+      this.entryIndexByKey.clear();
+      this.entries.forEach((entry, index) => this.entryIndexByKey.set(entry.key, index));
+
+      if (this.isOpen && activeIndex !== undefined && !this.entryIndexByKey.has(activeKey)) {
+        if (this.entries.length) {
+          this.pendingFocus = {
+            index: Math.min(activeIndex ?? 0, this.entries.length - 1),
+            lastControl: false
+          };
+        } else {
+          this.onFocusLoss?.();
+        }
+      }
+
+      this.applyMetrics(this.readMetrics());
+      this.layout = this.createLayout();
+      this.rows = this.layout.rows;
+
+      const resized = previousColumns !== 0 && (
+        previousColumns !== this.columns ||
+        previousCardWidth !== this.metrics.cardWidth ||
+        previousCardHeight !== this.metrics.cardHeight ||
+        previousGap !== this.metrics.gap
+      );
+
+      if (data.resetScroll || !sameSource) {
+        this.root.scrollTop = 0;
+      } else if (anchor) {
+        this.restoreAnchor(anchor, resized);
+      } else {
+        this.clampScroll();
+      }
+
+      this.render();
+    }
+
+    /** Marks the grid as visible and refreshes the mounted window. */
+    open() {
+      this.isOpen = true;
+      this.render();
+    }
+
+    /** Releases preview demand while the panel is closed. */
+    close() {
+      this.isOpen = false;
+      this.pendingFocus = null;
+      this.pointerCard = null;
+      this.cardHost?.setDemand([]);
+      this.cancelFrame();
+    }
+
+    /** Clears retained content and continuation state for a new page session. */
+    reset() {
+      this.cancelFrame();
+      this.isOpen = false;
+      this.pendingFocus = null;
+      this.pointerCard = null;
+      this.rowsByKey.clear();
+      this.cards.clear();
+      this.canvas.replaceChildren();
+      this.data = null;
+      this.entries = [];
+      this.entryIndexByKey.clear();
+      this.layout = null;
+      this.rows = [];
+      this.lastVisibleSection = null;
+      this.lastRequestCount = null;
+      this.requestInFlight = false;
+      this.stalledKeys.clear();
+      this.root.scrollTop = 0;
+      this.cardHost?.setDemand([]);
+    }
+
+    /** Stops observers and removes owned grid nodes. */
+    stop() {
+      this.close();
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = null;
+      this.document.removeEventListener?.("pointerup", this.pointerEndHandler, true);
+      this.document.removeEventListener?.("pointercancel", this.pointerEndHandler, true);
+      this.document.removeEventListener?.("visibilitychange", this.visibilityHandler);
+      this.rowsByKey.clear();
+      this.cards.clear();
+      this.canvas.replaceChildren();
+      this.data = null;
+      this.entries = [];
+      this.entryIndexByKey.clear();
+      this.layout = null;
+      this.rows = [];
+    }
+
+    /** Coalesces scroll, focus, and resize work into one animation frame. */
+    scheduleRender() {
+      if (!this.data || this.frame !== null) return;
+      if (typeof requestAnimationFrame !== "function") {
+        this.render();
+        return;
+      }
+      this.frame = requestAnimationFrame(() => {
+        this.frame = null;
+        this.render();
+      });
+    }
+
+    /** Releases a scheduled frame without changing the rendered rows. */
+    cancelFrame() {
+      if (this.frame === null) return;
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.frame);
+      this.frame = null;
+    }
+
+    /**
+     * Reads the panel's usable geometry. Tests may supply a measure callback.
+     *
+     * @returns {BrowseGridMetrics}
+     */
+    readMetrics() {
+      if (this.measure) {
+        const measured = this.measure();
+        if (measured) return this.normalizeMetrics(measured);
+      }
+
+      const style = typeof getComputedStyle === "function" ? getComputedStyle(this.root) : null;
+      const metric = (name, fallback) => BrowseGrid.positive(
+        Number.parseFloat(style?.getPropertyValue?.(name)),
+        fallback
+      );
+      const cardWidth = metric("--bibilili-card-width", BROWSE_CARD_WIDTH_FALLBACK);
+      const cardHeight = metric("--bibilili-card-height", BROWSE_CARD_HEIGHT_FALLBACK);
+      const gap = metric("--bibilili-card-gap", BROWSE_CARD_GAP_FALLBACK);
+      return this.normalizeMetrics({
+        width: this.root.clientWidth ?? 0,
+        height: this.root.clientHeight ?? 0,
+        cardWidth,
+        cardHeight,
+        gap
+      });
+    }
+
+    /**
+     * @param {Partial<BrowseGridMetrics>} metrics
+     * @returns {BrowseGridMetrics}
+     */
+    normalizeMetrics(metrics) {
+      const cardWidth = BrowseGrid.positive(metrics.cardWidth, BROWSE_CARD_WIDTH_FALLBACK);
+      const cardHeight = BrowseGrid.positive(metrics.cardHeight, BROWSE_CARD_HEIGHT_FALLBACK);
+      const gap = BrowseGrid.positive(metrics.gap, BROWSE_CARD_GAP_FALLBACK);
+      const width = Math.max(0, Number(metrics.width) || 0);
+      const height = Math.max(0, Number(metrics.height) || 0);
+      const columns = Math.max(1, Math.floor((width + gap) / (cardWidth + gap)));
+      return {
+        width,
+        height,
+        cardWidth,
+        cardHeight,
+        gap,
+        columns: BrowseGrid.positive(metrics.columns, columns)
+      };
+    }
+
+    /**
+     * @param {unknown} value
+     * @param {number} fallback
+     * @returns {number}
+     */
+    static positive(value, fallback) {
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 ? number : fallback;
+    }
+
+    /** @param {BrowseGridMetrics} metrics */
+    applyMetrics(metrics) {
+      this.metrics = metrics;
+      this.columns = metrics.columns;
+    }
+
+    /** @returns {BrowseRowLayout} */
+    createLayout() {
+      return new BrowseRowLayout({
+        sections: this.data?.sections ?? [],
+        columns: this.columns,
+        cardHeight: this.metrics.cardHeight,
+        headerHeight: BROWSE_HEADER_ROW_HEIGHT,
+        emptyHeight: BROWSE_EMPTY_ROW_HEIGHT,
+        gap: this.metrics.gap,
+        tailHeight: this.tailHeight()
+      });
+    }
+
+    /** @returns {number} Height reserved for continuation state. */
+    tailHeight() {
+      return this.tailState() ? this.metrics.cardHeight : 0;
+    }
+
+    /** @returns {"loading" | "error" | "more" | null} */
+    tailState() {
+      const source = this.data?.source;
+      if (!source || source.root !== null || !source.pagination?.hasMore) return null;
+      const status = source.pagination?.status ?? AccountSourceStatus.READY;
+      if (status === AccountSourceStatus.LOADING) return "loading";
+      if (status === AccountSourceStatus.ERROR) return "error";
+      return this.stalledKeys.has(this.data.sourceKey) ? "more" : null;
+    }
+
+    /** Renders the mounted row window. */
+    render() {
+      if (!this.data || !this.metrics) return;
+
+      const previousActive = this.document.activeElement;
+      const previousCard = previousActive?.closest?.(".bibilili-video-card") ?? null;
+      const previousCardKey = previousCard?.dataset.bibililiCardKey ?? null;
+      const previousLastControl = previousActive?.classList?.contains(
+        "bibilili-card-watch-later-button"
+      ) ?? false;
+      const pendingFocus = this.pendingFocus;
+
+      const measured = this.readMetrics();
+      if (
+        measured.columns !== this.columns ||
+        measured.cardWidth !== this.metrics.cardWidth ||
+        measured.cardHeight !== this.metrics.cardHeight ||
+        measured.gap !== this.metrics.gap
+      ) {
+        const anchor = this.captureAnchor();
+        this.applyMetrics(measured);
+        this.layout = this.createLayout();
+        this.rows = this.layout.rows;
+        if (anchor) this.restoreAnchor(anchor, true);
+        else this.clampScroll();
+      }
+
+      this.canvas.style.height = this.layout.totalHeight + "px";
+
+      const scrollTop = Math.max(0, Number(this.root.scrollTop) || 0);
+      const viewportHeight = Math.max(1, this.metrics.height || Number(this.root.clientHeight) || 1);
+      const viewportBottom = scrollTop + viewportHeight;
+      const startRow = this.layout.rowIndexAt(scrollTop);
+      let endRow = startRow;
+
+      while (endRow < this.rows.length && this.rows[endRow].top < viewportBottom) {
+        endRow += 1;
+      }
+      if (endRow <= startRow) endRow = Math.min(this.rows.length, startRow + 1);
+
+      const mounted = new Set();
+      for (let index = Math.max(0, startRow - 1); index < Math.min(this.rows.length, endRow + 1); index += 1) {
+        mounted.add(index);
+      }
+
+      const focusedCard = this.document.activeElement?.closest?.(".bibilili-video-card") ?? null;
+      for (const card of [focusedCard, this.pointerCard]) {
+        const index = card ? this.entryIndexByKey.get(card.dataset.bibililiCardKey) : undefined;
+        if (index !== undefined) mounted.add(this.layout.rowIndexForEntry(index));
+      }
+
+      const rowIndexes = [...mounted].filter((index) => index >= 0 && index < this.rows.length)
+        .sort((left, right) => left - right);
+      const usedRowKeys = new Set(rowIndexes.map((index) => this.rows[index].key));
+      const usedCardKeys = new Set();
+
+      for (const [key, node] of this.rowsByKey) {
+        if (!usedRowKeys.has(key)) {
+          node.remove();
+          this.rowsByKey.delete(key);
+        }
+      }
+
+      let previousRow = null;
+      for (const index of rowIndexes) {
+        const row = this.rows[index];
+        const node = this.rowNode(row);
+        if (row.kind === "cards") this.renderCardRow(node, row, usedCardKeys);
+        UiControl.place(this.canvas, node, previousRow);
+        previousRow = node;
+      }
+
+      for (const [key, card] of this.cards) {
+        if (!usedCardKeys.has(key)) {
+          card.remove();
+          this.cards.delete(key);
+        }
+      }
+
+      this.updateDemand(startRow, endRow);
+      this.updateVisibleSection(startRow, endRow);
+      this.applyPendingFocus();
+      if (!pendingFocus && previousCardKey && this.document.activeElement !== previousActive) {
+        const card = this.cards.get(previousCardKey);
+        const controls = card ? LayoutRoot.railCardControls(card) : [];
+        controls[previousLastControl ? controls.length - 1 : 0]?.focus({ preventScroll: true });
+      }
+      this.maybeRequestMore();
+    }
+
+    /**
+     * @param {object} row
+     * @returns {HTMLElement}
+     */
+    rowNode(row) {
+      let node = this.rowsByKey.get(row.key);
+
+      if (!node) {
+        node = this.document.createElement("div");
+        node.className = "bibilili-browse-row bibilili-browse-" + row.kind + "-row";
+        node.dataset.browseRowKind = row.kind;
+        this.rowsByKey.set(row.key, node);
+      }
+
+      node.style.top = row.top + "px";
+      node.style.height = row.height + "px";
+
+      if (row.kind === "header") {
+        if (!node.firstElementChild) {
+          const heading = this.document.createElement("h3");
+          heading.className = "bibilili-browse-date";
+          const label = this.document.createElement("span");
+          label.className = "bibilili-browse-date-label";
+          const count = this.document.createElement("span");
+          count.className = "bibilili-browse-date-count";
+          heading.append(label, count);
+          node.append(heading);
+        }
+        const heading = node.firstElementChild;
+        const label = heading.querySelector(".bibilili-browse-date-label");
+        if (label.textContent !== row.section.label) label.textContent = row.section.label;
+        const countText = new Intl.NumberFormat(
+          UiStrings.numberLocale(this.data.language)
+        ).format(row.section.items.length);
+        const count = heading.querySelector(".bibilili-browse-date-count");
+        if (count.textContent !== countText) count.textContent = countText;
+        return node;
+      }
+
+      if (row.kind === "empty") {
+        let message = node.firstElementChild;
+        if (!message) {
+          message = this.document.createElement("p");
+          message.className = "bibilili-browse-empty";
+          message.setAttribute("role", "status");
+          node.append(message);
+        }
+        const text = UiStrings.message(
+          UiMessage.BROWSE_SEARCH_EMPTY,
+          this.data.language
+        );
+        if (message.textContent !== text) message.textContent = text;
+        return node;
+      }
+
+      if (row.kind === "tail") {
+        this.renderTailRow(node);
+        return node;
+      }
+
+      return node;
+    }
+
+    /**
+     * @param {HTMLElement} node
+     * @param {object} row
+     * @param {Set<string>} usedCardKeys
+     */
+    renderCardRow(node, row, usedCardKeys) {
+      let previous = null;
+
+      for (let index = row.entryStart; index < row.entryEnd; index += 1) {
+        const card = this.cardFor(index);
+        if (!card) continue;
+        usedCardKeys.add(card.dataset.bibililiCardKey);
+        UiControl.place(node, card, previous);
+        previous = card;
+      }
+    }
+
+    /**
+     * @param {number} index
+     * @returns {HTMLElement | null}
+     */
+    cardFor(index) {
+      if (!this.cardHost) return null;
+      const entry = this.entries[index];
+      const source = this.data?.source;
+      if (!entry || !source) return null;
+
+      const item = this.cardHost.hydrate(entry.item);
+      let card = this.cards.get(entry.key);
+      if (card) {
+        this.cardHost.update(card, item, entry.isCurrent, entry.key, source.kind);
+      } else {
+        card = this.cardHost.create(item, entry.isCurrent, entry.key, source.kind);
+        this.cards.set(entry.key, card);
+      }
+
+      if (source.folderId) card.dataset.bibililiCardFolderId = source.folderId;
+      else delete card.dataset.bibililiCardFolderId;
+      card.dataset.bibililiCardIndex = String(index);
+      return card;
+    }
+
+    /** @param {HTMLElement} node */
+    renderTailRow(node) {
+      const state = this.tailState();
+      const source = this.data.source;
+      let tail = node.firstElementChild;
+
+      if (!tail) {
+        tail = this.document.createElement("button");
+        tail.type = "button";
+        tail.className = SOURCE_TAIL_CLASS + " bibilili-browse-tail";
+        tail.addEventListener("click", () => this.requestTail());
+        node.append(tail);
+      }
+
+      if (tail.dataset.state !== state) tail.dataset.state = state;
+
+      if (state === "loading") {
+        tail.disabled = true;
+        tail.setAttribute("aria-hidden", "true");
+        tail.setAttribute("aria-busy", "true");
+        tail.removeAttribute("title");
+        tail.removeAttribute("aria-label");
+        if (!tail.querySelector(SOURCE_TAIL_SKELETON_SELECTOR)) {
+          tail.replaceChildren(SourceTailSkeleton.create(this.document));
+        }
+        return;
+      }
+
+      tail.disabled = false;
+      tail.removeAttribute("aria-hidden");
+      tail.removeAttribute("aria-busy");
+      const label = UiStrings.message(
+        state === "error" ? UiMessage.SOURCE_MORE_RETRY_LABEL : UiMessage.SOURCE_MORE_LABEL,
+        this.data.language
+      );
+      if (tail.textContent !== label) tail.textContent = label;
+      UiControl.setLabel(tail, UiStrings.message(
+        UiMessage.SOURCE_MORE_BUTTON_LABEL,
+        this.data.language,
+        [label, UiStrings.sourceLabel(source.kind, this.data.language)]
+      ));
+    }
+
+    /**
+     * @param {number} startRow Visible row start.
+     * @param {number} endRow Visible row end, exclusive.
+     */
+    updateDemand(startRow, endRow) {
+      if (!this.cardHost) return;
+      if (!this.isOpen) {
+        this.cardHost.setDemand([]);
+        return;
+      }
+      const items = [];
+      for (let index = startRow; index < endRow && index < this.rows.length; index += 1) {
+        const row = this.rows[index];
+        if (row.kind !== "cards") continue;
+        for (let entryIndex = row.entryStart; entryIndex < row.entryEnd; entryIndex += 1) {
+          items.push(this.entries[entryIndex].item);
+        }
+      }
+      this.cardHost.setDemand(items);
+    }
+
+    /**
+     * @param {number} startRow
+     * @param {number} endRow
+     */
+    updateVisibleSection(startRow, endRow) {
+      let label = null;
+      for (let index = startRow; index < endRow && index < this.rows.length; index += 1) {
+        const row = this.rows[index];
+        if (row.kind === "cards") {
+          label = row.section.label;
+          break;
+        }
+      }
+      if (label === this.lastVisibleSection) return;
+      this.lastVisibleSection = label;
+      this.onVisibleSectionChange?.(label);
+    }
+
+    /** Requests one more page when the mounted content reaches its end. */
+    maybeRequestMore() {
+      const source = this.data?.source;
+      const host = this.cardHost;
+      if (!this.isOpen || !source || !host?.requestMore || this.data.query.trim()) return;
+      if (source.root !== null || !source.pagination?.hasMore) return;
+      const status = source.pagination?.status ?? AccountSourceStatus.READY;
+      if (status !== AccountSourceStatus.READY || this.stalledKeys.has(this.data.sourceKey)) return;
+      if (this.requestInFlight) return;
+
+      const scrollTop = Math.max(0, Number(this.root.scrollTop) || 0);
+      const viewportHeight = Math.max(1, this.metrics.height || Number(this.root.clientHeight) || 1);
+      const nearEnd = this.layout.totalHeight <= scrollTop + viewportHeight + 1 ||
+        scrollTop + viewportHeight >= this.layout.totalHeight - this.metrics.cardHeight;
+      if (!nearEnd) return;
+
+      this.requestTail();
+    }
+
+    /** Starts an explicit or automatic continuation request. */
+    requestTail() {
+      const source = this.data?.source;
+      const host = this.cardHost;
+      if (!source || !host?.requestMore || this.requestInFlight ||
+          source.root !== null || !source.pagination?.hasMore) return;
+
+      this.requestInFlight = true;
+      this.lastRequestCount = this.entries.length;
+      Promise.resolve(host.requestMore(source))
+        .catch(() => {})
+        .finally(() => {
+          this.requestInFlight = false;
+        });
+    }
+
+    /**
+     * Captures the first visible entry and its offset within its row.
+     *
+     * @returns {{key: string, offset: number} | null}
+     */
+    captureAnchor() {
+      if (!this.layout || this.entries.length === 0) return null;
+      const scrollTop = Math.max(0, Number(this.root.scrollTop) || 0);
+      const rowIndex = this.layout.rowIndexAt(scrollTop);
+
+      for (let index = rowIndex; index >= 0 && index < this.rows.length; index += 1) {
+        const row = this.rows[index];
+        if (row.top + row.height <= scrollTop) continue;
+        if (row.kind === "cards") {
+          return {
+            key: this.entries[row.entryStart].key,
+            offset: Math.max(0, scrollTop - row.top)
+          };
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Restores a captured entry to the top of the viewport, or clamps to the
+     * new content end when it disappeared.
+     *
+     * @param {{key: string, offset: number}} anchor
+     * @param {boolean} alignTop
+     */
+    restoreAnchor(anchor, alignTop) {
+      const entryIndex = this.entryIndexByKey.get(anchor.key);
+      if (entryIndex === undefined) {
+        this.clampScroll();
+        return;
+      }
+      const row = this.rows[this.layout.rowIndexForEntry(entryIndex)];
+      this.root.scrollTop = row.top + (alignTop ? 0 : Math.max(0, anchor.offset));
+      this.clampScroll();
+    }
+
+    /** Keeps the scroll position inside the current content height. */
+    clampScroll() {
+      const viewportHeight = this.metrics?.height || Number(this.root.clientHeight) || 0;
+      const maxScroll = Math.max(0, (this.layout?.totalHeight ?? 0) - viewportHeight);
+      this.root.scrollTop = Math.min(Math.max(0, Number(this.root.scrollTop) || 0), maxScroll);
+    }
+
+    /**
+     * Handles card-grid keyboard traversal and paging.
+     *
+     * @param {KeyboardEvent} event
+     * @returns {boolean} Whether the grid consumed the event.
+     */
+    handleKeydown(event) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+      const card = event.target?.closest?.(".bibilili-video-card") ?? null;
+      if (!card) return false;
+
+      if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        this.focusEntry(event.key === "Home" ? 0 : this.entries.length - 1, false);
+        return true;
+      }
+
+      if (event.key === "PageUp" || event.key === "PageDown") {
+        event.preventDefault();
+        const viewportHeight = Math.max(1, this.metrics?.height || 1);
+        const maxScroll = Math.max(0, (this.layout?.totalHeight ?? 0) - viewportHeight);
+        const delta = event.key === "PageDown" ? viewportHeight : -viewportHeight;
+        this.root.scrollTop = Math.min(maxScroll, Math.max(0, (Number(this.root.scrollTop) || 0) + delta));
+        this.render();
+        return true;
+      }
+
+      if (event.key !== "Tab") return false;
+
+      const controls = LayoutRoot.railCardControls(card);
+      if (controls.length === 0) return false;
+      const boundary = controls[event.shiftKey ? 0 : controls.length - 1];
+      if (event.target !== boundary) return false;
+
+      const index = this.entryIndexByKey.get(card.dataset.bibililiCardKey);
+      if (index === undefined) return false;
+      const nextIndex = index + (event.shiftKey ? -1 : 1);
+      if (nextIndex < 0 || nextIndex >= this.entries.length) return false;
+
+      event.preventDefault();
+      this.focusEntry(nextIndex, event.shiftKey);
+      return true;
+    }
+
+    /**
+     * Mounts and focuses the first or last rendered card, used by the panel's
+     * focus wrap.
+     *
+     * @param {boolean} last
+     * @returns {boolean}
+     */
+    focusEdge(last) {
+      if (this.entries.length === 0) return false;
+      const previous = this.document.activeElement;
+      this.focusEntry(last ? this.entries.length - 1 : 0, false);
+      const active = this.document.activeElement;
+      return active !== previous && Boolean(active?.closest?.(".bibilili-video-card"));
+    }
+
+    /**
+     * @param {number} index
+     * @param {boolean} lastControl
+     */
+    focusEntry(index, lastControl) {
+      if (index < 0 || index >= this.entries.length) return;
+      this.pendingFocus = { index, lastControl };
+      this.revealEntry(index);
+      this.render();
+    }
+
+    /** @param {number} index */
+    revealEntry(index) {
+      if (!this.layout) return;
+      const rowIndex = this.layout.rowIndexForEntry(index);
+      const row = this.rows[rowIndex];
+      if (!row) return;
+      const scrollTop = Math.max(0, Number(this.root.scrollTop) || 0);
+      const viewportHeight = Math.max(1, this.metrics?.height || 1);
+      if (row.top < scrollTop) {
+        this.root.scrollTop = row.top;
+      } else if (row.top + row.height > scrollTop + viewportHeight) {
+        this.root.scrollTop = Math.max(0, row.top + row.height - viewportHeight);
+      }
+    }
+
+    /** Applies a queued keyboard focus target after rows are mounted. */
+    applyPendingFocus() {
+      if (!this.pendingFocus) return;
+      const { index, lastControl } = this.pendingFocus;
+      this.pendingFocus = null;
+      const entry = this.entries[index];
+      const card = entry ? this.cards.get(entry.key) : null;
+      if (!card) return;
+      const controls = LayoutRoot.railCardControls(card);
+      controls[lastControl ? controls.length - 1 : 0]?.focus({ preventScroll: true });
+    }
+  }
+
+  /**
+   * @typedef {object} BrowsePanelOptions
+   * @property {() => void} [onClose] Updates the launcher after any close.
+   * @property {() => void} [onFocusFallback] Focus target when the launcher is unavailable.
+   * @property {BrowseCardHost | null} [cardHost] Rail card renderer and actions.
+   * @property {(() => BrowseGridMetrics) | null} [measure] Optional geometry source.
+   */
+
+  /**
+   * Owns the browse panel: a modal bottom sheet inside the layout root. The
+   * shell owns placement, search, the virtual card grid, dismissal, focus
+   * containment, and focus return.
+   */
+  class BrowsePanel {
+    /**
+     * @param {Document} document
+     * @param {HTMLElement} root Layout root that hosts the scrim and sheet.
+     * @param {BrowsePanelOptions} [options]
+     */
+    constructor(document, root, options = {}) {
+      this.document = document;
+      this.root = root;
+      this.onClose = options.onClose ?? null;
+      this.onFocusFallback = options.onFocusFallback ?? null;
+      this.cardHost = options.cardHost ?? null;
+      this.anchor = null;
+      this.isOpen = false;
+      this.language = DEFAULT_UI_LANGUAGE;
+      this.source = null;
+      this.sourceKey = null;
+      this.sections = [];
+      this.query = "";
+      this.headerCount = 0;
+      this.filteredCount = 0;
+      this.visibleDate = null;
+      /** Persistent search field; Escape clears it before closing the sheet. */
+      this.searchInput = null;
+
+      this.scrim = document.createElement("div");
+      this.scrim.className = "bibilili-browse-scrim";
+      this.scrim.dataset.open = "false";
+      this.scrim.setAttribute("aria-hidden", "true");
+      this.scrim.addEventListener("click", () => this.close(false));
+
+      this.panel = document.createElement("section");
+      this.panel.id = BROWSE_PANEL_ID;
+      this.panel.className = "bibilili-browse-panel";
+      this.panel.dataset.open = "false";
+      this.panel.tabIndex = -1;
+      this.panel.setAttribute("role", "dialog");
+      this.panel.setAttribute("aria-modal", "true");
+      this.panel.setAttribute("aria-hidden", "true");
+      this.panel.setAttribute("inert", "");
+
+      const titleId = BROWSE_PANEL_ID + "-title";
+      this.title = document.createElement("h2");
+      this.title.id = titleId;
+      this.title.className = "bibilili-browse-title";
+      this.dateLabel = document.createElement("span");
+      this.dateLabel.className = "bibilili-browse-current-date";
+      this.dateLabel.hidden = true;
+      this.count = document.createElement("span");
+      this.count.className = "bibilili-browse-count";
+      this.count.setAttribute("role", "status");
+      this.count.setAttribute("aria-live", "polite");
+
+      this.closeButton = UiControl.button(document, "bibilili-browse-close", () => {
+        this.close(true);
+      });
+      this.closeButton.append(UiControl.icon(document, "close"));
+
+      const heading = document.createElement("div");
+      heading.className = "bibilili-browse-heading";
+      heading.append(this.title, this.dateLabel, this.count);
+      const header = document.createElement("header");
+      header.className = "bibilili-browse-header";
+      header.append(heading, this.closeButton);
+
+      this.searchRow = document.createElement("div");
+      this.searchRow.className = "bibilili-browse-search";
+      this.searchRow.setAttribute("role", "search");
+      this.searchInput = document.createElement("input");
+      this.searchInput.id = BROWSE_SEARCH_INPUT_ID;
+      this.searchInput.className = "bibilili-browse-search-input";
+      this.searchInput.type = "search";
+      this.searchInput.autocomplete = "off";
+      this.searchInput.setAttribute("aria-controls", BROWSE_GRID_ID);
+      this.searchInput.addEventListener("input", () => {
+        this.applyQuery(this.searchInput.value);
+      });
+      this.searchRow.append(this.searchInput);
+      this.visibilityHandler = () => {
+        if (this.isOpen && this.document.visibilityState === "visible") {
+          this.renderContent();
+        }
+      };
+      this.document.addEventListener?.("visibilitychange", this.visibilityHandler);
+
+      this.body = document.createElement("div");
+      this.body.className = "bibilili-browse-body";
+      this.grid = new BrowseGrid(document, {
+        cardHost: this.cardHost,
+        measure: options.measure ?? null,
+        onVisibleSectionChange: (label) => this.setVisibleDate(label),
+        onFocusLoss: () => this.searchInput.focus?.({ preventScroll: true })
+      });
+      this.body.append(this.grid.root);
+
+      this.panel.setAttribute("aria-labelledby", titleId);
+      this.panel.append(header, this.searchRow, this.body);
+      this.panel.addEventListener("keydown", (event) => this.handleKeydown(event));
+      this.panel.addEventListener("keyup", (event) => event.stopPropagation());
+      root.append(this.scrim, this.panel);
+    }
+
+    /**
+     * @param {VideoListSource | null} source
+     * @returns {string | null}
+     */
+    static sourceKey(source) {
+      if (!source) return null;
+      return source.kind === SourceKind.FAVORITES && source.folderId
+        ? source.kind + ":" + source.folderId
+        : source.kind;
+    }
+
+    /**
+     * Opens the sheet and moves focus to the search field.
+     *
+     * @param {object} content
+     * @param {HTMLElement | null} [content.anchor]
+     * @param {string} content.title
+     * @param {number} content.count
+     * @param {string} content.language
+     * @param {VideoListSource | null} [content.source]
+     */
+    open(content) {
+      const { anchor = null, title, count, language } = content;
+      if (anchor) this.anchor = anchor;
+      this.setContent({
+        title,
+        count,
+        language,
+        source: Object.hasOwn(content, "source") ? content.source : this.source
+      });
+      if (!this.isOpen) {
+        this.isOpen = true;
+        this.panel.dataset.open = "true";
+        this.scrim.dataset.open = "true";
+        this.panel.removeAttribute("inert");
+        this.panel.setAttribute("aria-hidden", "false");
+      }
+      this.grid.open();
+      this.focusInitial();
+    }
+
+    /**
+     * Updates content without changing focus or open state.
+     *
+     * @param {object} content
+     * @param {string} content.title
+     * @param {number} content.count
+     * @param {string} content.language
+     * @param {VideoListSource | null} [content.source]
+     */
+    update(content) {
+      const source = Object.hasOwn(content, "source") ? content.source : this.source;
+      this.setContent({ ...content, source });
+    }
+
+    /**
+     * @param {object} content
+     * @param {string} content.title
+     * @param {number} content.count
+     * @param {string} content.language
+     * @param {VideoListSource | null} [content.source]
+     */
+    setContent({ title, count, language, source = null }) {
+      this.language = UiStrings.normalizeLanguage(language ?? this.language);
+      const sourceKey = BrowsePanel.sourceKey(source);
+      const sourceChanged = sourceKey !== this.sourceKey;
+
+      if (sourceChanged) {
+        this.query = "";
+        this.searchInput.value = "";
+      }
+
+      this.source = source;
+      this.sourceKey = sourceKey;
+      this.headerCount = typeof count === "number" ? count : source?.items.length ?? 0;
+      if (typeof title === "string" && this.title.textContent !== title) {
+        this.title.textContent = title;
+      }
+      this.setLabels();
+      this.renderContent({ resetScroll: sourceChanged, queryChanged: sourceChanged });
+    }
+
+    /** Applies the current UI language to owned labels. */
+    setLabels() {
+      UiControl.setLabel(
+        this.closeButton,
+        UiStrings.message(UiMessage.CLOSE_LABEL, this.language)
+      );
+      const searchLabel = UiStrings.message(UiMessage.BROWSE_SEARCH_LABEL, this.language);
+      UiControl.setLabel(this.searchInput, searchLabel);
+      this.searchInput.placeholder = searchLabel;
+    }
+
+    /**
+     * Rebuilds the filtered grouping and virtual rows.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.resetScroll]
+     * @param {boolean} [options.queryChanged]
+     */
+    renderContent({ resetScroll = false, queryChanged = false } = {}) {
+      const items = this.source?.items ?? [];
+      const filtered = ListSearch.filter(items, this.query);
+      const keyCounts = new Map();
+      const entries = filtered.map((item, index) => ({
+        item,
+        timestamp: item.timestamp,
+        key: this.cardHost
+          ? this.cardHost.keyFor(item, keyCounts)
+          : "browse:" + index + ":" + item.targetUrl + "\n" + item.title,
+        isCurrent: Boolean(this.cardHost && this.source &&
+          this.cardHost.isCurrent(this.source, item))
+      }));
+
+      this.sections = BrowseDateGrouping.build(entries, this.language);
+      this.filteredCount = entries.length;
+      this.renderHeaderCount();
+      this.grid.setData({
+        source: this.source,
+        sourceKey: this.sourceKey,
+        sections: this.sections,
+        language: this.language,
+        query: this.query,
+        resetScroll,
+        queryChanged
+      });
+    }
+
+    /** Updates the header count without changing focus. */
+    renderHeaderCount() {
+      const count = this.source ? this.filteredCount : this.headerCount;
+      const formatted = new Intl.NumberFormat(
+        UiStrings.numberLocale(this.language)
+      ).format(count);
+      const text = UiStrings.message(
+        UiMessage.BROWSE_ITEM_COUNT_LABEL,
+        this.language,
+        [formatted]
+      );
+      if (this.count.textContent !== text) this.count.textContent = text;
+    }
+
+    /**
+     * @param {string | null} label
+     */
+    setVisibleDate(label) {
+      const text = label ?? "";
+      this.visibleDate = label;
+      if (this.dateLabel.textContent !== text) this.dateLabel.textContent = text;
+      if (this.dateLabel.hidden !== !label) this.dateLabel.hidden = !label;
+    }
+
+    /**
+     * @param {string} value
+     */
+    applyQuery(value) {
+      const query = String(value ?? "");
+      if (query === this.query) return;
+      this.query = query;
+      if (this.searchInput.value !== query) this.searchInput.value = query;
+      this.renderContent({ resetScroll: true, queryChanged: true });
+    }
+
+    /** Clears the search query. @returns {boolean} */
+    clearQuery() {
+      if (!this.searchInput?.value) return false;
+      this.searchInput.value = "";
+      this.applyQuery("");
+      this.searchInput.focus?.({ preventScroll: true });
+      return true;
+    }
+
+    /** Moves focus to the search field. */
+    focusInitial() {
+      this.searchInput?.focus?.({ preventScroll: true });
+    }
+
+    /** @returns {HTMLElement[]} Controls currently available inside the sheet. */
+    focusableControls() {
+      return [...this.panel.querySelectorAll(
+        ".bibilili-card-link, .bibilili-card-watch-later-button, button, input"
+      )].filter((control) => !control.disabled && !control.hidden);
+    }
+
+    /**
+     * Keeps Tab inside the sheet and gives Escape its query-first, then close
+     * order.
+     *
+     * @param {KeyboardEvent} event
+     */
+    handleKeydown(event) {
+      // Note: Bilibili handles player shortcuts on the containing document.
+      event.stopPropagation();
+
+      if (event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        if (this.clearQuery()) return;
+        this.close(true);
+        return;
+      }
+
+      if (this.grid.handleKeydown(event)) return;
+      if (event.key !== "Tab") return;
+
+      const controls = this.focusableControls();
+      if (controls.length === 0) {
+        event.preventDefault();
+        this.panel.focus({ preventScroll: true });
+        return;
+      }
+
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = this.document.activeElement;
+      const inside = this.panel.contains(active);
+
+      if (event.shiftKey && (active === first || !inside)) {
+        event.preventDefault();
+        if (active === first && this.grid.focusEdge(true)) return;
+        last.focus({ preventScroll: true });
+      } else if (!event.shiftKey && (active === last || !inside)) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      }
+    }
+
+    /**
+     * Closes the sheet and optionally restores focus.
+     * @param {boolean} [restoreFocus]
+     */
+    close(restoreFocus = false) {
+      if (!this.isOpen) return;
+      this.isOpen = false;
+      this.grid.close();
+      this.panel.dataset.open = "false";
+      this.scrim.dataset.open = "false";
+      this.panel.setAttribute("aria-hidden", "true");
+      this.panel.setAttribute("inert", "");
+      const anchor = this.anchor;
+      this.anchor = null;
+      this.onClose?.();
+
+      if (restoreFocus) {
+        if (anchor?.isConnected && !anchor.disabled && !anchor.hidden) {
+          anchor.focus({ preventScroll: true });
+        } else {
+          this.onFocusFallback?.();
+          if (this.panel.contains(this.document.activeElement)) {
+            this.document.activeElement.blur?.();
+          }
+        }
+      } else if (this.panel.contains(this.document.activeElement)) {
+        this.document.activeElement.blur?.();
+      }
+    }
+
+    /** Clears the source instance, query, and scroll for a new page session. */
+    resetSession() {
+      this.close(false);
+      this.query = "";
+      this.searchInput.value = "";
+      this.source = null;
+      this.sourceKey = null;
+      this.sections = [];
+      this.headerCount = 0;
+      this.filteredCount = 0;
+      this.setVisibleDate(null);
+      this.renderHeaderCount();
+      this.grid.reset();
+    }
+
+    /** Removes the owned sheet and scrim. */
+    destroy() {
+      this.grid.stop();
+      this.close(false);
+      this.document.removeEventListener?.("visibilitychange", this.visibilityHandler);
+      this.scrim.remove();
+      this.panel.remove();
+    }
+  }
+
+  /**
    * Owns the transformed watch layout and re-homes page-owned player/comment
    * nodes into extension panes.
    */
@@ -6598,6 +8107,7 @@
       this.dockUtilityGroup = null;
       this.moreButton = null;
       this.settingsButton = null;
+      this.browsePanel = null;
       this.railLocateButton = null;
       this.railStartButton = null;
       /** Logical current-video index in the displayed rail, or -1 when absent. */
@@ -6605,13 +8115,7 @@
       this.railRefreshButton = null;
       this.isRailRefreshing = false;
       this.onRailRefresh = null;
-      this.railSearch = null;
-      this.railSearchControl = null;
       this.railSearchButton = null;
-      this.railSearchInput = null;
-      this.railSearchQuery = "";
-      this.railSearchKey = null;
-      this.onWatchLaterSearchSource = null;
       this.actionGroup = null;
       this.rail = null;
       this.railSource = null;
@@ -6700,7 +8204,6 @@
      * @param {SourceRouteState | null} sourceRouteState
      * @param {(sourceKind: string) => Promise<number | void>} onSourceMore Revealed item count for automatic progress.
      * @param {() => VideoListSource | null} onWatchLaterReveal
-     * @param {() => VideoListSource | null} onWatchLaterSearchSource
      * @param {(source: VideoListSource) => Promise<void>} onRailRefresh
      * @param {(action: WatchAction, event?: MouseEvent) => boolean} onFavoriteAction True consumes the click.
      */
@@ -6719,7 +8222,6 @@
       sourceRouteState,
       onSourceMore,
       onWatchLaterReveal,
-      onWatchLaterSearchSource,
       onRailRefresh,
       onFavoriteAction
     ) {
@@ -6747,7 +8249,6 @@
       this.onVideoCardNavigate = onVideoCardNavigate;
       this.onSourceRouteChange = onSourceRouteChange;
       this.onSourceMore = onSourceMore;
-      this.onWatchLaterSearchSource = onWatchLaterSearchSource;
       this.onWatchLaterReveal = onWatchLaterReveal;
       this.onRailRefresh = onRailRefresh;
       this.setSources(
@@ -6768,6 +8269,7 @@
     resetPageSession() {
       this.morePanel?.close(true);
       this.favoritesView?.panel.close();
+      this.browsePanel?.resetSession();
       this.rememberFavoriteRailPosition();
       LayoutRoot.clearNativeOverlayLift(this.document);
       this.endCommentPaneResize();
@@ -6817,6 +8319,8 @@
     releasePageOwnership() {
       this.favoritesView?.destroy();
       this.morePanel?.destroy();
+      this.browsePanel?.destroy();
+      this.browsePanel = null;
       this.setVideoLoading(false);
       this.stopRailWindow();
       LayoutRoot.clearNativeOverlayLift(this.document);
@@ -6925,6 +8429,25 @@
       );
       this.dock.append(this.sourceBar, this.rail);
       this.root.append(this.stage, this.dock);
+      this.browsePanel?.destroy();
+      this.browsePanel = new BrowsePanel(this.document, this.root, {
+        onClose: () => {
+          this.railSearchButton?.setAttribute("aria-expanded", "false");
+          this.scheduleRailRender();
+        },
+        onFocusFallback: () => this.focusBrowseFallback(),
+        cardHost: {
+          keyFor: (item, keyCounts) => this.videoCardRenderKey(item, keyCounts),
+          isCurrent: (source, item) => this.browseCardIsCurrent(source, item),
+          hydrate: (item) => this.videoPreviews.hydrateItem(item),
+          create: (item, isCurrent, key, sourceKind) =>
+            this.videoCard(item, isCurrent, key, sourceKind),
+          update: (card, item, isCurrent, key, sourceKind) =>
+            this.updateVideoCard(card, item, isCurrent, key, sourceKind),
+          setDemand: (items) => this.videoPreviews.setDemand(items),
+          requestMore: (source) => this.requestBrowseContinuation(source)
+        }
+      });
       this.document.body.prepend(this.root);
       this.applyStoredCommentPaneWidth();
       this.setVideoLoading(this.isVideoLoading);
@@ -8015,15 +9538,9 @@
       let selectedSource = this.selectedSource(sources);
       const hasOpenRail = Boolean(selectedSource && this.isRailOpen);
       const sourceKey = LayoutRoot.sourceKey(selectedSource);
-      const resetScroll = sourceKey !== this.renderedSourceKey;
-      const sourceChanged = this.railSearchKey !== sourceKey;
+      const sourceChanged = sourceKey !== this.renderedSourceKey;
+      const resetScroll = sourceChanged;
       if (resetScroll || !hasOpenRail) this.rememberFavoriteRailPosition();
-      if (sourceChanged) {
-        this.railSearchQuery = "";
-        if (this.railSearchInput) this.railSearchInput.value = "";
-        this.setRailSearchExpanded(false);
-        this.railSearchKey = sourceKey;
-      }
 
       if (
         hasOpenRail &&
@@ -8044,11 +9561,23 @@
       this.root.classList.toggle("bibilili-has-dock", hasOpenRail);
       this.root.classList.toggle("bibilili-has-controls-dock", !hasOpenRail);
       this.renderSourceBar(sources, activationControl);
-      this.renderRailSearch(hasOpenRail);
+      this.renderRailActions(hasOpenRail, selectedSource);
       this.renderControlPlacement();
 
+      if (this.browsePanel?.isOpen && (!hasOpenRail || sourceChanged ||
+          !selectedSource || selectedSource.items.length === 0)) {
+        this.closeBrowsePanel(false);
+      } else if (this.browsePanel?.isOpen) {
+        this.browsePanel.update({
+          title: this.sourceDisplayLabel(selectedSource),
+          count: selectedSource.items.length,
+          language: this.language,
+          source: selectedSource
+        });
+      }
+
       if (hasOpenRail) {
-        this.renderRail(this.searchRailSource(selectedSource), resetScroll);
+        this.renderRail(selectedSource, resetScroll);
         this.renderedSourceKey = sourceKey;
       } else {
         this.renderedSourceKey = null;
@@ -8076,12 +9605,13 @@
       this.createRailLocate();
       this.createRailStart();
       this.createRailRefresh();
-      this.createRailSearch();
+      this.createRailSearchLauncher();
       this.railActionGroup = this.document.createElement("div");
       this.railActionGroup.className = "bibilili-rail-action-group";
       this.railActionGroup.setAttribute("role", "group");
       this.railActionGroup.append(
-        this.railLocateButton, this.railStartButton, this.railRefreshButton, this.railSearch
+        this.railLocateButton, this.railStartButton,
+        this.railRefreshButton, this.railSearchButton
       );
     }
 
@@ -8101,8 +9631,7 @@
       this.morePanel.root.addEventListener("click", (event) => {
         const button = event.target.closest("button");
         // Favorite clicks keep More open until the single or double action resolves.
-        if (button && button.dataset.watchActionKind !== WatchActionKind.FAVORITE &&
-            !event.target.closest(".bibilili-rail-search")) {
+        if (button && button.dataset.watchActionKind !== WatchActionKind.FAVORITE) {
           // Restore focus before forwarding a click that may open a native dialog.
           this.morePanel.close(true);
         }
@@ -8119,10 +9648,10 @@
       this.moreButton.setAttribute("aria-controls", "bibilili-more-actions");
       this.settingsButton = this.settingsView.launcher();
       this.dockUtilityGroup.append(this.moreButton, this.settingsView.performanceWidget.launcher(), this.settingsButton);
-      for (const [kind, control] of this.railControls()) {
+      for (const control of this.railControls().values()) {
         const label = this.document.createElement("span");
         label.className = "bibilili-action-label";
-        (kind === RailActionKind.SEARCH ? this.railSearchButton : control).append(label);
+        control.append(label);
       }
     }
 
@@ -8132,7 +9661,7 @@
         [RailActionKind.LOCATE, this.railLocateButton],
         [RailActionKind.START, this.railStartButton],
         [RailActionKind.REFRESH, this.railRefreshButton],
-        [RailActionKind.SEARCH, this.railSearch]
+        [RailActionKind.SEARCH, this.railSearchButton]
       ]);
     }
 
@@ -8142,9 +9671,7 @@
       let pinnedPrevious = null;
       let morePrevious = null;
       for (const [kind, control] of this.railControls()) {
-        // An active search stays visible until cleared, even when its shortcut is unpinned.
-        const pinned = this.preferences.pinnedActions[kind] ||
-          (kind === RailActionKind.SEARCH && !this.railSearchInput.hidden);
+        const pinned = this.preferences.pinnedActions[kind];
         const parent = pinned ? this.railActionGroup : this.moreRailGroup;
         UiControl.place(parent, control, pinned ? pinnedPrevious : morePrevious);
         if (pinned) pinnedPrevious = control;
@@ -8203,7 +9730,62 @@
       else visual.replaceChildren();
     }
 
-    /** Creates the first control in the rail action group. */
+    /**
+     * Opens the browse panel for the selected source.
+     */
+    openBrowsePanel() {
+      const source = this.selectedSource(this.currentSources);
+      if (!this.browsePanel || !this.isRailOpen || !source ||
+          source.items.length === 0) {
+        return;
+      }
+      this.browsePanel.open({
+        anchor: this.browseAnchor(),
+        title: this.sourceDisplayLabel(source),
+        count: source.items.length,
+        language: this.language,
+        source
+      });
+      this.railSearchButton?.setAttribute("aria-expanded", "true");
+    }
+
+    /**
+     * Returns the Search launcher or the More launcher as the focus anchor.
+     * @returns {HTMLElement | null}
+     */
+    browseAnchor() {
+      if (this.railSearchButton?.parentElement === this.railActionGroup) {
+        return this.railSearchButton;
+      }
+      if (this.moreButton?.isConnected && !this.moreButton.hidden) {
+        return this.moreButton;
+      }
+      return this.railSearchButton;
+    }
+
+    /**
+     * Closes the browse shell and focuses the remaining source when needed.
+     * @param {boolean} [restoreFocus]
+     */
+    closeBrowsePanel(restoreFocus = false) {
+      if (!this.browsePanel?.isOpen) return;
+      this.browsePanel.close(restoreFocus);
+      this.railSearchButton?.setAttribute("aria-expanded", "false");
+      if (!restoreFocus) this.focusBrowseFallback();
+    }
+
+    /** Focuses the selected source button or the activation control. */
+    focusBrowseFallback() {
+      const sourceButton = this.selectedSourceKind
+        ? this.sourceButtons.get(this.selectedSourceKind)
+        : null;
+      const target = sourceButton?.isConnected && !sourceButton.hidden
+        ? sourceButton
+        : this.currentActivationControl?.button;
+      target?.focus?.({ preventScroll: true });
+    }
+
+    /** Creates the Locate control first in the rail action group. */
     createRailLocate() {
       this.railLocateButton = this.document.createElement("button");
       this.railLocateButton.type = "button";
@@ -8291,74 +9873,53 @@
       }
     }
 
-    /** Creates stable search controls following Refresh. */
-    createRailSearch() {
-      this.railSearchControl = new SearchControl(this.document, {
-        inputId: "bibilili-rail-search-input",
-        className: "bibilili-rail-search",
-        buttonClassName: "bibilili-action-button",
-        onOpen: () => this.morePanel?.close(false),
-        onInput: (query) => {
-          this.railSearchQuery = query;
-          this.refreshRailSearch();
-        },
-        onExpandedChange: () => this.renderControlPlacement(),
-        escapeFocus: () => this.preferences.pinnedActions[RailActionKind.SEARCH]
-          ? this.railSearchButton : this.moreButton?.hidden ? this.settingsButton : this.moreButton
-      });
-      this.railSearch = this.railSearchControl.root;
-      this.railSearchButton = this.railSearchControl.button;
-      this.railSearchInput = this.railSearchControl.input;
-      this.railSearchInput.setAttribute("aria-controls", LIST_RAIL_ID);
-      this.railSearchInput.value = this.railSearchQuery;
-      this.setRailSearchExpanded(Boolean(this.railSearchQuery));
+    /**
+     * Creates the Search control that opens the browse panel after Refresh.
+     */
+    createRailSearchLauncher() {
+      this.railSearchButton = this.document.createElement("button");
+      this.railSearchButton.type = "button";
+      this.railSearchButton.className = "bibilili-action-button bibilili-rail-search";
+      this.railSearchButton.append(UiControl.icon(this.document, RailActionKind.SEARCH));
+      this.railSearchButton.setAttribute("aria-haspopup", "dialog");
+      this.railSearchButton.setAttribute("aria-expanded", "false");
+      this.railSearchButton.setAttribute("aria-controls", BROWSE_PANEL_ID);
+      this.railSearchButton.disabled = true;
+      this.railSearchButton.addEventListener("click", () => this.openBrowsePanel());
+      UiControl.setLabel(this.railSearchButton,
+        UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language));
     }
 
-    /** @param {boolean} expanded Whether the button presents an editable field. */
-    setRailSearchExpanded(expanded) {
-      this.railSearchControl?.setExpanded(expanded);
-    }
-
-    /** @param {boolean} available Whether a rail is open for searching. */
-    renderRailSearch(available) {
+    /**
+     * Updates the rail tools and the Search launcher for the selected source.
+     *
+     * @param {boolean} available Whether a rail is open.
+     * @param {VideoListSource | null} source
+     */
+    renderRailActions(available, source = null) {
       if (!this.railActionGroup) return;
       this.railActionGroup.setAttribute("aria-label",
         UiStrings.message(UiMessage.RAIL_ACTIONS_LABEL, this.language));
       this.renderRailLocate();
       this.renderRailStart(available);
       this.renderRailRefresh();
-      this.railSearch.hidden = !available;
-      const label = UiStrings.message(this.selectedSourceKind === SourceKind.FAVORITES
-        ? UiMessage.FAVORITES_SEARCH_VIDEOS_LABEL : UiMessage.RAIL_SEARCH_LABEL, this.language);
-      this.railSearchControl.setLabel(label);
-    }
-
-    /** Renders the current query from the start without changing expansion budgets. */
-    refreshRailSearch() {
-      const source = this.selectedSource(this.currentSources);
-      if (source && this.isRailOpen) {
-        this.pendingSourceMore = null;
-        this.renderRail(this.searchRailSource(source), true);
-      }
+      this.railSearchButton.hidden = !available;
+      this.railSearchButton.disabled = !available || !source || source.items.length === 0;
+      this.railSearchButton.setAttribute("aria-expanded",
+        String(Boolean(this.browsePanel?.isOpen)));
+      UiControl.setLabel(this.railSearchButton,
+        UiStrings.message(UiMessage.RAIL_SEARCH_LABEL, this.language));
     }
 
     /**
-     * Filters titles and authors, using the complete retained Watch Later list.
+     * Returns the visible label for one source instance.
      * @param {VideoListSource} source
-     * @returns {VideoListSource}
+     * @returns {string}
      */
-    searchRailSource(source) {
-      const query = this.railSearchQuery.trim().normalize("NFKC").toLowerCase();
-      if (!query) return source;
-      const searchable = source.kind === SourceKind.WATCH_LATER
-        ? this.onWatchLaterSearchSource?.() ?? source
-        : source;
-      return {
-        ...searchable,
-        items: searchable.items.filter((item) =>
-          [item.title, item.author].some((text) =>
-            (text ?? "").normalize("NFKC").toLowerCase().includes(query)))
-      };
+    sourceDisplayLabel(source) {
+      return source.kind === SourceKind.FAVORITES && source.title && !source.isDefaultFolder
+        ? UiStrings.message(UiMessage.FAVORITES_SOURCE_LABEL, this.language, [source.title])
+        : UiStrings.sourceLabel(source.kind, this.language);
     }
 
     /**
@@ -8379,9 +9940,7 @@
       for (const source of sources) {
         const button = this.sourceButtonFor(source.kind);
         availableKinds.add(source.kind);
-        const label = source.kind === SourceKind.FAVORITES && source.title && !source.isDefaultFolder
-          ? UiStrings.message(UiMessage.FAVORITES_SOURCE_LABEL, this.language, [source.title])
-          : UiStrings.sourceLabel(source.kind, this.language);
+        const label = this.sourceDisplayLabel(source);
         LayoutRoot.setStableText(button, label);
         UiControl.setLabel(button, label);
         button.setAttribute(
@@ -10077,9 +11636,7 @@
         ? this.pendingSourceMore
         : null;
       const { title } = this.ensureRailSourceGroup(source, resetScroll);
-      title.textContent = this.railSearchQuery.trim() && source.items.length === 0
-        ? UiStrings.message(UiMessage.RAIL_SEARCH_EMPTY, this.language)
-        : source.title ?? UiStrings.sourceLabel(source.kind, this.language);
+      title.textContent = source.title ?? UiStrings.sourceLabel(source.kind, this.language);
       this.renderFavoriteRailState(source, title);
       const watchRouteKey = SourceAdapter.currentWatchRouteKey();
       const locateKey = watchRouteKey ? `route:${watchRouteKey}` : null;
@@ -10127,7 +11684,7 @@
 
       const currentIndex = this.railEntries.findIndex((entry) => entry.isCurrent);
       let centerIndex = -1;
-      if (currentIndex !== -1 && currentRouteKey && !this.railSearchQuery.trim()) {
+      if (currentIndex !== -1 && currentRouteKey) {
         if (!moreInteraction && (
           resetScroll || this.locatedCurrentRouteKeys.get(sourceKey) !== currentRouteKey
         )) {
@@ -10181,8 +11738,7 @@
       const loading = source.status === AccountSourceStatus.LOADING;
       const failed = source.status === AccountSourceStatus.ERROR;
       const message = loading ? UiMessage.SOURCE_MORE_LOADING_LABEL
-        : this.railSearchQuery.trim() && !failed ? UiMessage.RAIL_SEARCH_EMPTY
-          : source.status === AccountSourceStatus.SIGNED_OUT ? UiMessage.FAVORITES_SIGN_IN_MESSAGE
+        : source.status === AccountSourceStatus.SIGNED_OUT ? UiMessage.FAVORITES_SIGN_IN_MESSAGE
           : failed ? UiMessage.FAVORITES_ERROR_MESSAGE
             : !source.folderId ? UiMessage.FAVORITES_CHOOSE_LABEL : UiMessage.FAVORITES_EMPTY_MESSAGE;
       LayoutRoot.setStableText(state.firstElementChild, UiStrings.message(message, this.language));
@@ -10264,9 +11820,11 @@
       const viewportStart = this.rail.scrollLeft - rowStart;
       const visibleRange = geometry.range(viewportStart, viewportWidth);
       const previewIndexes = geometry.previewIndexes(viewportStart, viewportWidth);
-      this.videoPreviews.setDemand(previewIndexes.map(
-        (index) => this.railEntries[index].item
-      ));
+      if (!this.browsePanel?.isOpen) {
+        this.videoPreviews.setDemand(previewIndexes.map(
+          (index) => this.railEntries[index].item
+        ));
+      }
       const indexes = new Set(previewIndexes);
       const activeElement = this.document.activeElement;
       const activeCard = activeElement?.closest?.(".bibilili-video-card");
@@ -10393,7 +11951,6 @@
 
       const status = source.pagination?.status ?? AccountSourceStatus.READY;
       const silent = this.preferences.features.silentRailLoading &&
-        !this.railSearchQuery.trim() &&
         this.railAutoLoadStalledKey !== LayoutRoot.sourceKey(source) &&
         status !== AccountSourceStatus.SIGNED_OUT;
       if (silent) {
@@ -10499,20 +12056,7 @@
 
     /** @returns {HTMLElement} Decorative cover and text bars for the tail. */
     createSourceTailSkeleton() {
-      const skeleton = this.document.createElement("span");
-      skeleton.className = SOURCE_TAIL_SKELETON_CLASS;
-      skeleton.setAttribute("aria-hidden", "true");
-      const cover = this.document.createElement("span");
-      cover.className = "bibilili-source-tail-cover";
-      const body = this.document.createElement("span");
-      body.className = "bibilili-source-tail-body";
-      const title = this.document.createElement("span");
-      title.className = "bibilili-source-tail-line bibilili-source-tail-line-title";
-      const meta = this.document.createElement("span");
-      meta.className = "bibilili-source-tail-line bibilili-source-tail-line-meta";
-      body.append(title, meta);
-      skeleton.append(cover, body);
-      return skeleton;
+      return SourceTailSkeleton.create(this.document);
     }
 
     /**
@@ -10535,6 +12079,33 @@
     }
 
     /**
+     * Requests one continuation page for the open browse panel. The rail and
+     * panel share one active source request.
+     *
+     * @param {VideoListSource} source
+     * @returns {Promise<number | void>}
+     */
+    async requestBrowseContinuation(source) {
+      if (!this.onSourceMore || !this.browsePanel?.isOpen || !source) return undefined;
+      const key = LayoutRoot.sourceKey(source);
+      if (!key || this.railAutoLoadKey !== null || source.root !== null ||
+          !source.pagination?.hasMore) {
+        return undefined;
+      }
+      const status = source.pagination?.status ?? AccountSourceStatus.READY;
+      if (status !== AccountSourceStatus.READY && status !== AccountSourceStatus.ERROR) {
+        return undefined;
+      }
+
+      this.railAutoLoadKey = key;
+      try {
+        return await this.onSourceMore(source.kind);
+      } finally {
+        if (this.railAutoLoadKey === key) this.railAutoLoadKey = null;
+      }
+    }
+
+    /**
      * Starts one automatic continuation for the displayed account source.
      *
      * Note: The request is deferred one microtask so a reconciliation pass does
@@ -10553,7 +12124,8 @@
       void Promise.resolve()
         .then(() => {
           const source = this.railSource;
-          if (!this.onSourceMore || !this.isRailOpen || this.railSearchQuery.trim() ||
+          if (!this.onSourceMore || !this.isRailOpen ||
+              (this.browsePanel?.isOpen && !retry) ||
               !source || LayoutRoot.sourceKey(source) !== key ||
               source.root !== null || !source.pagination?.hasMore) {
             return undefined;
@@ -10596,8 +12168,8 @@
      * @param {{ start: number, end: number }} visibleRange
      */
     requestSilentSourceLoad(source, visibleRange) {
-      if (!this.preferences.features.silentRailLoading ||
-          !this.isRailOpen || !this.onSourceMore || this.railSearchQuery.trim() ||
+      if (!this.preferences.features.silentRailLoading || this.browsePanel?.isOpen ||
+          !this.isRailOpen || !this.onSourceMore ||
           this.railAutoLoadStalledKey === LayoutRoot.sourceKey(source) ||
           source.root !== null || !source.pagination?.hasMore ||
           (source.pagination?.status ?? AccountSourceStatus.READY) !== AccountSourceStatus.READY) {
@@ -10864,6 +12436,28 @@
     }
 
     /**
+     * Matches a browse card to the current watch route with the rail's rule.
+     *
+     * @param {VideoListSource} source
+     * @param {VideoItem} item
+     * @returns {boolean}
+     */
+    browseCardIsCurrent(source, item) {
+      const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+        ? SourceAdapter.currentWatchRouteKey()
+        : null;
+      const itemRouteKey = currentRouteKey
+        ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
+        : null;
+      return Boolean(this.currentRailItemMatchReason(
+        source.kind,
+        item,
+        currentRouteKey,
+        itemRouteKey
+      ));
+    }
+
+    /**
      * Creates one extension-owned video card.
      *
      * @param {VideoItem} item
@@ -11051,6 +12645,7 @@
         return;
       }
 
+      if (this.browsePanel?.isOpen) this.browsePanel.close(false);
       this.onVideoCardNavigate(sourceKind, link.href, event, card.dataset.bibililiCardFolderId);
     }
 
@@ -11992,7 +13587,6 @@
           sourceRouteState,
           (sourceKind) => this.loadMoreAccountSource(sourceKind),
           () => this.accountSources.revealWatchLaterItem(window.location.href),
-          () => this.accountSources.currentSource(SourceKind.WATCH_LATER, true),
           (source) => this.refreshRail(source),
           (action, event) => this.handleFavoriteAction(action, event)
         );
@@ -12910,6 +14504,7 @@
    * @property {string | null} author Optional author label.
    * @property {string | null} viewCount Optional view count label.
    * @property {string | null} progress Optional watch progress label.
+   * @property {number} [timestamp] Source ordering time in Unix milliseconds.
    * @property {string} [watchLaterAid] Archive id for watch-later removal.
    */
 
@@ -13136,6 +14731,9 @@
       AccountSourceStore,
       AccountSourceStatus,
       BibililiController,
+      BrowseDateGrouping,
+      BrowsePanel,
+      BrowseRowLayout,
       LayoutRoot,
       RailWindow,
       RegionDiscovery,

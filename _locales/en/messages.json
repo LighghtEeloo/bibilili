@@ -193,6 +193,30 @@
     "message": "Rail actions",
     "description": "Accessible name for the rail action control group."
   },
+  "browseItemCountLabel": {
+    "message": "Items: $1",
+    "description": "Renderable item count in the browse panel header."
+  },
+  "browseSearchLabel": {
+    "message": "Search all videos",
+    "description": "Accessible name and placeholder for searching the complete selected source."
+  },
+  "browseSearchEmpty": {
+    "message": "No matching videos",
+    "description": "Browse panel grid when the local query has no matches."
+  },
+  "browseAllItemsLabel": {
+    "message": "All videos",
+    "description": "Date section label for a source without timestamps."
+  },
+  "browseTodayLabel": {
+    "message": "Today",
+    "description": "Date section label for items from the current local day."
+  },
+  "browseYesterdayLabel": {
+    "message": "Yesterday",
+    "description": "Date section label for items from the previous local day."
+  },
   "railLocateLabel": {
     "message": "Locate",
     "description": "Button label for centering the current video in the displayed rail."
@@ -207,11 +231,7 @@
   },
   "railSearchLabel": {
     "message": "Search this list",
-    "description": "Label and placeholder for searching the selected video rail."
-  },
-  "railSearchEmpty": {
-    "message": "No matching videos",
-    "description": "Rail heading when the search has no matches."
+    "description": "Accessible name for the Search tool that opens the browse panel."
   },
   "languageName": {
     "message": "English",
@@ -424,9 +444,6 @@
   },
   "favoritesSearchLabel": {
     "message": "Search folders"
-  },
-  "favoritesSearchVideosLabel": {
-    "message": "Search loaded favorites"
   },
   "favoritesRefreshLabel": {
     "message": "Refresh folders"
