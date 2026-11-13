@@ -1108,11 +1108,12 @@ video-list source. It renders the source's video items as a grid of the same
 cards used by the list rail, grouped by source date when timestamps are
 available.
 
-The panel opens from the Search tool in the rail action group. The tool is
-available while a rail is open and its source has valid items. Activating it
-from More closes More before the panel opens. The tool declares a dialog popup
-with `aria-haspopup`, exposes the panel's open state with `aria-expanded`, and
-references the panel with `aria-controls`.
+The panel opens from the Search tool in the rail action group and from the
+browser's find shortcut. The tool is available while a rail is open and its
+source has valid items. Activating it from More closes More before the panel
+opens. The tool declares a dialog popup with `aria-haspopup`, exposes the
+panel's open state with `aria-expanded`, and references the panel with
+`aria-controls`.
 
 The panel is an extension-owned modal dialog anchored to the bottom of the
 layout root. It is centered horizontally with a 24px viewport gutter on each
@@ -1281,6 +1282,13 @@ Focus stays within the panel: Tab and Shift+Tab move through the Close control,
 the search field, the scan retry control when visible, and the rendered cards,
 wrapping at the ends. Keyboard events inside the panel do not reach Bilibili's
 player shortcuts.
+
+Command+F and Control+F open the panel for the selected source and focus its
+query field. The shortcut follows the Search tool's availability: it consumes
+the key only while a rail is open with valid items, and otherwise the browser's
+native find continues. An open More, Settings, or Favorites popup closes before
+the panel opens. With the panel open, the shortcut refocuses the query field and
+selects its text.
 
 Tab or Shift+Tab that crosses a rendered card row mounts the adjacent card row
 and moves focus to its first or last control, matching the rail's cross-window

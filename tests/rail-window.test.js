@@ -25,6 +25,30 @@ function flushAsync() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function shortcutEvent(overrides = {}) {
+  return {
+    key: "f", altKey: false, shiftKey: false, ctrlKey: false, metaKey: false,
+    defaultPrevented: false, propagationStopped: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() { this.propagationStopped = true; },
+    ...overrides
+  };
+}
+
+/** Mounts the Search tool and the browse panel for shortcut tests. */
+function browseShortcutFixture() {
+  const fixture = railFixture(LayoutRoot, 3, SourceKind.HISTORY);
+  const { layout, document } = fixture;
+  layout.createRailControls();
+  layout.browsePanel = new BrowsePanel(document, layout.sourceBar, {
+    onClose: () => layout.railSearchButton.setAttribute("aria-expanded", "false"),
+    onFocusFallback: () => layout.focusBrowseFallback()
+  });
+  layout.isRailOpen = true;
+  layout.renderSourceDock([fixture.source], null);
+  return fixture;
+}
+
 test("vertical wheel input scrolls the rail in both directions and normalizes units", () => {
   const { layout, source, rail } = railFixture(LayoutRoot, 80);
   layout.renderRail(source, true);
@@ -481,6 +505,67 @@ test("Search opens the browse panel and closes it when the rail or source change
   layout.selectedSourceKind = SourceKind.COLLECTION;
   layout.renderSourceDock([{ ...source, kind: SourceKind.COLLECTION }], null);
   assert.equal(layout.browsePanel.isOpen, false);
+});
+
+test("find shortcut opens the browse panel for the selected source", () => {
+  const { layout, document } = browseShortcutFixture();
+  const closed = [];
+  layout.morePanel = { close: () => closed.push("more") };
+  layout.settingsView = { panel: { close: () => closed.push("settings") } };
+  layout.favoritesView = { panel: { close: () => closed.push("favorites") } };
+  const event = shortcutEvent({ metaKey: true });
+
+  layout.handleBrowseShortcut(event);
+
+  assert.equal(layout.browsePanel.isOpen, true);
+  assert.equal(layout.railSearchButton.getAttribute("aria-expanded"), "true");
+  assert.equal(document.activeElement, layout.browsePanel.searchInput);
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(event.propagationStopped, true);
+  assert.deepEqual(closed, ["more", "settings", "favorites"]);
+});
+
+test("find shortcut refocuses the query while the panel is open", () => {
+  const { layout, document } = browseShortcutFixture();
+  layout.handleBrowseShortcut(shortcutEvent({ ctrlKey: true }));
+  layout.railSearchButton.focus();
+  let selections = 0;
+  layout.browsePanel.searchInput.select = () => { selections += 1; };
+  const event = shortcutEvent({ ctrlKey: true, key: "F" });
+
+  layout.handleBrowseShortcut(event);
+
+  assert.equal(layout.browsePanel.isOpen, true);
+  assert.equal(document.activeElement, layout.browsePanel.searchInput);
+  assert.equal(selections, 1);
+  assert.equal(event.defaultPrevented, true);
+});
+
+test("find shortcut leaves native find to unavailable tools and modified keys", () => {
+  const closed = browseShortcutFixture();
+  closed.layout.isRailOpen = false;
+  const closedEvent = shortcutEvent({ metaKey: true });
+  closed.layout.handleBrowseShortcut(closedEvent);
+  assert.equal(closed.layout.browsePanel.isOpen, false);
+  assert.equal(closedEvent.defaultPrevented, false);
+
+  const empty = browseShortcutFixture();
+  empty.layout.currentSources = [{ ...empty.source, items: [] }];
+  const emptyEvent = shortcutEvent({ ctrlKey: true });
+  empty.layout.handleBrowseShortcut(emptyEvent);
+  assert.equal(empty.layout.browsePanel.isOpen, false);
+  assert.equal(emptyEvent.defaultPrevented, false);
+
+  const modified = browseShortcutFixture();
+  for (const overrides of [
+    { altKey: true }, { shiftKey: true }, { metaKey: false },
+    { key: "g" }, { defaultPrevented: true }
+  ]) {
+    const event = shortcutEvent({ metaKey: true, ...overrides });
+    modified.layout.handleBrowseShortcut(event);
+    assert.equal(modified.layout.browsePanel.isOpen, false);
+    assert.equal(event.defaultPrevented, Boolean(overrides.defaultPrevented));
+  }
 });
 
 test("Back to start refreshes the selected list once", async () => {

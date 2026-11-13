@@ -8311,6 +8311,14 @@
       this.searchInput?.focus?.({ preventScroll: true });
     }
 
+    /** Focuses the search field and selects its current query. */
+    focusSearch() {
+      const input = this.searchInput;
+      if (!input) return;
+      input.focus?.({ preventScroll: true });
+      input.select?.();
+    }
+
     /** @returns {HTMLElement[]} Controls currently available inside the sheet. */
     focusableControls() {
       return [...this.panel.querySelectorAll(
@@ -8442,6 +8450,8 @@
       this.movedPageNodes = new MovedPageNodeStore(this.document);
       this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
       this.resetLayoutState();
+      /** Bound document listener for the browse panel's find shortcut. */
+      this.browseShortcutHandler = (event) => this.handleBrowseShortcut(event);
     }
 
     /**
@@ -8695,6 +8705,7 @@
      * Restores page-owned nodes and removes extension-owned layout chrome.
      */
     releasePageOwnership() {
+      this.document.removeEventListener("keydown", this.browseShortcutHandler, true);
       this.favoritesView?.destroy();
       this.morePanel?.destroy();
       this.browsePanel?.destroy();
@@ -8828,6 +8839,9 @@
         },
         scanPage: (source) => Promise.resolve(this.onBrowseScan?.(source) ?? null)
       });
+      // Note: Chrome and Firefox dispatch the find shortcut to the document, so
+      // capture phase keeps the browser find bar out of this decision.
+      this.document.addEventListener("keydown", this.browseShortcutHandler, true);
       this.document.body.prepend(this.root);
       this.applyStoredCommentPaneWidth();
       this.setVideoLoading(this.isVideoLoading);
@@ -10161,14 +10175,24 @@
     }
 
     /**
+     * Returns whether the Search tool can open the browse panel.
+     *
+     * @returns {boolean}
+     */
+    canOpenBrowsePanel() {
+      const source = this.selectedSource(this.currentSources);
+      return Boolean(this.browsePanel && this.isRailOpen && source &&
+        source.items.length > 0);
+    }
+
+    /**
      * Opens the browse panel for the selected source.
+     *
+     * @returns {boolean} Whether the panel opened.
      */
     openBrowsePanel() {
+      if (!this.canOpenBrowsePanel()) return false;
       const source = this.selectedSource(this.currentSources);
-      if (!this.browsePanel || !this.isRailOpen || !source ||
-          source.items.length === 0) {
-        return;
-      }
       this.browsePanel.open({
         anchor: this.browseAnchor(),
         title: this.sourceDisplayLabel(source),
@@ -10177,6 +10201,44 @@
         source
       });
       this.railSearchButton?.setAttribute("aria-expanded", "true");
+      return true;
+    }
+
+    /** Dismisses the nonmodal extension popups before the panel opens. */
+    closeExtensionPopups() {
+      this.morePanel?.close();
+      this.settingsView?.panel?.close();
+      this.favoritesView?.panel?.close();
+    }
+
+    /**
+     * Opens the browse panel from the browser's find shortcut.
+     *
+     * The shortcut mirrors the Search tool: Cmd or Ctrl with F is consumed only
+     * when the panel can open. An open panel returns focus to its query field
+     * and selects the query.
+     *
+     * @param {KeyboardEvent} event
+     */
+    handleBrowseShortcut(event) {
+      if (event.defaultPrevented || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) ||
+          typeof event.key !== "string" || event.key.toLowerCase() !== "f") {
+        return;
+      }
+
+      if (this.browsePanel?.isOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.browsePanel.focusSearch();
+        return;
+      }
+
+      if (!this.canOpenBrowsePanel()) return;
+      this.closeExtensionPopups();
+      this.openBrowsePanel();
+      event.preventDefault();
+      event.stopPropagation();
     }
 
     /**
