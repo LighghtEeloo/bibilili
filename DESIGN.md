@@ -911,8 +911,8 @@ after their fetch completes.
 
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
-kind, then contains the pinned watch action group when native watch actions are
-available. Source buttons represent parts, collection, recommendations,
+kind, then the rail action group, then the pinned watch action group when
+native watch actions are available. Source buttons represent parts, collection, recommendations,
 favorites, watch later, and history when those sources are available. Their
 labels use the current UI language.
 
@@ -927,20 +927,25 @@ available source, it contains the activation control, available uploader
 summary, and any available watch action buttons.
 
 Source buttons are keyed by source kind. Reconciliation updates them in place,
-orders them after the activation control and before the watch action group, and
+orders them after the activation control and before the rail action group, and
 removes buttons for absent sources. Stable button identity preserves
 in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
-The rail action group follows the watch action group, separated by a vertical
-border. Pinned tools retain Locate, Start, Refresh, Search order. The Search
-tool opens the browse panel for the selected source. It follows the same
-placement preference as other list tools and is unavailable while the rail is
-closed or the source has no valid items. More and Settings remain at the
-trailing edge of the bar. Their leading separator appears when More is visible.
-The bar uses equal horizontal edge padding before the activation control and
-after Settings, including while its contents scroll.
+The bar groups controls by subject. List controls lead: the source buttons and
+the rail action group that acts on the selected source. Current-video controls
+trail: the watch action group sits at the trailing side, before More and
+Settings. The free space of the bar separates the two.
 
-Closing the rail retracts the pinned rail tools toward the watch action group
+The rail action group follows the last source button. Pinned tools retain
+Locate, Start, Refresh, Search order. The Search tool opens the browse panel
+for the selected source. It follows the same placement preference as other list
+tools and is unavailable while the rail is closed or the source has no valid
+items. More and Settings remain at the trailing edge of the bar. Their leading
+separator appears when More is visible. The bar uses equal horizontal edge
+padding before the activation control and after Settings, including while its
+contents scroll.
+
+Closing the rail retracts the pinned rail tools toward the source buttons
 instead of leaving disabled buttons dimmed on the bar. Opening the rail extends
 them again. The tools stay mounted and disabled while retracted, so placement,
 labels, and handlers survive the transition.

@@ -10151,9 +10151,12 @@
         this.morePanel.close();
         if (moreHasFocus) this.settingsButton.focus();
       }
-      if (this.railActionGroup.nextSibling !== this.dockUtilityGroup ||
-          this.sourceBar.lastChild !== this.dockUtilityGroup) {
-        this.sourceBar.append(this.railActionGroup, this.dockUtilityGroup);
+      // renderSourceBar orders the tool group after the sources; this covers a bar it has not ordered yet.
+      if (this.railActionGroup.parentElement !== this.sourceBar) {
+        this.sourceBar.append(this.railActionGroup);
+      }
+      if (this.sourceBar.lastChild !== this.dockUtilityGroup) {
+        this.sourceBar.append(this.dockUtilityGroup);
       }
       this.morePanel.position();
     }
@@ -10477,6 +10480,11 @@
       }
 
       UiControl.removeStaleButtons(this.sourceButtons, availableKinds);
+      // List tools stay beside the sources they act on; watch actions follow.
+      if (this.railActionGroup) {
+        UiControl.place(this.sourceBar, this.railActionGroup, previous);
+        previous = this.railActionGroup;
+      }
       this.renderWatchActionGroup(this.currentActions, previous);
     }
 

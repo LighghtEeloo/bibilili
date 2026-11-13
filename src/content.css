@@ -898,27 +898,31 @@
   align-items: center;
   gap: var(--bibilili-bar-tool-gap);
   min-width: 0;
-  margin-left:
-    calc(var(--bibilili-bar-separator-gutter) - var(--bibilili-bar-gap));
-  padding-left: var(--bibilili-bar-separator-gutter);
-  border-left: var(--bibilili-bar-border-width) solid var(--bibilili-border);
 }
 
-/* 1fr tracks under max-content sizing equalize to the widest watch action. */
+/*
+ * The watch actions take the trailing side; the free space before them
+ * separates list controls from current-video controls.
+ * 1fr tracks under max-content sizing equalize to the widest watch action.
+ */
 .bibilili-action-group {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   width: max-content;
+  margin-left: auto;
 }
 
-/* Bar tools retract toward the watch action group instead of dimming. */
+.bibilili-action-group:not([hidden]) ~ .bibilili-dock-utilities {
+  margin-left: 0;
+}
+
+/* Bar tools retract toward the source buttons instead of dimming. */
 .bibilili-rail-action-group {
+  padding-left: var(--bibilili-bar-action-padding);
   transition:
     gap var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
-    margin-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
-    padding-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing),
-    border-left-width var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing);
+    padding-left var(--bibilili-rail-slide-duration) var(--bibilili-rail-slide-easing);
 }
 
 .bibilili-rail-action-group > .bibilili-action-button {
@@ -933,9 +937,7 @@
 
 #bibilili-layout-root.bibilili-has-controls-dock .bibilili-rail-action-group {
   gap: 0;
-  margin-left: 0;
   padding-left: 0;
-  border-left-width: 0;
 }
 
 #bibilili-layout-root.bibilili-has-controls-dock

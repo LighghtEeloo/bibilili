@@ -647,6 +647,19 @@ test("More reuses counted action nodes and preserves their identity across recon
   assert.equal(share.disabled, true);
 });
 
+test("the source bar orders list tools before watch actions and keeps utilities last", (t) => {
+  const { layout, anchor } = settingsFixture(t);
+  const activationControl = { mountDocked: () => anchor };
+  for (let pass = 0; pass < 2; pass += 1) {
+    layout.renderSourceBar([], activationControl);
+    layout.renderControlPlacement();
+    assert.equal(anchor.nextSibling, layout.railActionGroup);
+    assert.equal(layout.railActionGroup.nextSibling, layout.actionGroup);
+    assert.equal(layout.actionGroup.nextSibling, layout.dockUtilityGroup);
+    assert.equal(layout.sourceBar.lastChild, layout.dockUtilityGroup);
+  }
+});
+
 test("Search is on the bar by default and moves to More when unpinned", (t) => {
   const { layout, controller } = settingsFixture(t);
   layout.renderControlPlacement();
