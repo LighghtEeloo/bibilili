@@ -646,3 +646,243 @@ test("browse panel explains an empty search with an Esc hint", () => {
     UiStrings.message(UiMessage.BROWSE_SEARCH_EMPTY_HINT, "zh_CN")
   );
 });
+
+function scanItem(index, title = "Video " + (index + 1)) {
+  return {
+    targetUrl: "https://www.bilibili.com/video/BV" + (index + 1),
+    title,
+    author: "Author " + (index + 1),
+    timestamp: localTime(12) - index * 1000
+  };
+}
+
+function scanSource(items, overrides = {}) {
+  return {
+    kind: "history",
+    root: null,
+    items,
+    pagination: { hasMore: true, status: "ready" },
+    ...overrides
+  };
+}
+
+async function waitFor(predicate, timeout = 2000) {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeout) {
+      throw new Error("Timed out waiting for browse scan");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+test("browse search scans account pages and hides the empty state until the end", async () => {
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 0,
+    scanPage: async () => pages.shift() ?? null
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const pages = [
+    scanSource([scanItem(0), scanItem(1, "Alpha")], { pagination: { hasMore: true, status: "ready" } }),
+    scanSource([scanItem(0), scanItem(1, "Alpha"), scanItem(2, "Beta")], { pagination: { hasMore: true, status: "ready" } }),
+    scanSource([scanItem(0), scanItem(1, "Alpha"), scanItem(2, "Beta")], { pagination: { hasMore: false, status: "ready" } })
+  ];
+  panel.open({
+    title: "History",
+    count: 2,
+    language: "en",
+    source: scanSource([scanItem(0)], { pagination: { hasMore: true, status: "ready" } })
+  });
+
+  panel.searchInput.value = "none";
+  panel.searchInput.dispatch("input");
+
+  assert.equal(panel.scanRow.hidden, false);
+  assert.equal(
+    panel.scanLabel.textContent,
+    UiStrings.message(UiMessage.BROWSE_SCAN_PROGRESS, "en", ["1"])
+  );
+  assert.equal(panel.grid.root.querySelector(".bibilili-browse-empty"), null);
+  assert.equal(panel.filteredCount, 0);
+
+  await waitFor(() => panel.grid.root.querySelector(".bibilili-browse-empty") !== null);
+  assert.equal(panel.scanRow.hidden, true);
+  assert.equal(panel.filteredCount, 0);
+  assert.equal(panel.source.items.length, 3);
+});
+
+test("browse search reveals matches as scan pages arrive", async () => {
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 0,
+    scanPage: async () => pages.shift() ?? null
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const pages = [
+    scanSource([scanItem(0, "Alpha"), scanItem(1, "Beta")], { pagination: { hasMore: true, status: "ready" } }),
+    scanSource([scanItem(0, "Alpha"), scanItem(1, "Beta"), scanItem(2, "Alpha two")], { pagination: { hasMore: false, status: "ready" } })
+  ];
+  panel.open({
+    title: "History",
+    count: 1,
+    language: "en",
+    source: scanSource([scanItem(0, "Nothing here")], { pagination: { hasMore: true, status: "ready" } })
+  });
+
+  panel.searchInput.value = "alpha";
+  panel.searchInput.dispatch("input");
+  assert.equal(panel.filteredCount, 0);
+  assert.equal(panel.scanRow.hidden, false);
+
+  await waitFor(() => panel.filteredCount === 2);
+  await waitFor(() => panel.scanRow.hidden);
+  assert.equal(
+    panel.count.textContent,
+    UiStrings.message(UiMessage.BROWSE_ITEM_COUNT_LABEL, "en", ["2 / 3"])
+  );
+});
+
+test("browse search retries a failed scan page while keeping matches", async () => {
+  let calls = 0;
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 0,
+    scanPage: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("offline");
+      return scanSource(
+        [scanItem(0, "Alpha"), scanItem(1, "Alpha two")],
+        { pagination: { hasMore: false, status: "ready" } }
+      );
+    }
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  panel.open({
+    title: "History",
+    count: 1,
+    language: "en",
+    source: scanSource([scanItem(0, "Nothing here")], { pagination: { hasMore: true, status: "ready" } })
+  });
+  panel.searchInput.value = "alpha";
+  panel.searchInput.dispatch("input");
+
+  await waitFor(() => panel.scanRetry.hidden === false);
+  assert.equal(panel.filteredCount, 0);
+  const retry = panel.scanRetry;
+  retry.dispatch("click");
+
+  await waitFor(() => panel.filteredCount === 2);
+  await waitFor(() => panel.scanRetry.hidden);
+  assert.equal(calls, 2);
+});
+
+test("browse search filters locally when the source cannot continue", async () => {
+  let calls = 0;
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 0,
+    scanPage: async () => {
+      calls += 1;
+      return null;
+    }
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const source = scanSource([scanItem(0, "Alpha")], {
+    pagination: { hasMore: false, status: "ready" }
+  });
+  panel.open({ title: "History", count: 1, language: "en", source });
+  panel.searchInput.value = "missing";
+  panel.searchInput.dispatch("input");
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls, 0);
+  assert.equal(panel.scanRow.hidden, true);
+  assert.ok(panel.grid.root.querySelector(".bibilili-browse-empty"));
+});
+
+test("browse search debounces the scan start", async () => {
+  let calls = 0;
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 25,
+    scanPage: async () => {
+      calls += 1;
+      return null;
+    }
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  panel.open({
+    title: "History",
+    count: 1,
+    language: "en",
+    source: scanSource([scanItem(0, "Alpha")])
+  });
+  panel.searchInput.value = "alpha";
+  panel.searchInput.dispatch("input");
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 0);
+  await waitFor(() => calls === 1);
+});
+
+test("closing the browse panel stops its scan and reopening resumes it", async () => {
+  const pending = {
+    promise: null,
+    resolve: null
+  };
+  pending.promise = new Promise((resolve) => { pending.resolve = resolve; });
+  let calls = 0;
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 0,
+    scanPage: async () => {
+      calls += 1;
+      if (calls === 1) return pending.promise;
+      return calls === 2 ? middlePage : finalPage;
+    }
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const initial = scanSource([scanItem(0, "Alpha")]);
+  const middlePage = scanSource(
+    [scanItem(0, "Alpha"), scanItem(1, "Alpha two")],
+    { pagination: { hasMore: true, status: "ready" } }
+  );
+  const finalPage = scanSource(
+    [scanItem(0, "Alpha"), scanItem(1, "Alpha two"), scanItem(2, "Alpha three")],
+    { pagination: { hasMore: false, status: "ready" } }
+  );
+  panel.open({ title: "History", count: 1, language: "en", source: initial });
+  panel.searchInput.value = "alpha";
+  panel.searchInput.dispatch("input");
+  await waitFor(() => calls === 1);
+
+  panel.close();
+  pending.resolve(middlePage);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls, 1);
+  assert.equal(panel.query, "alpha");
+
+  panel.open({ title: "History", count: 2, language: "en", source: middlePage });
+  await waitFor(() => calls === 3);
+  assert.equal(panel.filteredCount, 3);
+  assert.equal(panel.scanRow.hidden, true);
+});

@@ -44,6 +44,9 @@
   const BROWSE_HEADER_ROW_HEIGHT = 46;
   const BROWSE_EMPTY_ROW_HEIGHT = 240;
   const BROWSE_TAIL_ROW_HEIGHT = 56;
+  const BROWSE_SCAN_DEBOUNCE_MS = 250;
+  const BROWSE_SCAN_WAIT_MS = 5000;
+  const BROWSE_SCAN_MAX_STEPS = 500;
   const BROWSE_CARD_MIN_WIDTH = 220;
   const BROWSE_CARD_THUMB_RATIO = 9 / 16;
   const BROWSE_CARD_TEXT_HEIGHT = 72;
@@ -4120,11 +4123,14 @@
 
     /**
      * Reveals retained items or appends one account continuation page.
+     * Silent loads retain pages without scheduling a layout reconcile.
      *
      * @param {string} kind
+     * @param {object} [options]
+     * @param {boolean} [options.notify]
      * @returns {Promise<void>}
      */
-    async loadMore(kind) {
+    async loadMore(kind, { notify = true } = {}) {
       const record = this.records.get(kind);
       if (!record) {
         throw new Error("Unknown account source kind");
@@ -4138,12 +4144,12 @@
       if (record.items.length > record.visibleCount) {
         record.visibleCount += ACCOUNT_MORE_BATCH_SIZE;
         record.status = AccountSourceStatus.READY;
-        this.onChange();
+        if (notify) this.onChange();
         return;
       }
 
       const cursor = record.cursor;
-      const controller = this.beginRequest(record);
+      const controller = this.beginRequest(record, notify);
 
       try {
         const result = await AccountSourceStore.fetchSourceRecord(
@@ -4181,7 +4187,7 @@
       } finally {
         if (this.isCurrentRequest(record, controller)) {
           record.controller = null;
-          this.onChange();
+          if (notify) this.onChange();
         }
       }
     }
@@ -4190,14 +4196,15 @@
      * Starts a source request and invalidates its previous request.
      *
      * @param {AccountSourceRecord} record
+     * @param {boolean} [notify]
      * @returns {AbortController}
      */
-    beginRequest(record) {
+    beginRequest(record, notify = true) {
       record.controller?.abort();
       const controller = new AbortController();
       record.controller = controller;
       record.status = AccountSourceStatus.LOADING;
-      this.onChange();
+      if (notify) this.onChange();
       return controller;
     }
 
@@ -6748,8 +6755,12 @@
      * @param {number} options.emptyHeight
      * @param {number} options.gap
      * @param {number} [options.tailHeight]
+     * @param {boolean} [options.showEmpty]
      */
-    constructor({ sections, columns, cardHeight, headerHeight, emptyHeight, gap, tailHeight = 0 }) {
+    constructor({
+      sections, columns, cardHeight, headerHeight, emptyHeight, gap,
+      tailHeight = 0, showEmpty = true
+    }) {
       this.rows = [];
       this.entryRowIndexes = [];
       let top = 0;
@@ -6761,7 +6772,7 @@
         top += row.height + gap;
       };
 
-      if (sections.length === 0) {
+      if (sections.length === 0 && showEmpty) {
         push({ kind: "empty", key: "empty", height: emptyHeight });
       }
 
@@ -6955,6 +6966,7 @@
      * @param {Array<{key: string, label: string, items: object[]}>} data.sections
      * @param {string} data.language
      * @param {string} data.query
+     * @param {{phase: "scanning" | "error", scanned: number} | null} [data.scan]
      * @param {boolean} [data.resetScroll]
      * @param {boolean} [data.queryChanged]
      */
@@ -7205,6 +7217,7 @@
 
     /** @returns {BrowseRowLayout} */
     createLayout() {
+      const scan = Boolean(this.data?.scan);
       return new BrowseRowLayout({
         sections: this.data?.sections ?? [],
         columns: this.columns,
@@ -7212,7 +7225,8 @@
         headerHeight: BROWSE_HEADER_ROW_HEIGHT,
         emptyHeight: BROWSE_EMPTY_ROW_HEIGHT,
         gap: this.metrics.gap,
-        tailHeight: this.tailHeight()
+        tailHeight: this.tailHeight(),
+        showEmpty: !scan
       });
     }
 
@@ -7224,7 +7238,8 @@
     /** @returns {"loading" | "error" | "more" | null} */
     tailState() {
       const source = this.data?.source;
-      if (!source || source.root !== null || !source.pagination?.hasMore) return null;
+      if (!source || this.data?.query.trim()) return null;
+      if (source.root !== null || !source.pagination?.hasMore) return null;
       const status = source.pagination?.status ?? AccountSourceStatus.READY;
       if (status === AccountSourceStatus.LOADING) return "loading";
       if (status === AccountSourceStatus.ERROR) return "error";
@@ -7266,10 +7281,12 @@
       const startRow = this.layout.rowIndexAt(scrollTop);
       let endRow = startRow;
 
-      while (endRow < this.rows.length && this.rows[endRow].top < viewportBottom) {
+      while (startRow >= 0 && endRow < this.rows.length &&
+          this.rows[endRow].top < viewportBottom) {
         endRow += 1;
       }
-      if (endRow <= startRow) endRow = Math.min(this.rows.length, startRow + 1);
+      if (startRow < 0) endRow = -1;
+      else if (endRow <= startRow) endRow = Math.min(this.rows.length, startRow + 1);
 
       const mounted = new Set();
       for (let index = Math.max(0, startRow - 1); index < Math.min(this.rows.length, endRow + 1); index += 1) {
@@ -7713,6 +7730,8 @@
    * @property {() => void} [onFocusFallback] Focus target when the launcher is unavailable.
    * @property {BrowseCardHost | null} [cardHost] Rail card renderer and actions.
    * @property {(() => BrowseGridMetrics) | null} [measure] Optional geometry source.
+   * @property {(source: VideoListSource) => Promise<VideoListSource | null>} [scanPage] Loads one account continuation page for a source scan.
+   * @property {number} [scanDebounceMs] Delay before a source scan starts.
    */
 
   /**
@@ -7732,6 +7751,10 @@
       this.onClose = options.onClose ?? null;
       this.onFocusFallback = options.onFocusFallback ?? null;
       this.cardHost = options.cardHost ?? null;
+      this.scanPage = options.scanPage ?? null;
+      this.scanDebounceMs = Number.isFinite(options.scanDebounceMs)
+        ? Math.max(0, options.scanDebounceMs)
+        : BROWSE_SCAN_DEBOUNCE_MS;
       this.anchor = null;
       this.isOpen = false;
       this.language = DEFAULT_UI_LANGUAGE;
@@ -7742,6 +7765,12 @@
       this.headerCount = 0;
       this.filteredCount = 0;
       this.visibleDate = null;
+      /** @type {{phase: "scanning" | "error", scanned: number} | null} */
+      this.scanState = null;
+      this.scanGeneration = 0;
+      this.scanTimer = null;
+      this.scanWaiters = new Set();
+      this.sourceRevision = 0;
       /** Persistent search field; Escape clears it before closing the sheet. */
       this.searchInput = null;
 
@@ -7805,6 +7834,24 @@
       };
       this.document.addEventListener?.("visibilitychange", this.visibilityHandler);
 
+      this.scanRow = document.createElement("div");
+      this.scanRow.className = "bibilili-browse-scan-row";
+      this.scanRow.hidden = true;
+      this.scanStatus = document.createElement("div");
+      this.scanStatus.className = "bibilili-browse-scan";
+      this.scanIndicator = document.createElement("span");
+      this.scanIndicator.className = "bibilili-browse-scan-indicator";
+      this.scanIndicator.setAttribute("aria-hidden", "true");
+      this.scanLabel = document.createElement("span");
+      this.scanLabel.className = "bibilili-browse-scan-label";
+      this.scanRetry = UiControl.button(
+        document,
+        "bibilili-browse-scan-retry",
+        () => this.retryScan()
+      );
+      this.scanStatus.append(this.scanIndicator, this.scanLabel, this.scanRetry);
+      this.scanRow.append(this.scanStatus);
+
       this.body = document.createElement("div");
       this.body.className = "bibilili-browse-body";
       this.grid = new BrowseGrid(document, {
@@ -7816,7 +7863,7 @@
       this.body.append(this.grid.root);
 
       this.panel.setAttribute("aria-labelledby", titleId);
-      this.panel.append(header, this.searchRow, this.body);
+      this.panel.append(header, this.searchRow, this.scanRow, this.body);
       this.panel.addEventListener("keydown", (event) => this.handleKeydown(event));
       this.panel.addEventListener("keyup", (event) => event.stopPropagation());
       root.append(this.scrim, this.panel);
@@ -7861,6 +7908,10 @@
       }
       this.grid.open();
       this.focusInitial();
+      if (this.query.trim() && this.canScan()) {
+        this.prepareScan({ immediate: true });
+        this.renderContent();
+      }
     }
 
     /**
@@ -7890,6 +7941,7 @@
       const sourceChanged = sourceKey !== this.sourceKey;
 
       if (sourceChanged) {
+        this.stopScan();
         this.query = "";
         this.searchInput.value = "";
       }
@@ -7902,6 +7954,7 @@
       }
       this.setLabels();
       this.renderContent({ resetScroll: sourceChanged, queryChanged: sourceChanged });
+      this.notifySourceUpdated();
     }
 
     /** Applies the current UI language to owned labels. */
@@ -7945,9 +7998,43 @@
         sections: this.sections,
         language: this.language,
         query: this.query,
+        scan: this.scanState,
         resetScroll,
         queryChanged
       });
+      this.renderScanStatus();
+    }
+
+    /** Applies the current scan state to the fixed progress row. */
+    renderScanStatus() {
+      const scan = this.scanState;
+      this.scanRow.hidden = !scan;
+      if (!scan) {
+        this.scanIndicator.hidden = true;
+        this.scanLabel.hidden = true;
+        this.scanRetry.hidden = true;
+        return;
+      }
+      const scanning = scan.phase !== "error";
+      this.scanStatus.setAttribute("role", scanning ? "status" : "alert");
+      this.scanIndicator.hidden = !scanning;
+      this.scanLabel.hidden = !scanning;
+      this.scanRetry.hidden = scanning;
+      if (scanning) {
+        const scanned = new Intl.NumberFormat(
+          UiStrings.numberLocale(this.language)
+        ).format(scan.scanned);
+        this.scanLabel.textContent = UiStrings.message(
+          UiMessage.BROWSE_SCAN_PROGRESS,
+          this.language,
+          [scanned]
+        );
+        return;
+      }
+      this.scanRetry.textContent = UiStrings.message(
+        UiMessage.BROWSE_SCAN_RETRY,
+        this.language
+      );
     }
 
     /**
@@ -7987,6 +8074,7 @@
       if (query === this.query) return;
       this.query = query;
       if (this.searchInput.value !== query) this.searchInput.value = query;
+      this.prepareScan();
       this.renderContent({ resetScroll: true, queryChanged: true });
     }
 
@@ -7997,6 +8085,215 @@
       this.applyQuery("");
       this.searchInput.focus?.({ preventScroll: true });
       return true;
+    }
+
+
+    /**
+     * Returns true when the selected source has a continuation that can be
+     * scanned as search pages.
+     *
+     * @param {VideoListSource | null} [source]
+     * @returns {boolean}
+     */
+    canScan(source = this.source) {
+      return Boolean(
+        this.scanPage && source && source.root === null && source.pagination?.hasMore
+      );
+    }
+
+    /** Cancels the debounce and invalidates any in-flight scan generation. */
+    stopScan() {
+      this.cancelScanTimer();
+      this.scanGeneration += 1;
+      this.resolveScanWaiters(false);
+      this.scanState = null;
+      this.renderScanStatus();
+    }
+
+    /**
+     * Starts or cancels the scan for the current query and source. The scan is
+     * provisional: local matches render immediately and pages extend them.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.immediate]
+     */
+    prepareScan({ immediate = false } = {}) {
+      this.cancelScanTimer();
+      this.scanGeneration += 1;
+      this.resolveScanWaiters(false);
+      const scanning = Boolean(this.query.trim() && this.canScan());
+      this.scanState = scanning
+        ? { phase: "scanning", scanned: this.source?.items?.length ?? 0 }
+        : null;
+      if (!scanning) return;
+      const generation = this.scanGeneration;
+      this.scanTimer = setTimeout(() => {
+        this.scanTimer = null;
+        void this.runScan(generation);
+      }, immediate ? 0 : this.scanDebounceMs);
+    }
+
+    /** Releases a scheduled scan without changing its generation. */
+    cancelScanTimer() {
+      if (this.scanTimer === null) return;
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
+    }
+
+    /**
+     * Requests continuation pages until the source ends, fails, or the query,
+     * source, or open state changes.
+     *
+     * @param {number} generation
+     * @returns {Promise<void>}
+     */
+    async runScan(generation) {
+      let steps = 0;
+      while (generation === this.scanGeneration && this.isOpen && this.query.trim()) {
+        steps += 1;
+        if (steps > BROWSE_SCAN_MAX_STEPS) {
+          this.finishScanError(generation);
+          return;
+        }
+        const source = this.source;
+        if (!this.canScan(source)) {
+          this.finishScan(generation);
+          return;
+        }
+        const status = source.pagination?.status ?? AccountSourceStatus.READY;
+        if (status === AccountSourceStatus.LOADING) {
+          const revision = this.sourceRevision;
+          const updated = await this.waitForSourceUpdate(revision);
+          if (generation !== this.scanGeneration) return;
+          if (!updated) {
+            this.finishScanError(generation);
+            return;
+          }
+          continue;
+        }
+
+        let next = null;
+        try {
+          next = await this.scanPage(source);
+        } catch (_error) {
+          if (generation === this.scanGeneration) this.finishScanError(generation);
+          return;
+        }
+        if (generation !== this.scanGeneration) return;
+        if (!next) {
+          this.finishScanError(generation);
+          return;
+        }
+
+        const nextStatus = next.pagination?.status ?? AccountSourceStatus.READY;
+        this.applyScanSource(next, generation);
+        if (generation !== this.scanGeneration) return;
+        if (nextStatus === AccountSourceStatus.ERROR) {
+          this.finishScanError(generation);
+          return;
+        }
+        if (!next.pagination?.hasMore) {
+          this.finishScan(generation);
+          return;
+        }
+        if (nextStatus === AccountSourceStatus.LOADING) {
+          const revision = this.sourceRevision;
+          const updated = await this.waitForSourceUpdate(revision);
+          if (generation !== this.scanGeneration) return;
+          if (!updated) {
+            this.finishScanError(generation);
+            return;
+          }
+        }
+      }
+    }
+
+    /**
+     * Replaces the panel source with one scanned page while keeping the query.
+     *
+     * @param {VideoListSource} source
+     * @param {number} generation
+     */
+    applyScanSource(source, generation) {
+      if (generation !== this.scanGeneration) return;
+      const count = source.items?.length ?? 0;
+      this.scanState = { phase: "scanning", scanned: count };
+      this.setContent({
+        title: this.title.textContent,
+        count,
+        language: this.language,
+        source
+      });
+    }
+
+    /**
+     * Ends a scan. A completed scan removes the progress row; an error leaves a
+     * retry control while retaining matches already found.
+     *
+     * @param {number} generation
+     * @param {boolean} [failed]
+     */
+    finishScan(generation, failed = false) {
+      if (generation !== this.scanGeneration) return;
+      this.cancelScanTimer();
+      this.scanGeneration += 1;
+      this.resolveScanWaiters(false);
+      this.scanState = failed
+        ? { phase: "error", scanned: this.source?.items?.length ?? 0 }
+        : null;
+      this.renderContent();
+    }
+
+    /** @param {number} generation */
+    finishScanError(generation) {
+      this.finishScan(generation, true);
+    }
+
+    /** Restarts a failed scan from the retained source cursor. */
+    retryScan() {
+      if (!this.isOpen || !this.query.trim() || !this.canScan()) return;
+      const hadFocus = this.document.activeElement === this.scanRetry;
+      this.prepareScan({ immediate: true });
+      this.renderContent();
+      if (hadFocus) this.searchInput.focus?.({ preventScroll: true });
+    }
+
+    /**
+     * Waits for the next source replacement without polling.
+     *
+     * @param {number} revision
+     * @returns {Promise<boolean>}
+     */
+    waitForSourceUpdate(revision) {
+      if (this.sourceRevision !== revision) return Promise.resolve(true);
+      if (typeof setTimeout !== "function") return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const waiter = (updated) => {
+          clearTimeout(timer);
+          this.scanWaiters.delete(waiter);
+          resolve(updated);
+        };
+        const timer = setTimeout(() => {
+          this.scanWaiters.delete(waiter);
+          resolve(false);
+        }, BROWSE_SCAN_WAIT_MS);
+        this.scanWaiters.add(waiter);
+      });
+    }
+
+    /** Wakes a scan waiting for the next source update. */
+    notifySourceUpdated() {
+      this.sourceRevision += 1;
+      for (const waiter of [...this.scanWaiters]) waiter(true);
+      this.scanWaiters.clear();
+    }
+
+    /**
+     * @param {boolean} updated
+     */
+    resolveScanWaiters(updated) {
+      for (const waiter of [...this.scanWaiters]) waiter(updated);
+      this.scanWaiters.clear();
     }
 
     /** Moves focus to the search field. */
@@ -8059,6 +8356,7 @@
      */
     close(restoreFocus = false) {
       if (!this.isOpen) return;
+      this.stopScan();
       this.isOpen = false;
       this.grid.close();
       this.panel.dataset.open = "false";
@@ -8086,6 +8384,7 @@
     /** Clears the source instance, query, and scroll for a new page session. */
     resetSession() {
       this.close(false);
+      this.stopScan();
       this.query = "";
       this.searchInput.value = "";
       this.source = null;
@@ -8100,6 +8399,7 @@
 
     /** Removes the owned sheet and scrim. */
     destroy() {
+      this.stopScan();
       this.grid.stop();
       this.close(false);
       this.document.removeEventListener?.("visibilitychange", this.visibilityHandler);
@@ -8127,6 +8427,8 @@
       this.preferences = SettingsPreference.read();
       this.settingsView = null;
       this.favoritesView = null;
+      /** @type {((source: VideoListSource) => Promise<VideoListSource | null>) | null} */
+      this.onBrowseScan = null;
       this.movedPageNodes = new MovedPageNodeStore(this.document);
       this.sourceRootMarker = new SourceRootMarker(SOURCE_ROOT_ATTR);
       this.resetLayoutState();
@@ -8173,6 +8475,7 @@
       this.moreButton = null;
       this.settingsButton = null;
       this.browsePanel = null;
+      this.browseRailStale = false;
       this.railLocateButton = null;
       this.railStartButton = null;
       /** Logical current-video index in the displayed rail, or -1 when absent. */
@@ -8499,6 +8802,7 @@
         onClose: () => {
           this.railSearchButton?.setAttribute("aria-expanded", "false");
           this.scheduleRailRender();
+          this.flushScannedSources();
         },
         onFocusFallback: () => this.focusBrowseFallback(),
         cardHost: {
@@ -8511,7 +8815,8 @@
             this.updateVideoCard(card, item, isCurrent, key, sourceKind),
           setDemand: (items) => this.videoPreviews.setDemand(items),
           requestMore: (source) => this.requestBrowseContinuation(source)
-        }
+        },
+        scanPage: (source) => Promise.resolve(this.onBrowseScan?.(source) ?? null)
       });
       this.document.body.prepend(this.root);
       this.applyStoredCommentPaneWidth();
@@ -9520,6 +9825,56 @@
       }
 
       return topOffset;
+    }
+
+
+    /**
+     * Replaces scanned account items without a discovery pass. The open browse
+     * panel renders its own copy; the rail receives them when the panel closes.
+     *
+     * @param {VideoListSource} source
+     * @returns {boolean}
+     */
+    syncSourceItems(source) {
+      if (!source || !Array.isArray(this.currentSources)) return false;
+      const key = LayoutRoot.sourceKey(source);
+      const index = this.currentSources.findIndex(
+        (candidate) => LayoutRoot.sourceKey(candidate) === key
+      );
+      if (index < 0) return false;
+      this.currentSources[index] = source;
+      this.watchLaterArchiveKeys = LayoutRoot.watchLaterArchiveKeysFor(this.currentSources);
+      if (this.browsePanel?.isOpen) {
+        this.browseRailStale = true;
+        return true;
+      }
+      if (!this.root || !this.isRailOpen) return true;
+      this.setSources(this.currentSources, false, this.currentActivationControl, null);
+      return true;
+    }
+
+    /**
+     * Pushes a silently loaded page into the open browse panel so its scan loop
+     * observes the new source state.
+     *
+     * @param {VideoListSource} source
+     */
+    refreshBrowsePanelSource(source) {
+      if (!this.browsePanel?.isOpen || !source) return;
+      this.browsePanel.update({
+        title: this.sourceDisplayLabel(source),
+        count: source.items.length,
+        language: this.language,
+        source
+      });
+    }
+
+    /** Renders scan-expanded items in the rail after the panel closes. */
+    flushScannedSources() {
+      if (!this.browseRailStale) return;
+      this.browseRailStale = false;
+      if (!this.root || !this.isRailOpen) return;
+      this.setSources(this.currentSources, false, this.currentActivationControl, null);
     }
 
     /**
@@ -13254,6 +13609,7 @@
       this.accountSources = new AccountSourceStore(() => {
         this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.ACCOUNT);
       }, this.performance);
+      this.layout.onBrowseScan = (source) => this.scanAccountSource(source);
       this.enabled = ActivationPreference.readEnabled();
       this.preferences = SettingsPreference.read();
       this.operationHistory = new OperationHistory(() => this.settingsView?.refreshOperationHistory(),
@@ -14397,6 +14753,36 @@
       await this.accountSources.loadMore(sourceKind);
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
       return this.accountSources.currentSource(sourceKind)?.items.length ?? 0;
+    }
+
+    /**
+     * Loads one account continuation page for an open browse-panel search scan.
+     * The page is retained without a discovery pass; the panel renders the
+     * returned source and the rail syncs its expanded list when the panel closes.
+     *
+     * @param {VideoListSource} source
+     * @returns {Promise<VideoListSource | null>}
+     */
+    async scanAccountSource(source) {
+      if (!this.enabled || !this.isWatchPage() || !source ||
+          source.root !== null || !source.pagination?.hasMore ||
+          !ACCOUNT_SOURCE_ORDER.includes(source.kind)) {
+        return null;
+      }
+      const kind = source.kind;
+      const pageKey = this.currentPageKey();
+      await this.accountSources.loadMore(kind, { notify: false });
+      if (!this.enabled || !this.isWatchPage() || this.currentPageKey() !== pageKey) {
+        return null;
+      }
+      const next = this.accountSources.currentSource(kind);
+      if (!next) return null;
+      if (kind === SourceKind.FAVORITES && next.folderId !== source.folderId) {
+        return null;
+      }
+      this.layout.syncSourceItems(next);
+      this.layout.refreshBrowsePanelSource(next);
+      return next;
     }
 
     /**

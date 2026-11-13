@@ -198,7 +198,7 @@
     "description": "Renderable item count in the browse panel header."
   },
   "browseSearchLabel": {
-    "message": "Search all videos",
+    "message": "Search this source",
     "description": "Accessible name and placeholder for searching the complete selected source."
   },
   "browseSearchEmpty": {
@@ -208,6 +208,14 @@
   "browseSearchEmptyHint": {
     "message": "Try another keyword, or press Esc to clear the search.",
     "description": "Recovery hint under the browse panel empty state."
+  },
+  "browseScanProgress": {
+    "message": "Searching… $1 items scanned",
+    "description": "Search scan progress row; $1 is the number of scanned items."
+  },
+  "browseScanRetry": {
+    "message": "Search failed. Retry",
+    "description": "Retry control after a browse search scan failure."
   },
   "browseAllItemsLabel": {
     "message": "All videos",

@@ -1151,8 +1151,8 @@ current video; the rail retains that positioning behavior.
 The panel header titles the source and shows a second line with the visible
 date group and a count of renderable items. While a query is active, the count
 reads matching items over retained items. Counts describe renderable items, not
-account or folder metadata totals. The header and search row stay fixed; the
-card grid owns the panel's vertical scroll. Panel labels and date sections use
+account or folder metadata totals. The header, search row, and scan progress row
+stay fixed; the card grid owns the panel's vertical scroll. Panel labels and date sections use
 the UI language; folder titles keep Bilibili's wording.
 
 Browse cards are the rail's cards rendered into a different geometry: a fluid
@@ -1234,10 +1234,10 @@ from a scan extend the rows without moving the current scroll position.
 ## Browse Search
 
 The panel has its own persistent search field. Its accessible name and
-placeholder state the full-source scope. It searches the complete selected
-source rather than the items retained by the rail. Matching uses the rail's
-case-insensitive, Unicode-normalized substring over title and author. Favorites
-searches the selected folder.
+placeholder name the selected source, not a broader video library. It searches
+the complete selected source rather than only the items retained by the rail.
+Matching uses the rail's case-insensitive, Unicode-normalized substring over
+title and author. Favorites searches the selected folder.
 
 Page-owned sources and account sources with no continuation filter locally. An
 account source with a continuation starts a full-source scan after a short input
@@ -1248,8 +1248,8 @@ missing or repeated cursor ends the scan.
 
 The panel reports the scan as provisional. The result count updates as pages
 arrive, and the no-matches state appears only when the scan reaches the end. A
-progress row shows a busy indicator and the number of scanned items. Matches
-keep source order and are not ranked by relevance.
+progress row below the search field shows a busy indicator and the number of
+scanned items. Matches keep source order and are not ranked by relevance.
 
 Changing the query, closing the panel, changing the source, or starting
 navigation stops the scan after its in-flight page. The in-flight page is
@@ -1258,9 +1258,10 @@ continuation. A scan failure keeps the matches already found and exposes a
 localized retry; retry resumes from the retained cursor.
 
 The scan uses the same source record and cursor as the rail. A completed scan
-leaves the source fully retained, and the rail renders the expanded list after
-the panel closes. Scan pages update the panel and the source store without a
-page discovery pass or a player, comment, or dock remount.
+leaves the source fully retained by loading pages without scheduling a layout
+reconcile; the rail renders the expanded list when the panel closes. Scan pages
+update the panel and the source store without a page discovery pass or a
+player, comment, or dock remount.
 
 The panel owns the list query. Closing and reopening the panel retains the
 query while the source instance continues. Reopening a panel with a retained
@@ -1275,8 +1276,9 @@ the search field, and explains that Escape clears it.
 The panel is a modal dialog labelled by its source title. Opening moves focus to
 its search field. The Close control precedes the search field in tab order.
 Focus stays within the panel: Tab and Shift+Tab move through the Close control,
-the search field, and the rendered cards, wrapping at the ends. Keyboard events
-inside the panel do not reach Bilibili's player shortcuts.
+the search field, the scan retry control when visible, and the rendered cards,
+wrapping at the ends. Keyboard events inside the panel do not reach Bilibili's
+player shortcuts.
 
 Tab or Shift+Tab that crosses a rendered card row mounts the adjacent card row
 and moves focus to its first or last control, matching the rail's cross-window
@@ -1296,8 +1298,9 @@ A plain same-tab card activation closes the panel before navigation; focus
 follows the destination navigation. Modified and new-tab activations leave the
 panel open. When an account mutation or source refresh removes the focused
 card, focus moves to the next card in reading order, then the previous card,
-then the search field. Result-count changes and scan completion are coalesced
-into a polite status region; search failures are announced there. Date changes
+then the search field. Result-count changes and scan progress are announced
+through the polite status regions; search failures are announced by the scan
+row's alert state. Date changes
 caused by scrolling are not announced.
 
 The panel opens and closes with a short slide and fade. Reduced motion removes

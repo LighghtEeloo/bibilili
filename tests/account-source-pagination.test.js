@@ -357,3 +357,26 @@ test("a canceled refresh cannot restore a deleted watch-later card", async (t) =
   );
   assert.equal(store.currentWatchLaterCount(), 2);
 });
+
+test("silent continuation retains pages without notifying the layout", async (t) => {
+  mockApi(t, [], [
+    payload(entries(1, 30), cursor(30, 900)),
+    payload(entries(31, 30), cursor(60, 800)),
+    payload([])
+  ]);
+  let changes = 0;
+  const store = new AccountSourceStore(() => { changes += 1; });
+  await store.refresh("en");
+  const changesBeforeScan = changes;
+
+  await store.loadMore(SourceKind.HISTORY, { notify: false });
+
+  assert.equal(changes, changesBeforeScan);
+  assert.equal(source(store).items.length, 60);
+  assert.equal(source(store).pagination.hasMore, true);
+
+  await store.loadMore(SourceKind.HISTORY);
+  assert.ok(changes > changesBeforeScan);
+  assert.equal(source(store).items.length, 60);
+  assert.equal(source(store).pagination.hasMore, false);
+});

@@ -198,7 +198,7 @@
     "description": "Renderable item count in the browse panel header."
   },
   "browseSearchLabel": {
-    "message": "搜尋全部影片",
+    "message": "搜尋此來源",
     "description": "Accessible name and placeholder for searching the complete selected source."
   },
   "browseSearchEmpty": {
@@ -208,6 +208,14 @@
   "browseSearchEmptyHint": {
     "message": "試試其他關鍵字，或按 Esc 清除搜尋。",
     "description": "Recovery hint under the browse panel empty state."
+  },
+  "browseScanProgress": {
+    "message": "正在搜尋… 已掃描 $1 條",
+    "description": "Search scan progress row; $1 is the number of scanned items."
+  },
+  "browseScanRetry": {
+    "message": "搜尋失敗，重試",
+    "description": "Retry control after a browse search scan failure."
   },
   "browseAllItemsLabel": {
     "message": "全部影片",

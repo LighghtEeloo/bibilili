@@ -150,6 +150,8 @@
     BROWSE_SEARCH_LABEL: "browseSearchLabel",
     BROWSE_SEARCH_EMPTY: "browseSearchEmpty",
     BROWSE_SEARCH_EMPTY_HINT: "browseSearchEmptyHint",
+    BROWSE_SCAN_PROGRESS: "browseScanProgress",
+    BROWSE_SCAN_RETRY: "browseScanRetry",
     BROWSE_ALL_ITEMS_LABEL: "browseAllItemsLabel",
     BROWSE_TODAY_LABEL: "browseTodayLabel",
     BROWSE_YESTERDAY_LABEL: "browseYesterdayLabel",
