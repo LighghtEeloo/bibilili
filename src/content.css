@@ -267,7 +267,23 @@
   --bibilili-selected-bg: rgba(var(--Lb5_rgb, 0, 143, 194), 0.16);
   --bibilili-selected-border: var(--Lb5, #008fc2);
   --bibilili-shadow: rgba(var(--Ba0_rgb, 0, 0, 0), 0.22);
-  --bibilili-dock-control-height: 42px;
+  /* Source bar geometry; the control row is derived from its parts. */
+  --bibilili-bar-control-height: 30px;
+  --bibilili-bar-padding-y: 6px;
+  --bibilili-bar-border-width: 1px;
+  --bibilili-bar-edge: 12px;
+  --bibilili-bar-gap: 8px;
+  --bibilili-bar-tool-gap: 6px;
+  --bibilili-bar-action-gap: 6px;
+  --bibilili-bar-separator-gutter: 12px;
+  --bibilili-bar-action-padding: 4px;
+  --bibilili-bar-icon-size: 20px;
+  --bibilili-bar-count-size: 12px;
+  --bibilili-bar-tool-width: 34px;
+  --bibilili-dock-control-height: calc(
+    var(--bibilili-bar-control-height) + var(--bibilili-bar-padding-y) +
+    var(--bibilili-bar-padding-y) + var(--bibilili-bar-border-width)
+  );
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
   --bibilili-rail-slide-duration: 250ms;
   --bibilili-rail-slide-easing: cubic-bezier(0.4, 0, 0.2, 1);
@@ -737,21 +753,22 @@
 }
 
 .bibilili-source-bar {
-  --bibilili-source-bar-edge-padding: 12px;
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--bibilili-bar-gap);
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 6px 0 6px var(--bibilili-source-bar-edge-padding);
-  border-bottom: 1px solid var(--bibilili-border);
+  padding:
+    var(--bibilili-bar-padding-y) 0 var(--bibilili-bar-padding-y)
+    var(--bibilili-bar-edge);
+  border-bottom: var(--bibilili-bar-border-width) solid var(--bibilili-border);
   scrollbar-width: thin;
 }
 
 .bibilili-source-button {
   flex: 0 0 auto;
-  height: 28px;
+  height: var(--bibilili-bar-control-height);
   padding: 0 12px;
   border: 1px solid var(--bibilili-button-border);
   border-radius: 6px;
@@ -760,7 +777,7 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  line-height: 26px;
+  line-height: calc(var(--bibilili-bar-control-height) - 2px);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -788,7 +805,7 @@
   align-items: center;
   justify-content: center;
   width: 28px;
-  margin-left: -8px;
+  margin-left: calc(0px - var(--bibilili-bar-gap));
   padding: 0;
   border-left: 0;
   border-radius: 0 6px 6px 0;
@@ -879,11 +896,20 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--bibilili-bar-tool-gap);
   min-width: 0;
-  margin-left: 4px;
-  padding-left: 4px;
-  border-left: 1px solid var(--bibilili-border);
+  margin-left:
+    calc(var(--bibilili-bar-separator-gutter) - var(--bibilili-bar-gap));
+  padding-left: var(--bibilili-bar-separator-gutter);
+  border-left: var(--bibilili-bar-border-width) solid var(--bibilili-border);
+}
+
+/* 1fr tracks under max-content sizing equalize to the widest watch action. */
+.bibilili-action-group {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  width: max-content;
 }
 
 /* Bar tools retract toward the watch action group instead of dimming. */
@@ -930,7 +956,7 @@
   justify-content: center;
   gap: 4px;
   width: 72px;
-  height: 30px;
+  height: var(--bibilili-bar-control-height);
   padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -939,7 +965,7 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  line-height: 28px;
+  line-height: calc(var(--bibilili-bar-control-height) - 2px);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1069,6 +1095,56 @@
   white-space: nowrap;
 }
 
+/* Each action cell keeps the same compact icon-and-count unit centered. */
+.bibilili-action-group > .bibilili-action-button {
+  width: auto;
+  padding: 0 var(--bibilili-bar-action-padding);
+  justify-content: center;
+  gap: var(--bibilili-bar-action-gap);
+}
+
+.bibilili-action-group > .bibilili-action-button .bibilili-action-native-visual {
+  flex: 0 0 var(--bibilili-bar-icon-size);
+  width: var(--bibilili-bar-icon-size);
+  min-width: var(--bibilili-bar-icon-size);
+  max-width: var(--bibilili-bar-icon-size);
+  transform: none;
+}
+
+.bibilili-action-group > .bibilili-action-button
+  .bibilili-action-native-visual svg,
+.bibilili-action-group > .bibilili-action-button
+  .bibilili-action-native-visual img {
+  width: var(--bibilili-bar-icon-size) !important;
+  max-width: var(--bibilili-bar-icon-size);
+  height: var(--bibilili-bar-icon-size) !important;
+  max-height: var(--bibilili-bar-icon-size);
+}
+
+.bibilili-action-group > .bibilili-action-button
+  .bibilili-action-native-visual .bibilili-action-copy-icon {
+  width: var(--bibilili-bar-icon-size);
+  height: var(--bibilili-bar-icon-size);
+}
+
+/* A fallback label needs more room than the fixed icon column. */
+.bibilili-action-group > .bibilili-action-button
+  .bibilili-action-native-visual[data-bibilili-fallback="true"] {
+  flex-basis: auto;
+  width: auto;
+  min-width: var(--bibilili-bar-icon-size);
+  max-width: none;
+}
+
+.bibilili-action-group > .bibilili-action-button .bibilili-action-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: none;
+  text-align: left;
+  font-size: var(--bibilili-bar-count-size);
+  font-variant-numeric: tabular-nums;
+}
+
 .bibilili-action-native-visual,
 .bibilili-action-count {
   transition: opacity var(--bibilili-loading-fade-duration) ease-out;
@@ -1093,7 +1169,7 @@
 
 .bibilili-toggle-button {
   flex: 0 0 auto;
-  height: 30px;
+  height: var(--bibilili-bar-control-height);
   width: 34px;
   padding: 0;
   border: 1px solid var(--bibilili-selected-border);
@@ -1118,7 +1194,6 @@
 }
 
 .bibilili-source-bar > .bibilili-toggle-button {
-  margin-right: 4px;
   box-shadow: none;
 }
 
@@ -1513,7 +1588,7 @@
 .bibilili-rail-locate,
 .bibilili-rail-start,
 .bibilili-rail-refresh {
-  width: 32px;
+  width: var(--bibilili-bar-tool-width);
 }
 
 .bibilili-rail-locate:disabled,
@@ -1527,7 +1602,7 @@
 }
 
 .bibilili-rail-search {
-  width: 32px;
+  width: var(--bibilili-bar-tool-width);
 }
 
 .bibilili-action-label {
@@ -1540,20 +1615,20 @@
   right: 0;
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
+  gap: var(--bibilili-bar-tool-gap);
   margin-left: auto;
-  padding: 0 var(--bibilili-source-bar-edge-padding) 0 6px;
+  padding: 0 var(--bibilili-bar-edge);
   background: var(--bibilili-panel);
 }
 
 .bibilili-dock-utilities.bibilili-has-more {
-  border-left: 1px solid var(--bibilili-border);
+  border-left: var(--bibilili-bar-border-width) solid var(--bibilili-border);
 }
 
 .bibilili-dock-utilities > button,
 .bibilili-settings-button,
 .bibilili-performance-button {
-  width: 32px;
+  width: var(--bibilili-bar-tool-width);
 }
 
 .bibilili-settings-button,
