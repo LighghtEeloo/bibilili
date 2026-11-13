@@ -391,3 +391,65 @@ test("uploader discovery stays absent with only viewer header links", () => {
 
   assert.equal(info, null);
 });
+
+test("watch actions share toolbar discovery and skip page and label fallbacks after valid matches", (t) => {
+  const toolbar = new FakeDomNode({ id: "arc_toolbar_report" });
+  const triggers = ["like", "coin", "fav", "share", "watch-later"].map((name) => {
+    const trigger = new FakeDomNode({ className: `video-${name}`, text: "12" });
+    trigger.isConnected = true;
+    return trigger;
+  });
+  toolbar.append(...triggers);
+  const document = fakeWatchDocument(toolbar);
+  const discovery = new RegionDiscovery(document);
+  const roots = t.mock.method(discovery, "watchActionRoots");
+  const pageQueries = t.mock.method(document, "querySelectorAll");
+  const toolbarQueries = t.mock.method(toolbar, "querySelectorAll");
+  const actions = discovery.findActions();
+  assert.deepEqual(actions.map((action) => action.trigger), triggers);
+  assert.ok(actions.every((action) => action.countText === "12"));
+  assert.equal(roots.mock.callCount(), 1);
+  assert.equal(pageQueries.mock.callCount(), 1, "the only page-wide query finds toolbar roots");
+  assert.ok(toolbarQueries.mock.calls.every(({ arguments: [selector] }) =>
+    !selector.includes("[title") && !selector.includes("[aria-label")), "label selectors remain fallback-only");
+
+  triggers[0].text = "13";
+  triggers[0].attributes.title = "Liked";
+  const refreshed = discovery.findActions();
+  assert.equal(refreshed[0].countText, "13");
+  assert.equal(refreshed[0].isActive, true, "native count and active state remain live on each pass");
+});
+
+test("watch action fallback skips invalid, owned, and reused candidates without rescanning duplicates", (t) => {
+  const toolbar = new FakeDomNode({ id: "arc_toolbar_report" });
+  const invalid = new FakeDomNode({ className: "first" });
+  invalid.isConnected = false;
+  const used = new FakeDomNode({ className: "video-like" });
+  used.isConnected = true;
+  const popup = new FakeDomNode({ className: "bibilili-popup" });
+  const owned = new FakeDomNode({ className: "first" });
+  owned.isConnected = true;
+  popup.append(owned);
+  toolbar.append(invalid, used, popup);
+  const fallback = new FakeDomNode({ className: "video-like", text: "Like 42" });
+  fallback.isConnected = true;
+  const document = fakeWatchDocument(toolbar, fallback);
+  const discovery = new RegionDiscovery(document);
+  const pageQueries = t.mock.method(document, "querySelectorAll");
+  const valid = t.mock.method(discovery, "isWatchActionTrigger");
+  const definition = {
+    kind: "like", selectors: [".first", ".video-like", "[title*='Like']"],
+    countSelectors: [], labelPattern: /Like/iu, activePattern: /liked/iu
+  };
+  const usedTriggers = new Set([used]);
+  const action = discovery.findAction(definition, usedTriggers, [toolbar]);
+  assert.equal(action.trigger, fallback);
+  assert.equal(action.countText, "42");
+  assert.ok(usedTriggers.has(fallback));
+  assert.deepEqual(pageQueries.mock.calls.map(({ arguments: [selector] }) => selector), [".first", ".video-like"]);
+  assert.deepEqual(valid.mock.calls.map(({ arguments: [trigger] }) => trigger), [invalid, fallback]);
+
+  fallback.isConnected = false;
+  assert.equal(discovery.findAction(definition, new Set([used]), [toolbar]), null,
+    "missing native actions remain absent after exhausting fallbacks");
+});

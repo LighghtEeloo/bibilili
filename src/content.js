@@ -5925,9 +5925,10 @@
     findActions() {
       const actions = [];
       const usedTriggers = new Set();
+      const roots = this.watchActionRoots();
 
       for (const definition of WATCH_ACTION_DEFINITIONS) {
-        const action = this.findAction(definition, usedTriggers);
+        const action = this.findAction(definition, usedTriggers, roots);
 
         if (action) {
           actions.push(action);
@@ -5942,10 +5943,11 @@
      *
      * @param {WatchActionDefinition} definition
      * @param {Set<Element>} usedTriggers
+     * @param {Element[]} roots Toolbar roots shared by this action pass.
      * @returns {WatchAction | null}
      */
-    findAction(definition, usedTriggers) {
-      for (const candidate of this.actionCandidates(definition)) {
+    findAction(definition, usedTriggers, roots) {
+      for (const candidate of this.actionCandidates(definition, roots)) {
         const trigger = this.actionTriggerFor(candidate);
 
         if (
@@ -5994,28 +5996,24 @@
     }
 
     /**
-     * Returns action candidates from watch toolbars first, then page fallbacks.
+     * Yields toolbar candidates in selector order, then page-wide fallbacks.
+     * Finding a valid trigger stops queries before later selectors or roots run.
      *
      * @param {WatchActionDefinition} definition
-     * @returns {Element[]}
+     * @param {Element[]} roots
+     * @returns {Generator<Element>}
      */
-    actionCandidates(definition) {
-      const candidates = [];
-      const roots = this.watchActionRoots();
-
-      for (const root of roots) {
+    *actionCandidates(definition, roots) {
+      const seen = new Set();
+      for (const root of [...roots, this.document]) {
         for (const selector of definition.selectors) {
-          candidates.push(...DomProbe.queryAll(root, selector));
+          for (const element of DomProbe.queryAll(root, selector)) {
+            if (seen.has(element)) continue;
+            seen.add(element);
+            if (!DomProbe.isOwned(element)) yield element;
+          }
         }
       }
-
-      for (const selector of definition.selectors) {
-        candidates.push(...DomProbe.queryAll(this.document, selector));
-      }
-
-      return DomProbe.unique(
-        candidates.filter((element) => !DomProbe.isOwned(element))
-      );
     }
 
     /**

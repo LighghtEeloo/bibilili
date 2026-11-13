@@ -796,10 +796,12 @@ video. The action kinds are like, coin, favorite, share, and watch later. The
 action kind is a closed set with that stable order within each placement.
 
 Bibilili discovers native watch action triggers from the page toolbar. It reads
-the displayed count text and active state when Bilibili exposes them. Missing
-native actions are absent from the dock. The watch-later action is absent when
-the current watch URL is not an addable archive target or no native
-watch-later visual has been captured.
+toolbar roots once per pass and evaluates selectors in priority order until a
+valid unused trigger is found. Document-wide fallbacks run only when toolbar
+candidates yield no trigger. Displayed count text and active state are read on
+each pass. Missing native actions are absent from the dock. The watch-later
+action is absent when the current watch URL is not an addable archive target
+or no native watch-later visual has been captured.
 
 The like, coin, and favorite buttons present sanitized clones of native visual
 content. Like and coin dispatch clicks to their native triggers. The coin action
