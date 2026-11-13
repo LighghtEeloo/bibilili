@@ -987,10 +987,9 @@
   display: none;
 }
 
+/* Active actions tint; the boxed selection treatment belongs to the source route. */
 .bibilili-action-button[aria-pressed="true"] {
-  border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
-  background: var(--bibilili-selected-bg);
 }
 
 .bibilili-action-native-visual {

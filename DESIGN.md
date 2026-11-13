@@ -945,6 +945,9 @@ separator appears when More is visible. The bar uses equal horizontal edge
 padding before the activation control and after Settings, including while its
 contents scroll.
 
+An active watch action tints its icon and count with the selection color. The
+bordered selection treatment is reserved for the selected source button.
+
 Closing the rail retracts the pinned rail tools toward the source buttons
 instead of leaving disabled buttons dimmed on the bar. Opening the rail extends
 them again. The tools stay mounted and disabled while retracted, so placement,
