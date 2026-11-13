@@ -1224,8 +1224,10 @@ automatic loading. One continuation request per source is active; the panel and
 the rail share the source's request state.
 
 A source refresh or an account mutation reconciles the open grid in place. The
-panel preserves the first visible item and the focused item by card key. If the
-source shrinks past the current position, the grid clamps to its new end.
+panel preserves the first visible item and the focused item by card key. When
+the viewport begins in a date header or in a gap between rows, the grid retains
+the exact scroll offset so near-top updates do not snap to the next card row. If
+the source shrinks past the current position, the grid clamps to its new end.
 
 Changing the query rebuilds the layout rows and returns the panel to the top.
 Clearing the query rebuilds the unfiltered rows at the top. Matches that arrive

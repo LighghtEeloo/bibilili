@@ -7576,37 +7576,47 @@
     }
 
     /**
-     * Captures the first visible entry and its offset within its row.
+     * Captures the first visible entry and its offset within its row. When a
+     * header, empty, or tail row is the first visible row, the absolute scroll
+     * offset is retained instead so near-top updates do not snap to the next
+     * card row.
      *
-     * @returns {{key: string, offset: number} | null}
+     * @returns {{key: string, offset: number} | {scrollTop: number} | null}
      */
     captureAnchor() {
-      if (!this.layout || this.entries.length === 0) return null;
+      if (!this.layout) return null;
       const scrollTop = Math.max(0, Number(this.root.scrollTop) || 0);
       const rowIndex = this.layout.rowIndexAt(scrollTop);
 
       for (let index = rowIndex; index >= 0 && index < this.rows.length; index += 1) {
         const row = this.rows[index];
         if (row.top + row.height <= scrollTop) continue;
-        if (row.kind === "cards") {
+        if (row.kind === "cards" && this.entries.length > 0) {
           return {
             key: this.entries[row.entryStart].key,
             offset: Math.max(0, scrollTop - row.top)
           };
         }
+        return { scrollTop };
       }
 
-      return null;
+      return { scrollTop };
     }
 
     /**
      * Restores a captured entry to the top of the viewport, or clamps to the
-     * new content end when it disappeared.
+     * new content end when it disappeared. Absolute offsets restore the exact
+     * position of the first visible header row.
      *
-     * @param {{key: string, offset: number}} anchor
+     * @param {{key: string, offset: number} | {scrollTop: number}} anchor
      * @param {boolean} alignTop
      */
     restoreAnchor(anchor, alignTop) {
+      if (typeof anchor.scrollTop === "number") {
+        this.root.scrollTop = anchor.scrollTop;
+        this.clampScroll();
+        return;
+      }
       const entryIndex = this.entryIndexByKey.get(anchor.key);
       if (entryIndex === undefined) {
         this.clampScroll();

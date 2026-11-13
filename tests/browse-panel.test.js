@@ -481,6 +481,25 @@ test("browse panel focus order crosses card rows and wraps at the edges", () => 
   assert.equal(document.activeElement, controls[controls.length - 1]);
 });
 
+test("browse grid preserves near-top scroll across data updates", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 200, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const source = browseSource(20);
+  panel.open({ title: "History", count: 20, language: "en", source });
+
+  panel.grid.root.scrollTop = 30;
+  panel.update({ title: "History", count: 20, language: "en", source: browseSource(20) });
+  assert.equal(panel.grid.root.scrollTop, 30);
+
+  panel.grid.root.scrollTop = 0;
+  panel.update({ title: "History", count: 20, language: "en", source: browseSource(20) });
+  assert.equal(panel.grid.root.scrollTop, 0);
+});
+
 test("browse grid reflows columns and keeps the first visible item anchored", () => {
   const { document, panel } = browseFixture();
   const host = cardHost(document);
