@@ -189,6 +189,32 @@ test("browse row layout maps entries to fixed header and card rows", () => {
   assert.deepEqual(tailed.rows.map((row) => row.kind), ["header", "cards", "tail"]);
 });
 
+test("browse row layout keeps entry ranges global across sections", () => {
+  const layout = new BrowseRowLayout({
+    sections: [
+      { key: "day", label: "Today", items: [1, 2, 3] },
+      { key: "prev", label: "Yesterday", items: [4, 5] }
+    ],
+    columns: 2,
+    cardHeight: 126,
+    headerHeight: 30,
+    emptyHeight: 96,
+    gap: 10
+  });
+
+  assert.deepEqual(
+    layout.rows.map((row) => [row.kind, row.entryStart ?? null, row.entryEnd ?? null]),
+    [
+      ["header", null, null],
+      ["cards", 0, 2],
+      ["cards", 2, 3],
+      ["header", null, null],
+      ["cards", 3, 5]
+    ]
+  );
+  assert.deepEqual(layout.entryRowIndexes, [1, 1, 2, 4, 4]);
+});
+
 test("browse panel opens as a modal sheet and restores the launcher", () => {
   const { document, panel } = browseFixture();
   const anchor = document.createElement("button");

@@ -6730,7 +6730,8 @@
   /**
    * Maps grouped browse entries onto fixed-height virtual rows. Header and
    * card rows share the same gap, and a trailing row can represent pending
-   * continuation state.
+   * continuation state. Card rows carry global entry ranges so renderers can
+   * index the flat entry list.
    */
   class BrowseRowLayout {
     /**
@@ -6765,6 +6766,7 @@
         for (let start = 0; start < section.items.length; start += columns) {
           const end = Math.min(start + columns, section.items.length);
           const rowIndex = this.rows.length;
+          const entryStart = entryIndex;
           for (let index = start; index < end; index += 1) {
             this.entryRowIndexes[entryIndex] = rowIndex;
             entryIndex += 1;
@@ -6773,8 +6775,8 @@
             kind: "cards",
             key: "cards:" + section.key + ":" + start,
             section,
-            entryStart: start,
-            entryEnd: end,
+            entryStart,
+            entryEnd: entryIndex,
             height: cardHeight
           });
         }
