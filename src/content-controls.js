@@ -126,71 +126,6 @@
     }
   }
 
-  /** A search button with shared expansion, Escape, and empty-blur behavior. */
-  class SearchControl {
-    /** @param {Document} document @param {SearchControlOptions} options */
-    constructor(document, options) {
-      this.options = options;
-      this.root = document.createElement("div");
-      this.root.className = options.className;
-      this.button = UiControl.button(document, options.buttonClassName, () => {
-        options.onOpen?.();
-        this.setExpanded(true);
-        this.input.focus();
-      });
-      this.button.append(UiControl.icon(document, "search"));
-      this.button.setAttribute("aria-controls", options.inputId);
-      this.button.setAttribute("aria-expanded", "false");
-      this.input = document.createElement("input");
-      this.input.id = options.inputId;
-      this.input.type = "search";
-      this.input.autocomplete = "off";
-      this.input.hidden = true;
-      this.input.addEventListener("input", () => options.onInput(this.input.value));
-      this.input.addEventListener("keydown", (event) => {
-        // Note: Bilibili handles player shortcuts on the containing document.
-        event.stopPropagation();
-        if (event.key === "Escape" && !event.isComposing) {
-          event.preventDefault();
-          this.input.value = "";
-          options.onInput("");
-          this.setExpanded(false);
-          (options.escapeFocus?.() ?? this.button).focus();
-        }
-      });
-      this.input.addEventListener("blur", () => {
-        if (!this.input.value.trim()) this.setExpanded(false);
-      });
-      this.root.append(this.button, this.input);
-    }
-
-    /** @param {boolean} expanded Whether the field replaces its button. */
-    setExpanded(expanded) {
-      this.input.hidden = !expanded;
-      this.button.hidden = expanded;
-      this.button.setAttribute("aria-expanded", String(expanded));
-      this.options.onExpandedChange?.();
-    }
-
-    /** @param {string} label Localized accessible name and input placeholder. */
-    setLabel(label) {
-      UiControl.setLabel(this.button, label);
-      this.input.setAttribute("aria-label", label);
-      this.input.placeholder = label;
-    }
-  }
-
-  /**
-   * @typedef {object} SearchControlOptions
-   * @property {string} inputId Stable id referenced by the search button.
-   * @property {string} className Container styling.
-   * @property {string} buttonClassName Search button styling.
-   * @property {(query: string) => void} onInput Applies the current query.
-   * @property {() => void} [onOpen] Prepares the containing surface before expansion.
-   * @property {() => void} [onExpandedChange] Reconciles placement or popup geometry.
-   * @property {() => HTMLElement | null} [escapeFocus] Optional alternate focus return target.
-   */
-
   /**
    * Owns a nonmodal panel above a page control, including dismissal and focus.
    * The panel lives outside the layout so Settings can survive deactivation.
@@ -202,6 +137,8 @@
       this.className = className;
       this.root = null;
       this.anchor = null;
+      /** @type {HTMLElement | null} Element whose left edge the panel follows instead of the anchor's right edge. */
+      this.startAnchor = null;
       this.outsideHandler = (event) => {
         if (!this.root.contains(event.target) && !this.anchor?.contains(event.target)) {
           this.close(false);
@@ -265,8 +202,9 @@
       const height = this.document.documentElement.clientHeight;
       this.root.style.maxHeight = `${Math.max(0, height - 2 * POPUP_GAP)}px`;
       const panel = this.root.getBoundingClientRect();
+      const start = this.startAnchor?.isConnected ? this.startAnchor.getBoundingClientRect().left : null;
       this.root.style.left = `${Math.max(POPUP_GAP,
-        Math.min((rect?.right ?? width) - panel.width, width - panel.width - POPUP_GAP))}px`;
+        Math.min(start ?? (rect?.right ?? width) - panel.width, width - panel.width - POPUP_GAP))}px`;
       this.root.style.top = `${Math.max(POPUP_GAP,
         Math.min((rect?.top ?? height) - panel.height - POPUP_GAP, height - panel.height - POPUP_GAP))}px`;
     }
@@ -291,5 +229,5 @@
     }
   }
 
-  window.__bibililiControls = Object.freeze({ UiControl, SearchControl, PopupPanel });
+  window.__bibililiControls = Object.freeze({ UiControl, PopupPanel });
 })();

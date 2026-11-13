@@ -172,6 +172,8 @@
     FAVORITES_NO_FOLDERS_MESSAGE: "favoritesNoFoldersMessage",
     FAVORITES_NO_MATCHES_MESSAGE: "favoritesNoMatchesMessage",
     FAVORITES_EMPTY_MESSAGE: "favoritesEmptyMessage",
+    FAVORITES_DEFAULT_TAG: "favoritesDefaultTag",
+    FAVORITES_SAVE_HINT: "favoritesSaveHint",
     SOURCE_MORE_LABEL: "sourceMoreLabel",
     SOURCE_MORE_LOADING_LABEL: "sourceMoreLoadingLabel",
     SOURCE_MORE_RETRY_LABEL: "sourceMoreRetryLabel",

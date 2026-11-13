@@ -1,10 +1,13 @@
 (() => {
   "use strict";
 
-  const { UiControl, SearchControl, PopupPanel } = window.__bibililiControls;
+  const { UiControl, PopupPanel } = window.__bibililiControls;
   const { UiMessage, UiStrings } = window.__bibililiI18n;
 
-  /** Renders the favorite-folder picker using the shared nonmodal popup lifecycle. */
+  /** Folder count above which the picker shows its search field. */
+  const FOLDER_SEARCH_THRESHOLD = 8;
+
+  /** Renders the favorite-folder picker as a menu of the Favorites split button. */
   class FavoritesView {
     /** @param {Document} document @param {FavoritesViewOptions} options */
     constructor(document, options) {
@@ -40,51 +43,99 @@
       if (choose && this.panel.isOpen) { this.panel.close(true); return; }
       this.ensure();
       this.render();
-      this.searchControl.setExpanded(Boolean(this.search.value?.trim()));
-      this.panel.open(this.launcher());
-      const selected = this.rows.get(this.source?.folderId)?.button;
-      const first = [...this.rows.values()].find((row) => !row.button.hidden)?.button;
-      const folder = selected && !selected.hidden ? selected : first;
-      (!this.search.hidden ? this.search : folder ?? this.searchButton).focus();
+      const launcher = this.launcher();
+      // The picker follows the left edge of the split button, whose leading half precedes the chevron.
+      this.panel.startAnchor = launcher.previousElementSibling ?? launcher;
+      this.panel.open(launcher);
+      this.focusInitial();
       this.options.onOpen(choose);
+    }
+
+    /** Focuses the selected folder, then the first match, the search field, and the refresh button. */
+    focusInitial() {
+      const visible = this.visibleRows();
+      const selected = this.rows.get(this.source?.folderId)?.button;
+      const target = visible.includes(selected) ? selected : visible[0];
+      (target ?? (this.search.hidden ? this.refreshButton : this.search)).focus();
+    }
+
+    /** @returns {HTMLButtonElement[]} Folder buttons that match the query, in directory order. */
+    visibleRows() {
+      return (this.directory?.items ?? []).map((folder) => this.rows.get(folder.id)?.button)
+        .filter((button) => button && !button.hidden);
     }
 
     /** Builds the fixed controls once; folder buttons remain keyed by folder id. */
     ensure() {
       if (this.panel.root) return;
       this.panel.ensure();
-      this.panel.root.id = "bibilili-favorite-folders";
-      const header = this.element("div", "bibilili-popup-header");
+      const root = this.panel.root;
+      root.id = "bibilili-favorite-folders";
+      const header = this.element("div", "bibilili-favorites-header");
       this.heading = this.element("h2", "bibilili-favorites-heading");
-      this.closeButton = UiControl.button(this.document, "bibilili-popup-close", () => this.panel.close(true));
-      this.closeButton.append(UiControl.icon(this.document, "close"));
-      this.searchControl = new SearchControl(this.document, {
-        inputId: "bibilili-favorite-folder-search",
-        className: "bibilili-favorites-search-control",
-        buttonClassName: "bibilili-popup-close",
-        onInput: () => this.render(),
-        onExpandedChange: () => {
-          header.classList.toggle("bibilili-favorites-searching", !this.search.hidden);
-          this.panel.position();
-        }
-      });
-      this.searchButton = this.searchControl.button;
-      this.search = this.searchControl.input;
+      this.search = this.document.createElement("input");
+      this.search.id = "bibilili-favorite-folder-search";
       this.search.className = "bibilili-favorites-search";
-      header.append(this.heading, this.searchControl.root, this.closeButton);
-      const body = this.element("div", "bibilili-favorites-body");
+      this.search.type = "search";
+      this.search.autocomplete = "off";
+      this.search.addEventListener("input", () => this.render());
+      this.refreshButton = UiControl.button(this.document,
+        "bibilili-popup-close bibilili-favorites-refresh", () => this.options.onRefresh());
+      this.refreshButton.append(UiControl.icon(this.document, "refresh"));
+      header.append(this.heading, this.search, this.refreshButton);
       this.list = this.element("div", "bibilili-favorite-folders");
+      this.state = this.element("div", "bibilili-favorites-state");
       this.status = this.element("p", "bibilili-favorites-status");
       this.status.setAttribute("role", "status");
-      this.refreshButton = UiControl.button(this.document, "bibilili-source-button", () => this.options.onRefresh());
+      this.retryButton = UiControl.button(this.document, "bibilili-source-button", () => this.options.onRefresh());
       this.signInButton = UiControl.button(this.document, "bibilili-source-button", () => {
         this.panel.close(true);
         this.options.onSignIn();
       });
-      const actions = this.element("div", "bibilili-favorites-actions");
-      actions.append(this.signInButton, this.refreshButton);
-      body.append(this.list, this.status, actions);
-      this.panel.root.append(header, body);
+      this.state.append(this.status, this.signInButton, this.retryButton);
+      this.hint = this.element("p", "bibilili-favorites-hint");
+      root.append(header, this.list, this.state, this.hint);
+      // Capture runs before the shared popup handler, which closes on Escape.
+      root.addEventListener("keydown", (event) => this.handleKeydown(event), true);
+    }
+
+    /**
+     * Moves between folders with the arrow keys, clears a query before closing,
+     * and sends typed characters to the visible search field.
+     * @param {KeyboardEvent} event
+     */
+    handleKeydown(event) {
+      if (event.isComposing) return;
+      const inSearch = event.target === this.search;
+      if (event.key === "Escape") {
+        if (!this.search.value) return;
+        this.search.value = "";
+        this.render();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const rows = this.visibleRows();
+      const index = rows.indexOf(event.target);
+      const move = (target) => {
+        if (!target) return;
+        event.preventDefault();
+        target.focus();
+      };
+      if (event.key === "ArrowDown") {
+        if (inSearch || index >= 0) move(rows[index + 1]);
+      } else if (event.key === "ArrowUp") {
+        if (index > 0) move(rows[index - 1]);
+        else if (index === 0 && !this.search.hidden) move(this.search);
+      } else if (index >= 0 && event.key === "Home") {
+        move(rows[0]);
+      } else if (index >= 0 && event.key === "End") {
+        move(rows[rows.length - 1]);
+      } else if (index >= 0 && !this.search.hidden && event.key.length === 1 && event.key !== " " &&
+          !event.ctrlKey && !event.metaKey && !event.altKey) {
+        // The focused field receives the character that triggered the move.
+        this.search.focus();
+      }
     }
 
     /** @param {string} tag @param {string} className @returns {HTMLElement} */
@@ -116,35 +167,55 @@
       if (this.panel.isOpen) this.render();
     }
 
-    /** Reconciles folder names, counts, and explicit loading, login, and empty states. */
+    /**
+     * Creates one keyed folder button: selection check, name, default tag, and count.
+     * @param {FavoriteFolder} folder
+     * @returns {FavoriteFolderRow}
+     */
+    createRow(folder) {
+      const button = UiControl.button(this.document, "bibilili-favorite-folder", () => {
+        this.panel.close(true);
+        this.options.onSelect(folder.id);
+      });
+      const name = this.element("span", "bibilili-favorite-folder-name");
+      const tag = this.element("span", "bibilili-favorite-folder-tag");
+      const count = this.element("span", "bibilili-favorite-folder-count");
+      button.append(UiControl.icon(this.document, "check"), name, tag, count);
+      return { button, name, tag, count };
+    }
+
+    /** Reconciles folder names, counts, and the loading, signed-out, failed, and empty states. */
     render() {
       if (!this.panel.root || !this.directory) return;
+      const folders = this.directory.items;
       const title = this.message(UiMessage.FAVORITES_FOLDERS_LABEL);
       this.heading.textContent = title;
       this.panel.root.setAttribute("aria-label", title);
-      UiControl.setLabel(this.closeButton, this.message(UiMessage.CLOSE_LABEL));
       const searchLabel = this.message(UiMessage.FAVORITES_SEARCH_LABEL);
-      this.searchControl.setLabel(searchLabel);
+      this.search.setAttribute("aria-label", searchLabel);
+      this.search.placeholder = searchLabel;
+      // A short directory needs no filter; an active query keeps the field until it is cleared.
+      const searchable = folders.length > FOLDER_SEARCH_THRESHOLD || Boolean(this.search.value);
+      if (!searchable && this.document.activeElement === this.search) this.refreshButton.focus();
+      this.search.hidden = !searchable;
+      this.heading.hidden = searchable;
       const query = (this.search.value ?? "").trim().normalize("NFKC").toLowerCase();
+      const numbers = new Intl.NumberFormat(UiStrings.numberLocale(this.language));
+      const defaultTag = this.message(UiMessage.FAVORITES_DEFAULT_TAG);
       const available = new Set();
       let previous = null;
       let matches = 0;
-      for (const folder of this.directory.items) {
+      for (const folder of folders) {
         available.add(folder.id);
         let row = this.rows.get(folder.id);
         if (!row) {
-          const button = UiControl.button(this.document, "bibilili-favorite-folder", () => {
-            this.panel.close(true);
-            this.options.onSelect(folder.id);
-          });
-          const name = this.element("span", "bibilili-favorite-folder-name");
-          const count = this.element("span", "bibilili-favorite-folder-count");
-          button.append(name, count);
-          row = { button, name, count };
+          row = this.createRow(folder);
           this.rows.set(folder.id, row);
         }
         row.name.textContent = folder.title;
-        row.count.textContent = folder.count === null ? "" : new Intl.NumberFormat(UiStrings.numberLocale(this.language)).format(folder.count);
+        row.tag.textContent = defaultTag;
+        row.tag.hidden = !folder.isDefault;
+        row.count.textContent = folder.count === null ? "" : numbers.format(folder.count);
         row.button.setAttribute("aria-pressed", String(folder.id === this.source?.folderId));
         row.button.hidden = !folder.title.normalize("NFKC").toLowerCase().includes(query);
         if (!row.button.hidden) matches += 1;
@@ -154,7 +225,7 @@
       for (const [id, row] of this.rows) {
         if (available.has(id)) continue;
         if (row.button.contains(this.document.activeElement)) {
-          (this.search.hidden ? this.searchButton : this.search).focus();
+          (this.search.hidden ? this.refreshButton : this.search).focus();
         }
         row.button.remove();
         this.rows.delete(id);
@@ -162,19 +233,26 @@
       const status = this.directory.status;
       const loading = status === this.options.statuses.LOADING;
       const signedOut = status === this.options.statuses.SIGNED_OUT;
-      const message = loading ? UiMessage.SOURCE_MORE_LOADING_LABEL
+      const failed = status === this.options.statuses.ERROR;
+      // A revalidation keeps the retained folders on screen; only an empty list reads as loading.
+      const message = loading ? (folders.length ? null : UiMessage.SOURCE_MORE_LOADING_LABEL)
         : signedOut ? UiMessage.FAVORITES_SIGN_IN_MESSAGE
-          : status === this.options.statuses.ERROR ? UiMessage.FAVORITES_ERROR_MESSAGE
-            : !this.directory.items.length ? UiMessage.FAVORITES_NO_FOLDERS_MESSAGE
+          : failed ? UiMessage.FAVORITES_ERROR_MESSAGE
+            : !folders.length ? UiMessage.FAVORITES_NO_FOLDERS_MESSAGE
               : !matches ? UiMessage.FAVORITES_NO_MATCHES_MESSAGE : null;
       this.status.textContent = message ? this.message(message) : "";
-      this.status.hidden = !message;
+      this.state.hidden = !message;
+      this.list.hidden = matches === 0;
       this.list.setAttribute("aria-busy", String(loading));
-      UiControl.setTextButtonLabel(this.refreshButton, this.message(
-        status === this.options.statuses.ERROR ? UiMessage.SOURCE_MORE_RETRY_LABEL : UiMessage.FAVORITES_REFRESH_LABEL));
+      UiControl.setLabel(this.refreshButton, this.message(UiMessage.FAVORITES_REFRESH_LABEL));
       this.refreshButton.disabled = loading;
+      this.refreshButton.setAttribute("data-loading", String(loading));
+      this.retryButton.hidden = !failed;
+      UiControl.setTextButtonLabel(this.retryButton, this.message(UiMessage.SOURCE_MORE_RETRY_LABEL));
       this.signInButton.hidden = !signedOut;
       UiControl.setTextButtonLabel(this.signInButton, this.message(UiMessage.FAVORITES_SIGN_IN_LABEL));
+      this.hint.textContent = this.message(UiMessage.FAVORITES_SAVE_HINT);
+      this.hint.hidden = folders.length === 0;
       this.panel.position();
     }
 
@@ -190,10 +268,18 @@
   /**
    * @typedef {object} FavoritesViewOptions
    * @property {Record<string, string>} statuses Closed account-source states.
-   * @property {(choose: boolean) => void} onOpen Loads folders and resumes a saved selection.
+   * @property {(choose: boolean) => void} onOpen Revalidates folders and resumes a saved selection.
    * @property {(folderId: string) => void} onSelect Selects an account-validated folder.
    * @property {() => void} onRefresh Refreshes the directory and login state.
    * @property {() => void} onSignIn Opens Bilibili's native account control.
+   */
+
+  /**
+   * @typedef {object} FavoriteFolderRow
+   * @property {HTMLButtonElement} button Keyed folder choice.
+   * @property {HTMLElement} name Folder title.
+   * @property {HTMLElement} tag Default-folder marker.
+   * @property {HTMLElement} count Account media count.
    */
   window.__bibililiFavorites = Object.freeze({ FavoritesView });
 })();

@@ -62,6 +62,7 @@ function activityFixture(t, { enabled = true, hidden = false } = {}) {
   t.mock.method(controller.layout, "resetPageSession", () => {});
   t.mock.method(controller.navigation, "start", () => {});
   t.mock.method(controller.accountSources, "refresh", async () => {});
+  t.mock.method(controller.accountSources, "loadFavoriteFolderDirectory", async () => {});
   t.after(() => {
     controller.stop();
     Object.assign(global, previous);
@@ -80,6 +81,7 @@ test("off startup leaves polling, page observation, media, and account loading s
   assert.equal(controller.settlingTimers.length, 0);
   assert.equal(controller.navigation.start.mock.callCount(), 0);
   assert.equal(controller.accountSources.refresh.mock.callCount(), 0);
+  assert.equal(controller.accountSources.loadFavoriteFolderDirectory.mock.callCount(), 0);
   assert.equal(listeners.get("loadstart")?.size ?? 0, 0);
   assert.equal(listeners.get("storage").size, 1);
   assert.equal(listeners.get("visibilitychange").size, 1);
@@ -93,6 +95,8 @@ test("switching off stops recurring work and reactivation samples the current ro
   const watchLaterObserver = controller.accountSources.watchLaterObserver;
   assert.equal(intervals.size, 1);
   assert.equal(listeners.get("loadstart").size, 1);
+  assert.equal(controller.accountSources.loadFavoriteFolderDirectory.mock.callCount(), 1,
+    "the folder directory preloads with the page");
   controller.setEnabled(false, false);
   assert.equal(observer.connected, false);
   assert.equal(controller.observer, null);

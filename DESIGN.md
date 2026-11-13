@@ -663,21 +663,33 @@ selected treatment covers both halves while the Favorites rail is open. The
 chevron points up toward the picker. While the picker is open, the chevron half
 is tinted and the chevron points down.
 
-The picker's search button expands into a field that matches folder names. The
-field replaces the heading and fills the header beside the close button.
-Escape clears the query and restores the button; an empty field collapses on
-blur. Opening the picker focuses the selected or first visible folder unless a
-search query is active. Zero-count folders remain selectable.
+The picker aligns its left edge with the split button. Its header holds a
+heading and a refresh button. Folders follow in directory order. Each row shows
+a check for the selected folder, the folder name, a marker on Bilibili's default
+folder, and the media count. Zero-count folders remain selectable. A caption
+below the list states that the selected folder also receives direct saves.
 
-The directory loads when Favorites is first opened, a stored folder route
-needs restoration, or a direct save needs the current selection. Loading the
-directory for a direct save leaves the rail route and visibility unchanged and
-does not fetch folder videos. Opening the picker rechecks the account and directory.
-The first source-label click resumes a saved folder after this check. Without a
-valid saved selection, it opens Bilibili's default folder. If that folder is
-unavailable, the picker stays open. Selecting a folder loads its cards on demand
-through the account store. Each visited folder retains its cards, continuation,
-and horizontal rail position for the layout session.
+A search field replaces the heading when the directory holds more than eight
+folders. It matches folder names. Escape clears a query; Escape with an empty
+query closes the picker. Arrow keys, Home, and End move between visible
+folders, and a typed character moves focus to the search field. Opening the
+picker focuses the selected or first visible folder.
+
+The directory loads when a watch page starts, while the Favorites source or the
+favorite action is enabled. Loading the directory restores the selected folder
+and its label. It leaves the rail route and visibility unchanged and does not
+fetch folder videos. The first page of a folder's videos loads when its rail is
+first shown. Opening the picker rechecks the account and directory. Retained
+folders stay visible during the recheck, and the refresh button reports its
+progress.
+
+A source-label click opens the selected folder's rail. Before the directory
+has resolved a selection, the click opens the picker and resumes the saved
+folder after the check. Without a valid saved selection, the directory selects
+Bilibili's default folder. If that folder is unavailable, the picker stays
+open. Selecting a folder loads its cards on demand through the account store.
+Each visited folder retains its cards, continuation, and horizontal rail
+position for the layout session.
 
 The last folder is stored per account. Navigation origins and the tab-scoped
 source route carry the folder id. A restored id must belong to the authenticated
@@ -686,10 +698,11 @@ back to the default folder when available. Sign-out and account changes discard
 cached folder data.
 
 Loading, signed-out, failed-request, and empty-folder states remain inside the
-picker or selected rail. Retry preserves usable cards after a network failure.
-The sign-in action forwards to the native account control. Refresh folders
-updates the directory; rail Refresh reloads the selected folder from its first
-page. Favorites uses the existing current-card highlight, Locate, pagination,
+picker or selected rail. In the picker, a state shows one message and at most
+one action. An empty directory reads as loading during its first request. Retry
+preserves usable cards after a network failure. The sign-in action forwards to
+the native account control. The picker's refresh button updates the directory;
+rail Refresh reloads the selected folder from its first page. Favorites uses the existing current-card highlight, Locate, pagination,
 and add-to-watch-later controls.
 
 The selected folder is also the destination for direct saves from the

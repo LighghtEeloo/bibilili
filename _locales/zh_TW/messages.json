@@ -481,6 +481,14 @@
   "favoritesEmptyMessage": {
     "message": "此收藏夾中沒有可播放的影片。"
   },
+  "favoritesDefaultTag": {
+    "message": "預設",
+    "description": "Marks Bilibili's default favorite folder in the folder picker."
+  },
+  "favoritesSaveHint": {
+    "message": "收藏按鈕的快速收藏會存入所選收藏夾。",
+    "description": "Explains that the selected folder also receives direct saves from the current-video Favorite button."
+  },
   "performanceLabel": {
     "message": "效能"
   },

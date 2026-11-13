@@ -42,16 +42,41 @@ function fixture(t) {
   return { ...result, view, directory, selected, opened };
 }
 
-test("picker searches folders, keeps button identity, selects empty folders, and restores focus", (t) => {
+/** Grows the directory past the picker's search threshold. */
+function lengthen(directory) {
+  for (let id = 401; id <= 406; id += 1) directory.items.push({ id: String(id), title: `Extra ${id}`, count: 1 });
+}
+
+test("picker marks the selection and default folder and hides search for a short directory", (t) => {
+  const { view, directory, source, document } = fixture(t);
+  directory.items[1].isDefault = true;
+  view.open(true);
+  assert.equal(view.search.hidden, true);
+  assert.equal(view.heading.hidden, false);
+  assert.equal(document.activeElement, view.rows.get("101").button);
+  assert.equal(view.rows.get("101").button.getAttribute("aria-pressed"), "true");
+  assert.equal(view.rows.get("101").tag.hidden, true);
+  assert.equal(view.rows.get("202").tag.hidden, false);
+  assert.equal(view.rows.get("202").tag.textContent, "Default");
+  assert.equal(view.hint.hidden, false);
+  assert.equal(view.state.hidden, true);
+  assert.equal(view.panel.startAnchor, view.button, "a detached chevron anchors its own picker");
+  directory.status = AccountSourceStatus.LOADING;
+  view.update(source, directory, "en");
+  assert.equal(view.state.hidden, true, "revalidation keeps the retained folders without a loading message");
+  assert.equal(view.refreshButton.disabled, true);
+  assert.equal(view.refreshButton.getAttribute("data-loading"), "true");
+});
+
+test("picker filters a long directory, keeps button identity, selects empty folders, and restores focus", (t) => {
   const { view, directory, source, selected, document } = fixture(t);
+  lengthen(directory);
   view.open(true);
   const row = view.rows.get("202").button;
-  assert.equal(view.search.hidden, true);
-  assert.equal(document.activeElement, view.rows.get("101").button);
-  view.searchButton.dispatch("click");
   assert.equal(view.search.hidden, false);
-  assert.equal(view.searchButton.getAttribute("aria-expanded"), "true");
-  assert.equal(document.activeElement, view.search);
+  assert.equal(view.heading.hidden, true);
+  assert.equal(document.activeElement, view.rows.get("101").button);
+  view.search.focus();
   view.search.value = "mUsIc";
   view.search.dispatch("input");
   assert.equal(view.rows.get("101").button.hidden, true);
@@ -59,40 +84,61 @@ test("picker searches folders, keeps button identity, selects empty folders, and
   view.update(source, directory, "en");
   assert.equal(view.rows.get("202").button, row);
   assert.equal(document.activeElement, view.search);
+  view.search.value = "zzz";
+  view.search.dispatch("input");
+  assert.equal(view.list.hidden, true);
+  assert.equal(view.status.textContent, "No matching folders.");
   view.search.value = "";
   view.search.dispatch("input");
+  assert.equal(view.state.hidden, true);
   view.rows.get("303").button.dispatch("click");
   assert.deepEqual(selected, ["303"]);
   assert.equal(view.panel.isOpen, false);
   assert.equal(document.activeElement, view.button);
   view.open(true);
   assert.equal(view.rows.get("202").button, row);
-  assert.equal(view.search.hidden, true);
 });
 
-test("folder search collapses on empty blur and Escape clears the query without closing the picker", (t) => {
-  const { view, document } = fixture(t);
+test("arrow keys move between folders, typing reaches search, and Escape clears a query before closing", (t) => {
+  const { view, directory, document } = fixture(t);
+  lengthen(directory);
   view.open(true);
-  view.searchButton.dispatch("click");
-  view.search.value = "";
-  view.search.dispatch("blur");
-  assert.equal(view.search.hidden, true);
-  view.searchButton.dispatch("click");
+  const key = (target, name, extra = {}) => {
+    const event = { key: name, target, prevented: false, stopped: false,
+      preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...extra };
+    view.handleKeydown(event);
+    return event;
+  };
+  const row = (id) => view.rows.get(id).button;
+  assert.equal(key(row("101"), "ArrowDown").prevented, true);
+  assert.equal(document.activeElement, row("202"));
+  key(row("202"), "End");
+  assert.equal(document.activeElement, row("406"));
+  key(row("406"), "ArrowDown");
+  assert.equal(document.activeElement, row("406"));
+  key(row("406"), "Home");
+  assert.equal(document.activeElement, row("101"));
+  key(row("101"), "ArrowUp");
+  assert.equal(document.activeElement, view.search);
+  key(view.search, "ArrowDown");
+  assert.equal(document.activeElement, row("101"));
+  key(row("101"), "m", { ctrlKey: true });
+  assert.equal(document.activeElement, row("101"));
+  key(row("101"), " ");
+  assert.equal(document.activeElement, row("101"));
+  assert.equal(key(row("101"), "m").prevented, false, "the typed character reaches the field");
+  assert.equal(document.activeElement, view.search);
+
   view.search.value = "Music";
   view.search.dispatch("input");
-  view.search.dispatch("blur");
-  assert.equal(view.search.hidden, false);
-  let stopped = false;
-  let prevented = false;
-  view.search.dispatch("keydown", { key: "Escape", isComposing: true, stopPropagation() {}, preventDefault() {} });
+  assert.equal(key(view.search, "Escape", { isComposing: true }).stopped, false);
   assert.equal(view.search.value, "Music");
-  view.search.dispatch("keydown", { key: "Escape", stopPropagation() { stopped = true; }, preventDefault() { prevented = true; } });
-  assert.ok(stopped && prevented);
+  const clear = key(view.search, "Escape");
+  assert.ok(clear.stopped && clear.prevented);
   assert.equal(view.search.value, "");
-  assert.equal(view.search.hidden, true);
-  assert.equal(view.rows.get("101").button.hidden, false);
-  assert.equal(document.activeElement, view.searchButton);
+  assert.equal(row("101").hidden, false);
   assert.equal(view.panel.isOpen, true);
+  assert.equal(key(view.search, "Escape").stopped, false, "an empty query leaves Escape to the popup");
 });
 
 test("directory failures retain usable choices and render login and retry states", (t) => {
@@ -100,13 +146,22 @@ test("directory failures retain usable choices and render login and retry states
   view.open(true);
   directory.status = AccountSourceStatus.ERROR;
   view.update(source, directory, "en");
-  assert.equal(view.refreshButton.textContent, "Retry");
+  assert.equal(view.retryButton.hidden, false);
+  assert.equal(view.retryButton.textContent, "Retry");
   assert.equal(view.rows.size, 3);
+  assert.equal(view.list.hidden, false);
   directory.items = [];
+  directory.status = AccountSourceStatus.LOADING;
+  view.update(source, directory, "en");
+  assert.equal(view.state.hidden, false, "an empty directory reads as loading");
+  assert.equal(view.retryButton.hidden, true);
   directory.status = AccountSourceStatus.SIGNED_OUT;
   view.update(source, directory, "en");
   assert.equal(view.rows.size, 0);
+  assert.equal(view.list.hidden, true);
+  assert.equal(view.hint.hidden, true);
   assert.equal(view.signInButton.hidden, false);
+  assert.equal(view.retryButton.hidden, true);
   assert.match(view.status.textContent, /Sign in/);
   view.update(null, directory, "en");
   assert.equal(view.panel.isOpen, false);
@@ -172,7 +227,7 @@ test("a restored closed Favorites route survives loading and retains its folder 
   const { layout, source } = fixture(t);
   global.sessionStorage = new FakeStorage();
   const directory = { requestedFolderId: "101" };
-  const controller = { accountSources: { favoriteFolders: directory } };
+  const controller = { accountSources: { favoriteFolders: directory }, loadShownFavoriteFolder() {} };
   layout.onSourceRouteChange = (state) => BibililiController.prototype.storeSourceRouteState.call(controller, state);
   t.mock.method(layout, "markSourceRoots", () => {});
   const loading = { ...source, folderId: null, items: [], status: AccountSourceStatus.LOADING };

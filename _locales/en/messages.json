@@ -481,6 +481,14 @@
   "favoritesEmptyMessage": {
     "message": "No playable videos in this folder."
   },
+  "favoritesDefaultTag": {
+    "message": "Default",
+    "description": "Marks Bilibili's default favorite folder in the folder picker."
+  },
+  "favoritesSaveHint": {
+    "message": "Quick saves from the Favorite button go to the selected folder.",
+    "description": "Explains that the selected folder also receives direct saves from the current-video Favorite button."
+  },
   "performanceLabel": {
     "message": "Performance"
   },

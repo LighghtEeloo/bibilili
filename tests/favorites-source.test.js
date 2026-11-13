@@ -52,6 +52,25 @@ test("favorites follows recommendations and precedes watch later, without eager 
     [SourceKind.RECOMMENDATIONS, F, SourceKind.WATCH_LATER, SourceKind.HISTORY]);
 });
 
+test("a preloaded directory restores the selection and waits for the rail before requesting videos", async (t) => {
+  const { store, resources } = fixture(t, { "202:1": page([media(1)]) });
+  FavoriteFolderPreference.write("77", "202");
+  await store.loadFavoriteFolderDirectory();
+  assert.equal(store.currentSource(F).folderId, "202");
+  assert.equal(store.currentSource(F).loaded, false);
+  assert.equal(store.favoriteFolders.requested, false);
+  assert.equal(resources().length, 0);
+  store.loadSelectedFavoriteFolder();
+  store.loadSelectedFavoriteFolder();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resources().length, 1, "one request serves repeated reconciliation");
+  assert.equal(store.favoriteFolders.requested, true);
+  assert.equal(store.currentSource(F).items.length, 1);
+  store.loadSelectedFavoriteFolder();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resources().length, 1, "a loaded folder waits for an explicit refresh");
+});
+
 test("favorite records reuse video extraction and exclude unsupported or unavailable media", () => {
   const items = AccountSourceAdapter.itemsFromEntries(F, [media(1), media(2, { type: 12 }), media(3, { attr: 9 }),
     media(4, { title: "" }), media(1), media(5, { bvid: "BV1aa411c7mD", bv_id: "BV1aa411c7mD" })], "en");

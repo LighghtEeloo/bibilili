@@ -4382,9 +4382,22 @@
       return directory.promise;
     }
 
+    /**
+     * Loads the selected folder's first page once its rail is shown.
+     * A finished request, including a failed one, waits for an explicit retry.
+     */
+    loadSelectedFavoriteFolder() {
+      const record = this.records.get(SourceKind.FAVORITES);
+      if (!this.enabledKinds.has(SourceKind.FAVORITES) || !record.folderId ||
+          record.loaded || record.controller) return;
+      this.favoriteFolders.requested = true;
+      void this.refreshSource(SourceKind.FAVORITES);
+    }
+
     /** Selects a validated folder and reuses its retained cards and continuation. */
     async selectFavoriteFolder(folderId) {
       if (!this.enabledKinds.has(SourceKind.FAVORITES)) return;
+      this.favoriteFolders.requested = true;
       const record = this.setFavoriteFolderSelection(folderId);
       if (record && !record.loaded && !record.controller) await this.refreshSource(SourceKind.FAVORITES);
     }
@@ -4504,7 +4517,7 @@
         record.loaded = false;
         void this.refreshRecord(record);
       }
-      if (directory.requested) void this.loadFavoriteFolderDirectory(true);
+      if (directory.requested || directory.loaded) void this.loadFavoriteFolderDirectory(true);
     }
 
     /**
@@ -12290,7 +12303,9 @@
       }
       const empty = source.items.length === 0 && !source.pagination?.hasMore;
       state.hidden = !empty;
-      const loading = source.status === AccountSourceStatus.LOADING;
+      // A selected folder whose first page has not been requested yet reads as loading.
+      const loading = source.status === AccountSourceStatus.LOADING ||
+        Boolean(source.folderId && !source.loaded && source.status === AccountSourceStatus.READY);
       const failed = source.status === AccountSourceStatus.ERROR;
       const message = loading ? UiMessage.SOURCE_MORE_LOADING_LABEL
         : source.status === AccountSourceStatus.SIGNED_OUT ? UiMessage.FAVORITES_SIGN_IN_MESSAGE
@@ -13755,7 +13770,7 @@
         statuses: AccountSourceStatus,
         onOpen: (choose) => this.openFavoriteFolders(choose),
         onSelect: (id) => this.selectFavoriteFolder(id),
-        onRefresh: () => this.accountSources.loadFavoriteFolders(true),
+        onRefresh: () => this.accountSources.loadFavoriteFolderDirectory(true),
         onSignIn: () => {
           const trigger = this.layout.accountControl ?? this.discovery.findAccountControl();
           if (trigger) LayoutRoot.activateNativeAccountControl(trigger);
@@ -14150,6 +14165,7 @@
         this.performance.end(PerformanceWork.LAYOUT, layoutSample);
       }
       this.settingsView.update(this.preferences, this.enabled, language);
+      this.loadShownFavoriteFolder();
       this.nextPageSourceRouteState = null;
       this.pendingSourceRouteReset = false;
       if (this.lazyPrimer.timer === null) {
@@ -14547,6 +14563,14 @@
         state = { ...state, folderId: requestedFolderId };
       }
       SourceRouteStateStore.write(SourceAdapter.currentWatchRouteKey(), state);
+      this.loadShownFavoriteFolder();
+    }
+
+    /** Requests the selected folder's cards while the Favorites rail is the open route. */
+    loadShownFavoriteFolder() {
+      if (this.layout.selectedSourceKind === SourceKind.FAVORITES && this.layout.isRailOpen) {
+        this.accountSources.loadSelectedFavoriteFolder();
+      }
     }
 
     /**
@@ -14825,7 +14849,7 @@
       if (!this.enabled || !this.preferences.sources[SourceKind.FAVORITES]) return;
       this.settingsView.panel.close();
       this.layout.morePanel?.close();
-      await this.accountSources.loadFavoriteFolders(true);
+      await this.accountSources.loadFavoriteFolderDirectory(true);
       if (request !== this.favoriteOpenSequence || !this.enabled ||
           !this.preferences.sources[SourceKind.FAVORITES] || !this.favoritesView.panel.isOpen) return;
       const folderId = this.accountSources.currentSource(SourceKind.FAVORITES)?.folderId;
@@ -14847,12 +14871,14 @@
 
     /**
      * Refreshes account-backed sources when the transformed page can use them.
+     * The favorite-folder directory preloads here; folder videos wait for their rail.
      */
     refreshAccountSources() {
       if (!this.enabled || !this.isWatchPage()) {
         return;
       }
       this.accountSources.refresh(this.resolveUiLanguage());
+      void this.accountSources.loadFavoriteFolderDirectory();
     }
 
     /**
