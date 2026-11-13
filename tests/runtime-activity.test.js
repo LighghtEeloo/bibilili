@@ -28,8 +28,9 @@ function activityFixture(t, { enabled = true, hidden = false } = {}) {
     matchMedia: () => ({ addEventListener: add, removeEventListener: remove }),
     MutationObserver: class {
       constructor(callback) { this.callback = callback; }
-      observe() { this.connected = true; }
+      observe(_target, options) { this.connected = true; this.options = options; }
       disconnect() { this.connected = false; }
+      takeRecords() { return []; }
     },
     PerformanceObserver: class {
       static supportedEntryTypes = ["resource"];
@@ -67,9 +68,9 @@ function activityFixture(t, { enabled = true, hidden = false } = {}) {
     controller.stop();
     Object.assign(global, previous);
   });
-  const emit = (type) => [...listeners.get(type) ?? []].forEach((callback) => callback());
+  const emit = (type, event = {}) => [...listeners.get(type) ?? []].forEach((callback) => callback(event));
   const visibility = (hidden) => { document.hidden = hidden; emit("visibilitychange"); };
-  return { controller, document, listeners, timers, intervals, visibility };
+  return { controller, document, listeners, timers, intervals, visibility, emit };
 }
 
 test("off startup leaves polling, page observation, media, and account loading stopped", (t) => {
@@ -425,4 +426,61 @@ test("opening extension popups is excluded from page mutation work while native 
   controller.observer.callback([{ ...mutation, addedNodes: [owned, native] }]);
   assert.equal(controller.performance.snapshot().states.visible.counters.mutationBatches, 1);
   assert.equal(controller.performance.snapshot().states.visible.causes.mutation, 1);
+});
+
+test("source cache invalidation follows native mutations, image loads, appearance, and observation lifetime", (t) => {
+  const { controller, listeners, emit } = activityFixture(t);
+  const previousImage = global.HTMLImageElement;
+  global.HTMLImageElement = class {};
+  t.after(() => { global.HTMLImageElement = previousImage; });
+  controller.start();
+  t.mock.method(controller.discovery, "findPlayerRegion", () => null);
+  const cache = controller.discovery.sourceItems;
+  const image = new global.HTMLImageElement();
+  const root = { contains: (node) => node === image };
+  const seed = () => cache.roots.set(root, new Map([[SourceKind.RECOMMENDATIONS, []]]));
+  seed();
+  controller.observer.callback([{ type: "attributes", target: image }]);
+  assert.equal(cache.roots.size, 0);
+  for (const name of ["id", "aria-current", "aria-selected", "aria-valuenow", "data-current", "data-active", "data-selected"]) {
+    assert.ok(controller.observer.options.attributeFilter.includes(name), `${name} invalidates native source data`);
+  }
+  seed();
+  controller.observer.callback([{ target: { closest: () => ({}) } }]);
+  assert.equal(cache.roots.size, 1, "extension-owned writes do not invalidate native sources");
+  emit("load", { target: image });
+  assert.equal(cache.roots.size, 0);
+  seed();
+  emit("resize");
+  assert.equal(cache.roots.size, 0);
+  seed();
+  controller.themeChangeHandler();
+  assert.equal(cache.roots.size, 0);
+  seed();
+  global.location.href = "https://www.bilibili.com/video/av2";
+  controller.handlePotentialNavigation();
+  assert.equal(cache.roots.size, 0);
+  seed();
+  controller.setEnabled(false, false);
+  assert.equal(cache.roots.size, 0);
+  assert.equal(listeners.get("load").size, 0);
+  assert.equal(listeners.get("resize").size, 0);
+  controller.setEnabled(true, false);
+  controller.updateRuntimeActivity();
+  assert.equal(listeners.get("load").size, 1);
+  assert.equal(listeners.get("resize").size, 1);
+});
+
+test("explicit rail refresh clears native source items before discovery", async (t) => {
+  const { controller } = activityFixture(t);
+  controller.start();
+  const root = {};
+  controller.discovery.sourceItems.roots.set(root, new Map([[SourceKind.RECOMMENDATIONS, []]]));
+  const discover = t.mock.method(controller.discovery, "findSources", () => {
+    assert.equal(controller.discovery.sourceItems.roots.size, 0);
+    return [];
+  });
+  t.mock.method(controller.layout, "setSources", () => {});
+  await controller.refreshRail({ kind: SourceKind.RECOMMENDATIONS, root });
+  assert.equal(discover.mock.callCount(), 1);
 });

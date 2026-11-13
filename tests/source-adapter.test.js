@@ -49,6 +49,13 @@ class FakeElement {
     return this.attributes.get(name) ?? null;
   }
 
+  contains(node) {
+    for (let current = node; current; current = current.parentElement ?? current.parentNode) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+
   matches(selectorList) {
     return selectorList
       .split(",")
@@ -230,11 +237,12 @@ function recommendationDocument(...cards) {
   return { body, root, document: { body, querySelectorAll: (selector) => body.querySelectorAll(selector) } };
 }
 
-test("source discovery scans overlapping candidates and shared roots once per pass", (t) => {
+test("source discovery shares root reads and reuses an unchanged 80-item source", (t) => {
   const { document, root } = recommendationDocument(
     ...Array.from({ length: 80 }, (_, index) => recommendationCard(index + 1))
   );
   const discovery = new RegionDiscovery(document);
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems");
   const readers = [
     t.mock.method(SourceAdapter, "videoTargetsIn"),
     t.mock.method(discovery, "sourceRootForElement"),
@@ -255,9 +263,12 @@ test("source discovery scans overlapping candidates and shared roots once per pa
     assert.equal(keys.length, new Set(keys).size, "each source DOM read is shared within the pass");
   }
   assert.equal(readers[0].mock.calls.filter((call) => call.arguments[0] === root).length, 1);
+  assert.equal(extract.mock.callCount(), 1);
+  assert.equal(discovery.findSources()[0].items, sources[0].items);
+  assert.equal(extract.mock.callCount(), 1, "a second pass skips all 80 item extractions");
 });
 
-test("source discovery refreshes items, headings and previously empty roots on each pass", () => {
+test("source discovery refreshes mutated items and discovers newly populated roots", () => {
   const card = recommendationCard(1, "Before mutation");
   const { document, root, body } = recommendationDocument(card);
   const collection = new FakeElement();
@@ -271,6 +282,11 @@ test("source discovery refreshes items, headings and previously empty roots on e
   root.append(recommendationCard(2));
   collection.children[0].ownText = "Collection";
   collection.append(recommendationCard(3), recommendationCard(4));
+  discovery.sourceItems.invalidate([
+    { type: "attributes", target: card.children[0] },
+    { type: "childList", target: root, addedNodes: [root.children.at(-1)], removedNodes: [] },
+    { type: "childList", target: collection, addedNodes: collection.children.slice(1), removedNodes: [] }
+  ]);
   const after = discovery.findSources();
   assert.deepEqual(after.map((source) => source.kind), [SourceKind.COLLECTION, SourceKind.RECOMMENDATIONS]);
   assert.deepEqual(after[1].items.map((item) => item.title), ["After mutation", "Video 2"]);
@@ -278,8 +294,97 @@ test("source discovery refreshes items, headings and previously empty roots on e
 
   body.children = [];
   assert.deepEqual(discovery.findSources(), [], "removed roots cannot survive a later pass");
+  assert.equal(discovery.sourceItems.roots.size, 0, "removed native roots are released");
   body.append(root);
   assert.deepEqual(discovery.findSources().map((source) => source.kind), [SourceKind.RECOMMENDATIONS]);
+});
+
+test("unchanged sources reuse extraction across unrelated mutations and account updates", (t) => {
+  const { document, root, body } = recommendationDocument(recommendationCard(1));
+  const watchLater = new FakeElement({}, { className: "watch-later-list" });
+  watchLater.append(new FakeAnchorElement({ href: "/video/av2", title: "Watch later video" }));
+  body.append(watchLater);
+  const discovery = new RegionDiscovery(document);
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems");
+  const first = discovery.findSources();
+  assert.equal(extract.mock.callCount(), 2);
+  const unrelated = new FakeElement();
+  body.append(unrelated);
+  discovery.sourceItems.invalidate([
+    { type: "childList", target: body, addedNodes: [unrelated], removedNodes: [] },
+    { type: "attributes", target: unrelated }
+  ]);
+  const second = discovery.findSources();
+  assert.equal(extract.mock.callCount(), 2, "ordinary reconciliation does not extract unchanged roots");
+  assert.equal(second[0].items, first[0].items);
+  assert.equal(second[1].items, first[1].items);
+
+  const author = root.children[1].children[2];
+  author.ownText = "Updated uploader";
+  discovery.sourceItems.invalidate([{ type: "characterData", target: { parentNode: author } }]);
+  const third = discovery.findSources();
+  assert.equal(extract.mock.callCount(), 3, "only the mutated source is re-extracted");
+  assert.equal(third[0].items[0].author, "Updated uploader");
+  assert.notEqual(third[0].items, first[0].items);
+  assert.equal(third[1].items, first[1].items);
+});
+
+test("source extraction invalidates on ancestor attributes, moves, styles, and explicit clearing", (t) => {
+  const { document, root, body } = recommendationDocument(recommendationCard(1));
+  document.head = new FakeElement({}, { tagName: "head" });
+  const discovery = new RegionDiscovery(document);
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems");
+  discovery.findSources();
+  let expected = 1;
+  for (const mutation of [
+    { type: "attributes", target: root },
+    { type: "attributes", target: root.parentElement },
+    { type: "childList", target: body, addedNodes: [root.parentElement], removedNodes: [] },
+    { type: "childList", target: body, addedNodes: [], removedNodes: [root] },
+    { type: "childList", target: document.head, addedNodes: [], removedNodes: [] }
+  ]) {
+    discovery.sourceItems.invalidate([mutation]);
+    discovery.findSources();
+    assert.equal(extract.mock.callCount(), ++expected);
+  }
+  discovery.sourceItems.clear();
+  discovery.findSources();
+  assert.equal(extract.mock.callCount(), ++expected, "explicit refresh bypasses retained items");
+});
+
+test("native image loads refresh currentSrc without reparsing unrelated source roots", (t) => {
+  const card = recommendationCard(1);
+  const picture = new global.HTMLImageElement({ src: "https://i0.hdslb.com/old.jpg" }, { tagName: "img" });
+  card.append(picture);
+  const { document, body } = recommendationDocument(card);
+  const discovery = new RegionDiscovery(document);
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems");
+  assert.equal(discovery.findSources()[0].items[0].thumbnailUrl, "https://i0.hdslb.com/old.jpg");
+  const unrelated = new global.HTMLImageElement();
+  body.append(unrelated);
+  assert.equal(discovery.sourceItems.invalidateImage(unrelated), false);
+  discovery.findSources();
+  assert.equal(extract.mock.callCount(), 1);
+
+  picture.currentSrc = "https://i0.hdslb.com/loaded.jpg";
+  assert.equal(discovery.sourceItems.invalidateImage(picture), true);
+  assert.equal(discovery.findSources()[0].items[0].thumbnailUrl, "https://i0.hdslb.com/loaded.jpg");
+  assert.equal(extract.mock.callCount(), 2);
+});
+
+test("source caches ignore tracking URLs but refresh route-dependent recommendations", (t) => {
+  const previousHref = global.location.href;
+  t.after(() => { global.location.href = previousHref; });
+  const { document } = recommendationDocument(recommendationCard(1), recommendationCard(2));
+  const discovery = new RegionDiscovery(document);
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems");
+  const initial = discovery.findSources();
+  global.location.href = `${previousHref}?from=player#comments`;
+  assert.equal(discovery.findSources()[0].items, initial[0].items);
+  assert.equal(extract.mock.callCount(), 1);
+  global.location.href = "https://www.bilibili.com/video/av1";
+  assert.deepEqual(discovery.findSources()[0].items.map((item) => item.title), ["Video 2"]);
+  assert.equal(extract.mock.callCount(), 2);
 });
 
 test("parts and collection share archive discovery and refresh after same-document navigation", (t) => {
@@ -480,6 +585,7 @@ test("flat multipart discovery refreshes lazy rows and survives page navigation"
 
   const next = flatMultipartDocument(2).list.children[1];
   list.append(next);
+  discovery.sourceItems.invalidate([{ type: "childList", target: list, addedNodes: [next], removedNodes: [] }]);
   assert.equal(discovery.findSources()[0].items.length, 2);
 
   global.location.href = `${previousHref}?p=2`;

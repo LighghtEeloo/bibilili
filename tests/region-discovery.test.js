@@ -50,6 +50,7 @@ test("profiling preserves discovery results and attributes source scans without 
   const ordinary = discovery.discover();
   const ordinaryCalls = [...calls];
   calls.length = 0;
+  discovery.sourceItems.clear();
   const profile = new DiscoveryProfile(recorder);
   assert.deepEqual(discovery.discover(profile), ordinary);
   assert.deepEqual(calls, ordinaryCalls, "profiling must reuse the normal discovery reads");
@@ -60,6 +61,36 @@ test("profiling preserves discovery results and attributes source scans without 
   });
   assert.equal(ordinary.comments, comments);
   assert.equal(ordinary.sources[0].items, items);
+
+  calls.length = 0;
+  const cachedProfile = new DiscoveryProfile(recorder);
+  assert.deepEqual(discovery.discover(cachedProfile), ordinary);
+  assert.deepEqual(calls, ordinaryCalls.filter((name) => name !== "extract"));
+  assert.equal(cachedProfile.snapshot().sourceItems, 0, "cache hits do not replay extraction timings");
+});
+
+test("source score bounds skip losing candidates without hiding invalid roots, bonuses, or ties", (t) => {
+  const items = (count) => Array.from({ length: count }, (_, index) => ({
+    targetUrl: `https://www.bilibili.com/video/av${index + 1}`, title: `Video ${index + 1}`
+  }));
+  const empty = { targets: 20, bonus: 0, items: [] };
+  const first = { targets: 4, bonus: 4, items: items(3) };
+  const losing = { targets: 2, bonus: 0, items: items(2) };
+  const preferred = { targets: 2, bonus: 12, items: items(2) };
+  const filtered = { targets: 30, bonus: 0, items: items(1) };
+  const tied = { targets: 2, bonus: 12, items: items(2) };
+  const discovery = new RegionDiscovery({});
+  t.mock.method(discovery, "sourceRootsFor", ({ kind }) => kind === SourceKind.RECOMMENDATIONS
+    ? [empty, first, losing, preferred, filtered, tied] : []);
+  t.mock.method(discovery, "scoreSourceRoot", (root, _definition, count) => root.bonus + count);
+  t.mock.method(SourceAdapter.prototype, "videoTargets", function () { return Array(this.root.targets); });
+  const extract = t.mock.method(SourceAdapter.prototype, "extractItems", function () { return this.root.items; });
+  const sources = discovery.findSources();
+  assert.equal(sources[0].root, preferred);
+  assert.equal(sources[0].items, preferred.items);
+  assert.deepEqual(extract.mock.calls.map((call) => call.this.root), [empty, first, preferred, filtered]);
+  assert.equal(discovery.sourceItems.roots.has(losing), false);
+  assert.equal(discovery.sourceItems.roots.has(tied), false, "ties retain the earlier root without extraction");
 });
 
 test("normalizes video description text from native controls", () => {

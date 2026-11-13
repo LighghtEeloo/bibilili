@@ -535,10 +535,19 @@ titles do not identify the containing list's kind.
 
 Each source discovery pass shares selector matches, resolved roots, root
 validation, headings, and playable target arrays. Candidate elements and roots
-are deduplicated before resolution and validation. Extraction remains specific
-to each source kind. The next pass, including an explicit rail refresh, reads
-the current DOM. Source adapters evaluate title and metadata fallbacks in
-priority order and stop at the first usable value.
+are deduplicated before resolution and validation. Root discovery reads the
+current DOM on every pass. A candidate's target count and source item limit bound
+its selection score. Candidates that cannot beat an already valid source skip
+field extraction; ties retain the earlier root. Source adapters evaluate title
+and metadata fallbacks in priority order and stop at the first usable value.
+
+Extracted item arrays are cached by native root and source kind for the current
+watch route. Native content mutations, inherited attribute changes, and root
+moves invalidate affected roots. Image loads invalidate their containing
+sources; stylesheet, theme, and viewport changes invalidate cached items.
+New roots are extracted on discovery, and absent roots are released. Navigation,
+observation shutdown, and explicit rail refresh clear the cache. Account updates
+and unrelated page mutations reuse unchanged native source items.
 
 The route model converts playable Bilibili URLs into route identities, archive
 preview identities, canonical archive URLs, and route keys. Archive route keys
@@ -1443,9 +1452,9 @@ moves page-owned player and comment nodes only when their owning region
 changes. Document-root classes and theme attributes are written only when their
 values change, so reconciliation settles after page activity stops.
 
-When a source root changes or an account source finishes loading, that source is
-re-extracted and the list rail and any open browse panel are re-rendered from
-the current source route.
+Changed native sources are re-extracted; unchanged sources reuse their cached
+items. Account results merge with native sources without invalidating them.
+The list rail and any open browse panel render from the current source route.
 When the comment region changes, the comment pane receives the current
 page-owned comment tree. When the watch title, uploader, or publish date
 changes, the video header receives the current values.

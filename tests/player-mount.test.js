@@ -63,7 +63,9 @@ function mountFixture(t) {
       element.style.setProperty = (name, value) => { element.style[name] = value; };
       return element;
     },
-    querySelectorAll: () => []
+    querySelectorAll: () => [],
+    addEventListener() {},
+    removeEventListener() {}
   };
   document.documentElement = document.createElement("html");
   Object.defineProperty(document.documentElement, "isConnected", { value: true });
@@ -81,15 +83,20 @@ function mountFixture(t) {
 
   const previousGlobals = {
     location: global.location,
+    addEventListener: global.addEventListener,
+    removeEventListener: global.removeEventListener,
     MutationObserver: global.MutationObserver,
     requestAnimationFrame: global.requestAnimationFrame,
     cancelAnimationFrame: global.cancelAnimationFrame
   };
   global.location = new URL(TEST_WATCH_HREF);
+  global.addEventListener = () => {};
+  global.removeEventListener = () => {};
   global.MutationObserver = class {
     constructor(callback) { this.callback = callback; }
     observe() {}
     disconnect() { this.disconnected = true; }
+    takeRecords() { return []; }
   };
   global.requestAnimationFrame = (callback) => {
     const id = nextId++;
@@ -1087,4 +1094,19 @@ test("late player arrival bypasses lazy scheduling without making other mutation
 
   controller.observer.callback([{ target: { closest: () => ({}) } }]);
   assert.equal(requests.length, 0, "extension-owned changes stay ignored");
+});
+
+test("direct reconciliation invalidates pending source mutations before discovery", (t) => {
+  const { controller, document, regions } = mountFixture(t);
+  controller.observeMutations();
+  const root = document.createElement("div");
+  document.body.append(root);
+  controller.discovery.sourceItems.roots.set(root, new Map([["recommendations", []]]));
+  t.mock.method(controller.observer, "takeRecords", () => [{ type: "attributes", target: root }]);
+  t.mock.method(controller.discovery, "discover", () => {
+    assert.equal(controller.discovery.sourceItems.roots.size, 0);
+    return regions;
+  });
+  controller.reconcile(false);
+  controller.stop();
 });

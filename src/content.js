@@ -374,6 +374,7 @@
     /(?:^|[._-])(?:blank|default(?:[._-]?(?:cover|image|pic))?|empty|gray|grey|lazyload|loading|no[._-]?(?:cover|image|pic)|placeholder|spacer|transparent)(?:[._-]|$)/i;
 
   const LAZY_MUTATION_ATTRIBUTE_FILTER = Object.freeze([
+    "id",
     "class",
     "lang",
     BILIBILI_DARK_PAGE_ATTR,
@@ -410,7 +411,13 @@
     "data-part",
     "title",
     "alt",
-    "aria-label"
+    "aria-label",
+    "aria-current",
+    "aria-selected",
+    "aria-valuenow",
+    "data-current",
+    "data-active",
+    "data-selected"
   ]);
 
   const TITLE_SELECTORS = [
@@ -2073,6 +2080,13 @@
       this.root = root;
     }
 
+    /** Maximum retained items for this source kind. @returns {number} */
+    get itemLimit() {
+      return this.kind === SourceKind.PARTS || this.kind === SourceKind.COLLECTION
+        ? Number.POSITIVE_INFINITY
+        : MAX_ITEMS_PER_SOURCE;
+    }
+
     /**
      * Extracts valid video items from the source root.
      *
@@ -2080,20 +2094,16 @@
      * @returns {VideoItem[]}
      */
     extractItems(scan = null) {
-      const itemLimit =
-        this.kind === SourceKind.PARTS || this.kind === SourceKind.COLLECTION
-          ? Number.POSITIVE_INFINITY
-          : MAX_ITEMS_PER_SOURCE;
       const keyForItem =
         this.kind === SourceKind.PARTS
           ? SourceAdapter.videoPartItemKey
           : SourceAdapter.itemKey;
 
       return VideoItemCollector.collect(
-        this.videoTargets(scan),
+        scan ? scan.targetsFor(this) : this.videoTargets(),
         (target, index) => this.itemFromTarget(target, index),
         keyForItem,
-        itemLimit
+        this.itemLimit
       );
     }
 
@@ -5057,7 +5067,96 @@
   }
 
   /**
-   * Shares source DOM reads within one synchronous discovery pass.
+   * Retains read-only extracted items by native root and source kind.
+   * Mutation delivery invalidates affected roots before reconciliation. Route
+   * changes, explicit refresh, and observation shutdown clear all retained items.
+   */
+  class SourceItemCache {
+    /** @param {Document} document */
+    constructor(document) {
+      this.document = document;
+      this.routeKey = null;
+      /** @type {Map<Element, Map<string, VideoItem[]>>} */
+      this.roots = new Map();
+    }
+
+    /** Releases native roots and their extracted records. */
+    clear() {
+      this.roots.clear();
+    }
+
+    /** Keeps route-dependent parts, current markers, and recommendations fresh. */
+    beginPass() {
+      const routeKey = SourceAdapter.currentWatchRouteKey();
+      if (routeKey !== this.routeKey) this.clear();
+      this.routeKey = routeKey;
+    }
+
+    /**
+     * Extracts each root and kind only after invalidation, including empty results.
+     * @param {SourceAdapter} adapter
+     * @param {SourceDiscoveryPass} scan
+     * @returns {VideoItem[]}
+     */
+    read(adapter, scan) {
+      let kinds = this.roots.get(adapter.root);
+      if (!kinds) {
+        kinds = new Map();
+        this.roots.set(adapter.root, kinds);
+      }
+      if (!kinds.has(adapter.kind)) kinds.set(adapter.kind, adapter.extractItems(scan));
+      return kinds.get(adapter.kind);
+    }
+
+    /** Drops roots that no longer participate in source discovery. @param {Set<Element>} roots */
+    retain(roots) {
+      for (const root of this.roots.keys()) {
+        if (!roots.has(root)) this.roots.delete(root);
+      }
+    }
+
+    /**
+     * Invalidates source content, inherited attributes, and moved roots.
+     * Unrelated sibling edits leave source records reusable. Head edits invalidate
+     * computed-background thumbnails because stylesheets can affect any source.
+     * @param {MutationRecord[]} mutations Page-owned mutations from the controller.
+     */
+    invalidate(mutations) {
+      for (const mutation of mutations) {
+        if (this.document.head?.contains(mutation.target)) {
+          this.clear();
+          return;
+        }
+        for (const root of this.roots.keys()) {
+          const changed = root.contains(mutation.target) ||
+            (mutation.type === "attributes" && mutation.target.contains(root)) ||
+            (mutation.type === "childList" &&
+              [...mutation.addedNodes, ...mutation.removedNodes].some((node) => node.contains(root)));
+          if (changed) this.roots.delete(root);
+        }
+      }
+    }
+
+    /**
+     * Invalidates sources whose native image selected a loaded resource.
+     * Note: Bilibili lazy images can update currentSrc after their attribute mutation.
+     * @param {Node} target
+     * @returns {boolean} Whether a cached source needs reconciliation.
+     */
+    invalidateImage(target) {
+      let changed = false;
+      for (const root of this.roots.keys()) {
+        if (root.contains(target)) {
+          this.roots.delete(root);
+          changed = true;
+        }
+      }
+      return changed;
+    }
+  }
+
+  /**
+   * Shares source-root DOM reads within one synchronous discovery pass.
    * Each findSources call creates a fresh pass, including explicit rail refresh.
    * Cached arrays are read-only; source-kind filtering creates separate arrays.
    */
@@ -5067,6 +5166,7 @@
       this.discovery = discovery;
       this.queries = new Map();
       this.targets = new Map();
+      this.kindTargets = new Map();
       this.archives = new Map();
       this.roots = new Map();
       this.validRoots = new Map();
@@ -5081,6 +5181,12 @@
     /** Returns the playable targets below a root. @param {Element} root */
     videoTargetsIn(root) {
       return this.read(this.targets, root, () => SourceAdapter.videoTargetsIn(root));
+    }
+
+    /** Shares kind-specific targets between score bounds and extraction. @param {SourceAdapter} adapter */
+    targetsFor(adapter) {
+      const kinds = this.read(this.kindTargets, adapter.root, () => new Map());
+      return this.read(kinds, adapter.kind, () => adapter.videoTargets(this));
     }
 
     /** Shares archive targets between parts and collection extraction. */
@@ -5122,12 +5228,13 @@
    */
   class RegionDiscovery {
     /**
-     * Creates a discovery pass over a document.
+     * Owns region discovery and cached native source items for a document.
      *
      * @param {Document} document
      */
     constructor(document) {
       this.document = document;
+      this.sourceItems = new SourceItemCache(document);
     }
 
     /**
@@ -6162,7 +6269,7 @@
     }
 
     /**
-     * Finds valid source roots and extracts their video items.
+     * Finds current source roots and reuses items until their root is invalidated.
      *
      * @param {DiscoveryProfile | null} [profile]
      * @returns {VideoListSource[]}
@@ -6170,12 +6277,24 @@
     findSources(profile = null) {
       const candidates = [];
       const scan = new SourceDiscoveryPass(this);
+      const retainedRoots = new Set();
+      this.sourceItems.beginPass();
 
       for (const definition of SOURCE_DEFINITIONS) {
         const roots = this.measure(profile, DiscoveryStep.SOURCE_ROOTS, () => this.sourceRootsFor(definition, scan));
+        let bestScore = -Infinity;
         for (const root of roots) {
           const adapter = new SourceAdapter(definition.kind, root);
-          const items = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => adapter.extractItems(scan));
+          const scoreBonus = this.measure(profile, DiscoveryStep.SOURCE_SELECTION,
+            () => this.scoreSourceRoot(root, definition, 0, scan));
+          if (bestScore !== -Infinity) {
+            const targetCount = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => scan.targetsFor(adapter).length);
+            // Every valid item needs a target. A root that cannot beat the current
+            // score needs no field extraction; equal scores keep the earlier root.
+            if (scoreBonus + Math.min(adapter.itemLimit, targetCount) <= bestScore) continue;
+          }
+          retainedRoots.add(root);
+          const items = this.measure(profile, DiscoveryStep.SOURCE_ITEMS, () => this.sourceItems.read(adapter, scan));
 
           if (
             items.length <
@@ -6184,16 +6303,13 @@
             continue;
           }
 
-          candidates.push({
-            kind: definition.kind,
-            root,
-            items,
-            score: this.measure(profile, DiscoveryStep.SOURCE_SELECTION,
-              () => this.scoreSourceRoot(root, definition, items.length, scan))
-          });
+          const score = scoreBonus + items.length;
+          candidates.push({ kind: definition.kind, root, items, score });
+          bestScore = Math.max(bestScore, score);
         }
       }
 
+      this.sourceItems.retain(retainedRoots);
       return this.measure(profile, DiscoveryStep.SOURCE_SELECTION, () => this.chooseSources(candidates));
     }
 
@@ -6443,6 +6559,8 @@
 
     /**
      * Scores a candidate source root for stable one-root-per-kind selection.
+     * The item count is additive; passing zero yields the root bonus used to
+     * bound a candidate's score before extracting its fields.
      *
      * @param {Element} root
      * @param {SourceDefinition} definition
@@ -13830,6 +13948,11 @@
       this.readyHandler = null;
       this.started = false;
       this.observer = null;
+      this.sourceImageLoadHandler = (event) => {
+        if (event.target instanceof HTMLImageElement) this.discovery.sourceItems.invalidateImage(event.target);
+        else if (event.target.matches?.("link[rel='stylesheet']")) this.discovery.sourceItems.clear();
+      };
+      this.sourceResizeHandler = () => this.discovery.sourceItems.clear();
       this.reconcileScheduler = new ReconcileScheduler((resetSourceRoute, causes) => {
         this.reconcile(resetSourceRoute, causes);
       });
@@ -13898,9 +14021,7 @@
         this.document.removeEventListener("DOMContentLoaded", this.readyHandler);
         this.readyHandler = null;
       }
-      this.observer?.disconnect();
-      this.observer = null;
-
+      this.stopMutationObservation();
       this.reconcileScheduler.cancel();
 
       this.stopUrlPolling();
@@ -13934,6 +14055,7 @@
      * Clears rendered page state without changing observers or activation.
      */
     clearRenderedPageState() {
+      this.discovery.sourceItems.clear();
       this.clearFavoriteActionState();
       this.navigation.cancel();
       this.videoLoading.cancel();
@@ -14084,6 +14206,10 @@
       const discoverySample = this.performance.begin();
       let regions;
       try {
+        // Direct media-readiness updates can run before queued mutation delivery.
+        this.discovery.sourceItems.invalidate(
+          (this.observer?.takeRecords() ?? []).filter((mutation) => !DomProbe.isOwnedMutation(mutation))
+        );
         regions = this.discovery.discover(profile);
       } finally {
         this.performance.end(PerformanceWork.DISCOVERY, discoverySample);
@@ -14210,9 +14336,10 @@
       if (this.observer) return;
       this.observer = new MutationObserver((mutations) => {
         if (!this.enabled) return;
-        const hasPageMutation = mutations.some((mutation) => !DomProbe.isOwnedMutation(mutation));
+        const pageMutations = mutations.filter((mutation) => !DomProbe.isOwnedMutation(mutation));
 
-        if (hasPageMutation) {
+        if (pageMutations.length) {
+          this.discovery.sourceItems.invalidate(pageMutations);
           this.performance.count(PerformanceCounter.MUTATIONS);
           const playerArrived = this.enabled && this.isWatchPage() &&
             !this.layout.playerNode?.isConnected &&
@@ -14232,6 +14359,19 @@
         childList: true,
         subtree: true
       });
+      this.document.addEventListener("load", this.sourceImageLoadHandler, true);
+      window.addEventListener("resize", this.sourceResizeHandler);
+    }
+
+    /** Releases observation and cached sources together so reactivation reads fresh DOM. */
+    stopMutationObservation() {
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+        this.document.removeEventListener("load", this.sourceImageLoadHandler, true);
+        window.removeEventListener("resize", this.sourceResizeHandler);
+      }
+      this.discovery.sourceItems.clear();
     }
 
     /**
@@ -14312,8 +14452,7 @@
         return;
       }
 
-      this.observer?.disconnect();
-      this.observer = null;
+      this.stopMutationObservation();
       this.stopUrlPolling();
       this.reconcileScheduler.cancel();
       this.cancelSettlingReconciles();
@@ -14351,6 +14490,7 @@
     observeThemePreference() {
       this.themePreference = window.matchMedia(BROWSER_DARK_SCHEME_QUERY);
       this.themeChangeHandler = () => {
+        this.discovery.sourceItems.clear();
         this.scheduleReconcile(false, ReconcilePriority.LAZY, ReconcileCause.THEME);
       };
       this.themePreference.addEventListener("change", this.themeChangeHandler);
@@ -14372,6 +14512,7 @@
         return false;
       }
 
+      this.discovery.sourceItems.clear();
       this.performanceMonitor.finishWaiting("route_change");
       this.performanceMonitor.event("route_change");
       this.performanceMonitor.setActive(this.enabled && this.isWatchPage());
@@ -14896,6 +15037,7 @@
         await this.accountSources.refreshSource(source.kind);
       }
       if (!this.enabled || !this.isWatchPage() || this.currentPageKey() !== pageKey) return;
+      this.discovery.sourceItems.clear();
       const sources = SourceMerger.merge(
         this.discovery.findSources(),
         this.accountSources.currentSources()
