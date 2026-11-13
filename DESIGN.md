@@ -1067,9 +1067,10 @@ destination window directly.
 
 ## Video Card
 
-A video card is the extension-owned rendering of one video item. It uses a
-fixed card width and stable thumbnail aspect ratio. The same card renders in the
-rail and the browse panel. Card content keeps rows stable on both surfaces.
+A video card is the extension-owned rendering of one video item. The rail
+renders it at a fixed card width with a stable thumbnail area. The browse panel
+renders the same card at a fluid width with a 16:9 thumbnail. Card content keeps
+rows stable within each surface.
 
 The card links to the item's target URL. Plain same-tab archive activation uses
 the configured video-switching behavior for every source kind. Modified clicks,
@@ -1114,9 +1115,9 @@ with `aria-haspopup`, exposes the panel's open state with `aria-expanded`, and
 references the panel with `aria-controls`.
 
 The panel is an extension-owned modal dialog anchored to the bottom of the
-layout root. It is centered horizontally and spans the layout width less a
-narrow gutter, up to a maximum width. It occupies up to 78% of the layout root
-height, leaves a small top gutter within the layout root, and keeps at least
+layout root. It is centered horizontally with a 24px viewport gutter on each
+side and a 1240px maximum width. It occupies up to 79% of the layout root
+height, leaves at least a 24px top gutter within the layout root, and keeps
 enough height for its header, search row, and one card row. On tall viewports
 its top edge leaves a strip of the stage visible. A translucent scrim covers
 the layout behind it and consumes the pointer activation that dismisses it, so
@@ -1147,18 +1148,20 @@ otherwise opens at the top. A new page session starts at the top. The panel's
 open state does not survive a document load. The panel does not move to the
 current video; the rail retains that positioning behavior.
 
-The panel header shows the source label, the Favorites folder title when
-present, and the number of renderable items. Counts describe renderable items,
-not account or folder metadata totals. The header and search row stay fixed;
-the card grid owns the panel's vertical scroll. Panel labels and date sections
-use the UI language; folder titles keep Bilibili's wording.
+The panel header titles the source and shows a second line with the visible
+date group and a count of renderable items. While a query is active, the count
+reads matching items over retained items. Counts describe renderable items, not
+account or folder metadata totals. The header and search row stay fixed; the
+card grid owns the panel's vertical scroll. Panel labels and date sections use
+the UI language; folder titles keep Bilibili's wording.
 
-Browse cards are the rail's cards rendered into a different geometry. The panel
-uses the same card renderer and item key, the same current-card match, the same
-thumbnail state, the same watch-later add or removal controls, and the same
-navigation callbacks. Within a card, focus follows the rail's link and mutation
-control order. Each surface owns and reconciles its own card nodes; the panel
-never moves a rail card. The panel adds no card actions.
+Browse cards are the rail's cards rendered into a different geometry: a fluid
+card with a 16:9 thumbnail above a fixed text block. The panel uses the same card
+renderer and item key, the same current-card match, the same thumbnail state, the
+same watch-later add or removal controls, and the same navigation callbacks.
+Within a card, focus follows the rail's link and mutation control order. Each
+surface owns and reconciles its own card nodes; the panel never moves a rail
+card. The panel adds no card actions.
 
 The panel uses the extension's dialog focus, Escape, and focus-return rules with
 layout-anchored geometry rather than the shared popup positioning.
@@ -1174,8 +1177,9 @@ sections use a localized month and day, adding the year when it differs from
 the current year. Today and Yesterday are UI message keys; other labels use
 `Intl.DateTimeFormat` with the UI language. Date labels are computed when
 sections are built, when the panel opens, and when the document becomes visible.
-Each section header shows its label and the number of renderable items it
-contains. Section headers are headings in the grid.
+Each 46px section header row shows its label as a primary heading, a muted
+count of renderable items, and a rule that fills the remaining width. Section
+headers are headings in the grid.
 
 An item without a valid timestamp joins the section of the nearest preceding
 timestamped item. Items before the first timestamped item join the first dated
@@ -1191,10 +1195,12 @@ does not reorder items by timestamp.
 
 ## Browse Virtual Grid
 
-The panel lays out cards in a vertical grid using the rail's card width, card
-height, and gap. The column count is the largest whole number of cards that fit
-the panel's content width, with a minimum of one. Rows have a fixed height;
-empty cells at the end of a row are not rendered.
+The panel lays out cards in a vertical grid. Each card keeps a 16:9 thumbnail
+above a fixed text block. The grid targets a 220px minimum card width, chooses
+the column count that fits the panel's content width, and divides the remaining
+width evenly so cards fill each row. The card gap is 12px. Rows have a fixed
+height for the current width; empty cells at the end of a row are not rendered.
+A resize recomputes card width, card height, and the column count.
 
 The panel virtualizes over layout rows: a date header row, a card row, and a
 tail row. Fixed row heights let the scroll surface know the full content height
@@ -1209,8 +1215,8 @@ Appending items extends the content without moving the current scroll position.
 
 The panel requests its next continuation when the rendered content approaches
 its end, or when the content is shorter than the viewport and more items remain.
-A tail skeleton row marks a request in flight. A failed continuation keeps the
-rendered items and replaces the tail with a localized retry row. Retry is
+A 56px full-width tail row marks a request in flight. A failed continuation
+keeps the rendered items and replaces the tail with a localized retry row. Retry is
 explicit and resumes from the retained cursor. An automatic continuation that
 adds no cards stops automatic loading for that source and exposes the explicit
 continuation control instead; an explicit continuation that adds cards restores
@@ -1259,6 +1265,10 @@ page discovery pass or a player, comment, or dock remount.
 The panel owns the list query. Closing and reopening the panel retains the
 query while the source instance continues. Reopening a panel with a retained
 query resumes its scan when the source can continue.
+
+The header count compares matching items with retained items while a query is
+active. The no-matches state sits in the grid while the query stays visible in
+the search field, and explains that Escape clears it.
 
 ## Browse Keyboard and Focus
 
@@ -1409,7 +1419,7 @@ height is fixed or clamped, keeping late metadata from resizing the player.
 
 The browse panel is an absolute overlay within the layout root. Its height is a
 fraction of the layout root and does not contribute to stage or dock sizing. Its
-card grid uses the shared card dimensions and a fixed row height, and owns the
+card grid derives card and row heights from its own content width and owns the
 panel's vertical scroll. The document body remains non-scrolling.
 
 The controls-only list dock height is the source bar height. When the list dock

@@ -149,6 +149,7 @@
     BROWSE_ITEM_COUNT_LABEL: "browseItemCountLabel",
     BROWSE_SEARCH_LABEL: "browseSearchLabel",
     BROWSE_SEARCH_EMPTY: "browseSearchEmpty",
+    BROWSE_SEARCH_EMPTY_HINT: "browseSearchEmptyHint",
     BROWSE_ALL_ITEMS_LABEL: "browseAllItemsLabel",
     BROWSE_TODAY_LABEL: "browseTodayLabel",
     BROWSE_YESTERDAY_LABEL: "browseYesterdayLabel",

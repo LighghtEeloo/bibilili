@@ -205,6 +205,10 @@
     "message": "No matching videos",
     "description": "Browse panel grid when the local query has no matches."
   },
+  "browseSearchEmptyHint": {
+    "message": "Try another keyword, or press Esc to clear the search.",
+    "description": "Recovery hint under the browse panel empty state."
+  },
   "browseAllItemsLabel": {
     "message": "All videos",
     "description": "Date section label for a source without timestamps."

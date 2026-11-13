@@ -41,11 +41,16 @@
   const BROWSE_PANEL_ID = "bibilili-browse-panel";
   const BROWSE_SEARCH_INPUT_ID = "bibilili-browse-search-input";
   const BROWSE_GRID_ID = "bibilili-browse-grid";
-  const BROWSE_HEADER_ROW_HEIGHT = 30;
-  const BROWSE_EMPTY_ROW_HEIGHT = 96;
-  const BROWSE_CARD_WIDTH_FALLBACK = 190;
-  const BROWSE_CARD_HEIGHT_FALLBACK = 126;
-  const BROWSE_CARD_GAP_FALLBACK = 10;
+  const BROWSE_HEADER_ROW_HEIGHT = 46;
+  const BROWSE_EMPTY_ROW_HEIGHT = 240;
+  const BROWSE_TAIL_ROW_HEIGHT = 56;
+  const BROWSE_CARD_MIN_WIDTH = 220;
+  const BROWSE_CARD_THUMB_RATIO = 9 / 16;
+  const BROWSE_CARD_TEXT_HEIGHT = 72;
+  const BROWSE_CARD_WIDTH_FALLBACK = BROWSE_CARD_MIN_WIDTH;
+  const BROWSE_CARD_HEIGHT_FALLBACK =
+    Math.round(BROWSE_CARD_MIN_WIDTH * BROWSE_CARD_THUMB_RATIO) + BROWSE_CARD_TEXT_HEIGHT;
+  const BROWSE_CARD_GAP_FALLBACK = 12;
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const NATIVE_OVERLAY_ATTR = "data-bibilili-native-overlay";
   const NATIVE_OVERLAY_POSITION_ATTR =
@@ -7111,16 +7116,54 @@
         Number.parseFloat(style?.getPropertyValue?.(name)),
         fallback
       );
-      const cardWidth = metric("--bibilili-card-width", BROWSE_CARD_WIDTH_FALLBACK);
-      const cardHeight = metric("--bibilili-card-height", BROWSE_CARD_HEIGHT_FALLBACK);
       const gap = metric("--bibilili-card-gap", BROWSE_CARD_GAP_FALLBACK);
+      const width = Math.max(0, Number(this.root.clientWidth) || 0);
+      const geometry = BrowseGrid.geometry(width, gap);
+
+      this.root.style.setProperty("--bibilili-card-width", geometry.cardWidth + "px");
+      this.root.style.setProperty("--bibilili-card-height", geometry.cardHeight + "px");
+      this.root.style.setProperty(
+        "--bibilili-browse-thumb-height",
+        geometry.thumbHeight + "px"
+      );
+
       return this.normalizeMetrics({
-        width: this.root.clientWidth ?? 0,
-        height: this.root.clientHeight ?? 0,
-        cardWidth,
-        cardHeight,
-        gap
+        width,
+        height: Math.max(0, Number(this.root.clientHeight) || 0),
+        cardWidth: geometry.cardWidth,
+        cardHeight: geometry.cardHeight,
+        gap,
+        columns: geometry.columns
       });
+    }
+
+    /**
+     * Fits browse cards to the panel's content width. Columns fill the row with
+     * the card width at or above the minimum, and the card height keeps a 16:9
+     * thumbnail above a fixed text block.
+     *
+     * @param {number} width Available content width.
+     * @param {number} gap Row gap.
+     * @returns {{columns: number, cardWidth: number, cardHeight: number, thumbHeight: number}}
+     */
+    static geometry(width, gap) {
+      const safeGap = BrowseGrid.positive(gap, BROWSE_CARD_GAP_FALLBACK);
+      const available = Math.max(0, Number(width) || 0);
+      const columns = Math.max(
+        1,
+        Math.floor((available + safeGap) / (BROWSE_CARD_MIN_WIDTH + safeGap))
+      );
+      const cardWidth = Math.max(
+        BROWSE_CARD_MIN_WIDTH,
+        Math.floor((available - safeGap * (columns - 1)) / columns)
+      );
+      const thumbHeight = Math.round(cardWidth * BROWSE_CARD_THUMB_RATIO);
+      return {
+        columns,
+        cardWidth,
+        cardHeight: thumbHeight + BROWSE_CARD_TEXT_HEIGHT,
+        thumbHeight
+      };
     }
 
     /**
@@ -7175,7 +7218,7 @@
 
     /** @returns {number} Height reserved for continuation state. */
     tailHeight() {
-      return this.tailState() ? this.metrics.cardHeight : 0;
+      return this.tailState() ? BROWSE_TAIL_ROW_HEIGHT : 0;
     }
 
     /** @returns {"loading" | "error" | "more" | null} */
@@ -7318,18 +7361,33 @@
       }
 
       if (row.kind === "empty") {
-        let message = node.firstElementChild;
-        if (!message) {
-          message = this.document.createElement("p");
-          message.className = "bibilili-browse-empty";
-          message.setAttribute("role", "status");
-          node.append(message);
+        let empty = node.firstElementChild;
+        if (!empty) {
+          empty = this.document.createElement("div");
+          empty.className = "bibilili-browse-empty";
+          empty.setAttribute("role", "status");
+          const icon = this.document.createElement("span");
+          icon.className = "bibilili-browse-empty-icon";
+          icon.setAttribute("aria-hidden", "true");
+          const title = this.document.createElement("p");
+          title.className = "bibilili-browse-empty-title";
+          const hint = this.document.createElement("p");
+          hint.className = "bibilili-browse-empty-hint";
+          empty.append(icon, title, hint);
+          node.append(empty);
         }
+        const title = empty.querySelector(".bibilili-browse-empty-title");
         const text = UiStrings.message(
           UiMessage.BROWSE_SEARCH_EMPTY,
           this.data.language
         );
-        if (message.textContent !== text) message.textContent = text;
+        if (title.textContent !== text) title.textContent = text;
+        const hint = empty.querySelector(".bibilili-browse-empty-hint");
+        const hintText = UiStrings.message(
+          UiMessage.BROWSE_SEARCH_EMPTY_HINT,
+          this.data.language
+        );
+        if (hint.textContent !== hintText) hint.textContent = hintText;
         return node;
       }
 
@@ -7892,16 +7950,21 @@
       });
     }
 
-    /** Updates the header count without changing focus. */
+    /**
+     * Updates the header count without changing focus. A filtered source shows
+     * the matching count against the retained source count.
+     */
     renderHeaderCount() {
       const count = this.source ? this.filteredCount : this.headerCount;
-      const formatted = new Intl.NumberFormat(
-        UiStrings.numberLocale(this.language)
-      ).format(count);
+      const format = new Intl.NumberFormat(UiStrings.numberLocale(this.language));
+      const filtered = Boolean(this.source && this.query.trim());
+      const label = filtered
+        ? format.format(count) + " / " + format.format(this.headerCount)
+        : format.format(count);
       const text = UiStrings.message(
         UiMessage.BROWSE_ITEM_COUNT_LABEL,
         this.language,
-        [formatted]
+        [label]
       );
       if (this.count.textContent !== text) this.count.textContent = text;
     }
@@ -14734,6 +14797,7 @@
       AccountSourceStatus,
       BibililiController,
       BrowseDateGrouping,
+      BrowseGrid,
       BrowsePanel,
       BrowseRowLayout,
       LayoutRoot,

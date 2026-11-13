@@ -5,6 +5,7 @@ const { RailElement } = require("./helpers/rail-dom.js");
 
 const {
   BrowseDateGrouping,
+  BrowseGrid,
   BrowsePanel,
   BrowseRowLayout
 } = loadContentRuntime();
@@ -552,4 +553,96 @@ test("browse panel requests the next page when short content reaches its end", a
 
   panel.close();
   assert.deepEqual(host.demands.at(-1), []);
+});
+
+test("browse card geometry fills rows with 16:9 thumbnails", () => {
+  assert.deepEqual(BrowseGrid.geometry(1196, 12), {
+    columns: 5,
+    cardWidth: 229,
+    cardHeight: 201,
+    thumbHeight: 129
+  });
+  assert.deepEqual(BrowseGrid.geometry(932, 12), {
+    columns: 4,
+    cardWidth: 224,
+    cardHeight: 198,
+    thumbHeight: 126
+  });
+  assert.deepEqual(BrowseGrid.geometry(0, 12), {
+    columns: 1,
+    cardWidth: 220,
+    cardHeight: 196,
+    thumbHeight: 124
+  });
+
+  const five = BrowseGrid.geometry(1196, 12);
+  assert.equal(
+    five.columns * five.cardWidth + (five.columns - 1) * 12 <= 1196,
+    true
+  );
+});
+
+test("browse grid derives card size from its content width", () => {
+  const { panel } = browseFixture();
+  const grid = panel.grid;
+  const previousGetComputedStyle = global.getComputedStyle;
+
+  global.getComputedStyle = (element) => ({
+    getPropertyValue: (name) => (name === "--bibilili-card-gap" ? "12px" : "")
+  });
+  grid.root.clientWidth = 1196;
+  grid.root.clientHeight = 500;
+
+  try {
+    const metrics = grid.readMetrics();
+    assert.equal(metrics.columns, 5);
+    assert.equal(metrics.cardWidth, 229);
+    assert.equal(metrics.cardHeight, 201);
+    assert.equal(grid.root.style["--bibilili-card-width"], "229px");
+    assert.equal(grid.root.style["--bibilili-card-height"], "201px");
+    assert.equal(grid.root.style["--bibilili-browse-thumb-height"], "129px");
+  } finally {
+    global.getComputedStyle = previousGetComputedStyle;
+  }
+});
+
+test("browse panel reports filtered matches against the retained count", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 400, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  panel.open({ title: "History", count: 4, language: "en", source: browseSource(4) });
+  panel.searchInput.value = "video 1";
+  panel.searchInput.dispatch("input");
+
+  assert.equal(panel.filteredCount, 1);
+  assert.equal(
+    panel.count.textContent,
+    UiStrings.message(UiMessage.BROWSE_ITEM_COUNT_LABEL, "en", ["1 / 4"])
+  );
+});
+
+test("browse panel explains an empty search with an Esc hint", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 400, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  panel.open({ title: "History", count: 3, language: "zh_CN", source: browseSource(3) });
+  panel.searchInput.value = "not a title";
+  panel.searchInput.dispatch("input");
+
+  const empty = panel.grid.root.querySelector(".bibilili-browse-empty");
+  assert.equal(empty.getAttribute("role"), "status");
+  assert.equal(
+    empty.querySelector(".bibilili-browse-empty-title").textContent,
+    UiStrings.message(UiMessage.BROWSE_SEARCH_EMPTY, "zh_CN")
+  );
+  assert.equal(
+    empty.querySelector(".bibilili-browse-empty-hint").textContent,
+    UiStrings.message(UiMessage.BROWSE_SEARCH_EMPTY_HINT, "zh_CN")
+  );
 });

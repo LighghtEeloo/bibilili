@@ -205,6 +205,10 @@
     "message": "没有匹配的视频",
     "description": "Browse panel grid when the local query has no matches."
   },
+  "browseSearchEmptyHint": {
+    "message": "试试其他关键词，或按 Esc 清除搜索。",
+    "description": "Recovery hint under the browse panel empty state."
+  },
   "browseAllItemsLabel": {
     "message": "全部视频",
     "description": "Date section label for a source without timestamps."
