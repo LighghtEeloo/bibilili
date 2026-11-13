@@ -933,8 +933,8 @@ in-progress pointer and keyboard interaction while Bilibili mutates the page.
 
 The bar groups controls by subject. List controls lead: the source buttons and
 the rail action group that acts on the selected source. Current-video controls
-trail: the watch action group sits at the trailing side, before More and
-Settings. The free space of the bar separates the two.
+follow: the watch action group sits directly after the list controls, separated
+by a vertical border. The remaining free space precedes More and Settings.
 
 The rail action group follows the last source button. Pinned tools retain
 Locate, Start, Refresh, Search order. The Search tool opens the browse panel
