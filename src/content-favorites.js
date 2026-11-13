@@ -18,12 +18,15 @@
       this.directory = null;
     }
 
-    /** Returns the stable chevron beside the ordinary Favorites source button. */
+    /**
+     * Returns the stable folder chevron that forms the trailing half of the
+     * Favorites split button. The chevron points up, toward the picker it opens.
+     */
     launcher() {
       if (!this.button) {
         this.button = UiControl.button(this.document,
           "bibilili-source-button bibilili-favorites-picker-button", () => this.open(true));
-        this.button.append(UiControl.icon(this.document, "chevronDown"));
+        this.button.append(UiControl.icon(this.document, "chevronUp"));
         this.button.setAttribute("aria-haspopup", "dialog");
         this.button.setAttribute("aria-expanded", "false");
         this.button.setAttribute("aria-controls", "bibilili-favorite-folders");

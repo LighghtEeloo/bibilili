@@ -796,25 +796,73 @@
 .bibilili-favorites-source-button {
   max-width: 240px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  padding-right: 10px;
+  border-right: 0;
   border-radius: 6px 0 0 6px;
+  text-overflow: ellipsis;
 }
 
 .bibilili-favorites-picker-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  width: var(--bibilili-bar-control-height);
   margin-left: calc(0px - var(--bibilili-bar-gap));
   padding: 0;
   border-left: 0;
   border-radius: 0 6px 6px 0;
 }
 
-.bibilili-favorites-picker-button[data-active="true"] {
+.bibilili-favorites-picker-button::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.28;
+}
+
+.bibilili-favorites-picker-button > .bibilili-local-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 120ms ease;
+}
+
+.bibilili-favorites-source-button:has(+ .bibilili-favorites-picker-button:hover),
+.bibilili-favorites-source-button:hover + .bibilili-favorites-picker-button {
+  border-color: var(--bibilili-button-hover-border);
+}
+
+.bibilili-favorites-source-button[aria-current="true"][aria-expanded="true"],
+.bibilili-favorites-source-button[aria-current="true"][aria-expanded="true"] + .bibilili-favorites-picker-button {
   border-color: var(--bibilili-selected-border);
   color: var(--bibilili-selected-text);
   background: var(--bibilili-selected-bg);
+}
+
+.bibilili-favorites-picker-button[aria-expanded="true"] {
+  color: var(--bibilili-selected-text);
+  background: var(--bibilili-selected-bg);
+}
+
+.bibilili-favorites-picker-button[aria-expanded="true"] > .bibilili-local-icon {
+  transform: rotate(180deg);
+}
+
+.bibilili-favorites-source-button:focus-visible,
+.bibilili-favorites-picker-button:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: 1px;
+}
+
+.bibilili-favorites-source-button:focus-visible { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bibilili-favorites-picker-button > .bibilili-local-icon { transition: none; }
 }
 
 .bibilili-favorites-heading {

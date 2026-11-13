@@ -10468,8 +10468,8 @@
         previous = button;
         if (source.kind === SourceKind.FAVORITES && this.favoritesView) {
           button.className = "bibilili-source-button bibilili-favorites-source-button";
+          // The stylesheet derives the chevron's selected tint from this adjacency.
           const picker = this.favoritesView.launcher();
-          picker.setAttribute("data-active", String(this.selectedSourceKind === source.kind && this.isRailOpen));
           UiControl.place(this.sourceBar, picker, previous);
           previous = picker;
         }

@@ -657,6 +657,12 @@ Other folders append their name after a middle dot. The adjacent chevron opens
 a folder picker above the dock without changing stage geometry. The picker uses
 the shared popup lifecycle, keyed folder buttons, and the page theme.
 
+The source button and the chevron form one split button with a shared outline
+and an inset divider. Hovering either half highlights the whole outline. The
+selected treatment covers both halves while the Favorites rail is open. The
+chevron points up toward the picker. While the picker is open, the chevron half
+is tinted and the chevron points down.
+
 The picker's search button expands into a field that matches folder names. The
 field replaces the heading and fills the header beside the close button.
 Escape clears the query and restores the button; an empty field collapses on
