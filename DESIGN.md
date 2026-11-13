@@ -756,6 +756,11 @@ Controls-only state keeps the activation control, available watch action
 buttons, and available source buttons visible, closes the rail, and gives the
 stage the viewport height minus the source bar height.
 
+The dock's height transitions between its two states, so the stage resizes
+continuously. Closing retains the rendered cards until the dock reaches its
+controls-only height; the cards slide down with the source bar and clip against
+the viewport edge.
+
 ## Watch Action Control
 
 A watch action control is an extension-owned dock control for the current watch

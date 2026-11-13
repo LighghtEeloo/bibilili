@@ -201,6 +201,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   #bibilili-loading-cover,
+  #bibilili-layout-root,
   #bibilili-layout-root .bibilili-comment-pane,
   .bibilili-action-native-visual,
   .bibilili-action-count,
@@ -266,6 +267,8 @@
   --bibilili-shadow: rgba(var(--Ba0_rgb, 0, 0, 0), 0.22);
   --bibilili-dock-control-height: 42px;
   --bibilili-dock-height: clamp(220px, 28vh, 242px);
+  --bibilili-rail-slide-duration: 250ms;
+  --bibilili-rail-slide-easing: cubic-bezier(0.4, 0, 0.2, 1);
   --bibilili-card-width: 190px;
   --bibilili-card-height: 126px;
   --bibilili-card-gap: 10px;
@@ -281,7 +284,20 @@
     sans-serif;
 }
 
+/* Registered so the dock row can interpolate between its two heights. */
+@property --bibilili-dock-progress {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
 #bibilili-layout-root {
+  --bibilili-dock-progress: 0;
+  --bibilili-dock-row-height: calc(
+    var(--bibilili-dock-control-height) +
+    (var(--bibilili-dock-height) - var(--bibilili-dock-control-height)) *
+    var(--bibilili-dock-progress)
+  );
   position: fixed;
   inset: 0;
   z-index: 2147483646;
@@ -291,14 +307,16 @@
   height: 100vh;
   overflow: hidden;
   background: var(--bibilili-page);
+  transition: --bibilili-dock-progress var(--bibilili-rail-slide-duration)
+    var(--bibilili-rail-slide-easing);
 }
 
 #bibilili-layout-root.bibilili-has-dock {
-  grid-template-rows: minmax(0, 1fr) var(--bibilili-dock-height);
+  --bibilili-dock-progress: 1;
 }
 
-#bibilili-layout-root.bibilili-has-controls-dock {
-  grid-template-rows: minmax(0, 1fr) var(--bibilili-dock-control-height);
+#bibilili-layout-root:is(.bibilili-has-dock, .bibilili-has-controls-dock) {
+  grid-template-rows: minmax(0, 1fr) var(--bibilili-dock-row-height);
 }
 
 #bibilili-toggle-root {
@@ -714,14 +732,6 @@
 #bibilili-layout-root.bibilili-has-controls-dock .bibilili-list-dock {
   display: grid;
   grid-template-rows: var(--bibilili-dock-control-height) minmax(0, 1fr);
-}
-
-#bibilili-layout-root.bibilili-has-controls-dock .bibilili-list-dock {
-  grid-template-rows: var(--bibilili-dock-control-height);
-}
-
-#bibilili-layout-root.bibilili-has-controls-dock .bibilili-list-rail {
-  display: none;
 }
 
 .bibilili-source-bar {

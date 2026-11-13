@@ -797,12 +797,14 @@ test("exhausted continuation moves keyboard focus before removing its button", a
   assert.equal(document.activeElement, card(79).querySelector(".bibilili-card-link"));
 });
 
-test("closing the rail releases its cards and preview demand", () => {
+test("closing the rail keeps its cards for the slide and then releases them", async () => {
   const { layout, source, cards, demands } = railFixture(LayoutRoot, 10000);
   layout.renderRail(source, true);
   layout.isRailOpen = false;
   layout.renderSourceDock([source], null);
-  assert.equal(cards().length, 0);
+  assert.ok(cards().length > 0, "cards stay mounted for the closing slide");
   assert.deepEqual(demands.at(-1), []);
   assert.equal(layout.railSource, null);
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  assert.equal(cards().length, 0);
 });

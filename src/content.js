@@ -86,6 +86,8 @@
   /** Number of trailing cards that may remain before continuation starts. */
   const RAIL_PREFETCH_CARDS = 2;
   const RAIL_WHEEL_LINE_PX = 16;
+  /** Matches --bibilili-rail-slide-duration for the deferred rail release. */
+  const RAIL_SLIDE_MS = 250;
   const SOURCE_TAIL_CLASS = "bibilili-source-tail";
   const SOURCE_TAIL_SELECTOR = ".bibilili-source-tail";
   const SOURCE_TAIL_SKELETON_CLASS = "bibilili-source-tail-skeleton";
@@ -8512,6 +8514,10 @@
       this.railEntryIndexes = new Map();
       this.railStride = 0;
       this.railRenderFrame = null;
+      /** Pending timer that clears the collapsed rail's cards. */
+      this.railContentReleaseTimer = null;
+      /** Last measured rail width, used to ignore height-only resizes. */
+      this.railResizeWidth = 0;
       /** Source instance with an automatic or retry continuation in flight. */
       this.railAutoLoadKey = null;
       /** Source instance whose automatic continuation made no progress. */
@@ -8743,6 +8749,9 @@
 
       this.root = this.document.createElement("section");
       this.root.id = OWNED_ROOT_ID;
+      this.root.style.setProperty(
+        "--bibilili-rail-slide-duration", `${RAIL_SLIDE_MS}ms`
+      );
       LoadingView.prepareSurface(this.root);
 
       this.stage = this.document.createElement("main");
@@ -10021,6 +10030,7 @@
       }
 
       if (hasOpenRail) {
+        this.cancelRailContentRelease();
         this.renderRail(selectedSource, resetScroll);
         this.renderedSourceKey = sourceKey;
       } else {
@@ -10036,7 +10046,7 @@
         this.railPointerCard = null;
         this.videoPreviews.setDemand([]);
         this.videoCardStates = new WeakMap();
-        this.rail.replaceChildren();
+        this.scheduleRailContentRelease();
       }
       if (sourceChanged && selectedSource?.kind === SourceKind.FAVORITES &&
           (selectedSource.folderId || !this.isDefaultSourceRoute)) {
@@ -12043,8 +12053,26 @@
       };
       this.document.addEventListener("pointerup", this.railPointerEndHandler, true);
       this.document.addEventListener("pointercancel", this.railPointerEndHandler, true);
-      this.railResizeObserver = new ResizeObserver(schedule);
+      this.railResizeObserver = new ResizeObserver(() => {
+        this.handleRailResize();
+      });
       this.railResizeObserver.observe(this.rail);
+    }
+
+    /**
+     * Ignores height-only rail resizes so the dock slide does not rebuild the
+     * card window on every animation frame.
+     */
+    handleRailResize() {
+      if (!this.rail) {
+        return;
+      }
+      const width = this.rail.clientWidth;
+      if (width === this.railResizeWidth) {
+        return;
+      }
+      this.railResizeWidth = width;
+      this.scheduleRailRender();
     }
 
     /**
@@ -12081,6 +12109,32 @@
     }
 
     /**
+     * Keeps the rendered cards mounted for the dock's closing slide, then
+     * clears them. Window state is already released when this schedules.
+     */
+    scheduleRailContentRelease() {
+      if (this.railContentReleaseTimer !== null) {
+        return;
+      }
+      this.railContentReleaseTimer = window.setTimeout(() => {
+        this.railContentReleaseTimer = null;
+        if (this.isRailOpen || !this.rail?.isConnected) {
+          return;
+        }
+        this.rail.replaceChildren();
+      }, RAIL_SLIDE_MS);
+    }
+
+    /** Cancels a pending release when the rail reopens mid-slide. */
+    cancelRailContentRelease() {
+      if (this.railContentReleaseTimer === null) {
+        return;
+      }
+      window.clearTimeout(this.railContentReleaseTimer);
+      this.railContentReleaseTimer = null;
+    }
+
+    /**
      * Releases viewport observers and pending demand when layout ownership ends.
      */
     stopRailWindow() {
@@ -12088,6 +12142,7 @@
         cancelAnimationFrame(this.railRenderFrame);
         this.railRenderFrame = null;
       }
+      this.cancelRailContentRelease();
       this.railResizeObserver?.disconnect();
       this.railResizeObserver = null;
       this.document.removeEventListener("pointerup", this.railPointerEndHandler, true);
