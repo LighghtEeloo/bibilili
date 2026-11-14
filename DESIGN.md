@@ -1333,32 +1333,57 @@ resumes its scan when the source can continue.
 
 The header count compares matching items with retained items while a query or
 filter is active. The no-matches state sits in the grid while the query and
-filters stay visible, and explains that Escape clears them.
+filters stay visible. It explains that Escape clears them and offers a control
+that clears both and focuses the search field.
 
 ## Browse Filters
 
 Browse filters are click-based controls that narrow the selected source together
-with the query. The filters are watch status, duration, and uploader. They follow
-the query field in the search row and wrap below it on narrow panels.
+with the query. The filters are watch status, duration, and uploader. They form
+a chip row that follows the query field in the search row and wraps below it on
+narrow panels.
 
-Watch status is a group of three pressed buttons: All, Unfinished, and Finished.
-Unfinished covers unwatched and partial items. Duration and uploader are native
-selects. Duration buckets are under 5 minutes, 5 to 20 minutes, 20 to 60
-minutes, and 60 minutes or more; each bucket includes its lower bound. Uploader
-options list authors by descending count. Clear filters appears while any filter
-is active and resets every filter without changing the query.
+Watch status is a pair of toggle chips: Unfinished and Finished. Unfinished
+covers unwatched and partial items. Pressing a chip selects its status and
+releases the other chip. Pressing the selected chip restores every status. Each
+status chip shows the item count it would leave.
+
+Duration and uploader are menu chips. An inactive menu chip shows an icon, the
+filter name, and a disclosure chevron. An active menu chip shows the selected
+option in the selection color and replaces the chevron with a clear control
+that resets that filter. Activating the chip toggles its menu.
+
+A filter menu is a nonmodal popover below its chip, inside the sheet. It lists
+a reset option, a separator, and the filter's values as a radio group. Each
+option shows its item count and a meter scaled to the largest count among the
+filter's values. Choosing an option applies it, closes the menu, and returns
+focus to the chip. One menu is open at a time. The menu shifts to stay within
+the sheet's side edges and shortens to fit above its bottom edge. A pointer
+press outside the menu's chip and popover, closing the panel, or a source change
+closes the menu.
+
+Duration buckets are under 5 minutes, 5 to 20 minutes, 20 to 60 minutes, and 60
+minutes or more; each bucket includes its lower bound. Uploader options list
+authors by descending count. An uploader menu with eight or more uploaders
+starts with a lookup field. The lookup narrows the list by case-insensitive,
+Unicode-normalized substring, clears each time the menu opens, and chooses the
+first matching uploader on Enter.
 
 A filter appears when retained items carry its data: a watch state, a duration,
 or at least two distinct authors. An active filter stays visible so it can be
 cleared. Without an available filter, the search row contains only the query
-field. Items without a watch state or duration match only that filter's All
-option.
+field. Items without a watch state or duration match only that filter's reset
+state.
 
-Each option shows the item count it would leave. The count applies the query and
-the other filters. Status and duration options that would leave no items are
-disabled unless selected. Uploader options include authors with matching items
-and the selected author. Scan pages update option text in place and replace
-option nodes only when the option set changes.
+Counts apply the query and the other filters. Status chips and duration options
+that would leave no items are disabled unless selected. Uploader options include
+authors with matching items and the selected author. Scan pages update counts in
+place. Menu options are reconciled by value, so the focused option survives an
+update.
+
+Clear filters appears while two or more filters are active. It resets every
+filter without changing the query. A single active filter clears from its own
+chip.
 
 The query and filters combine conjunctively and keep source order. A filter
 change has the same effects as a query change: it updates the header count,
@@ -1369,8 +1394,8 @@ suspends automatic continuation, and returns the grid to the top.
 The panel is a modal dialog labelled by its source title. Opening moves focus to
 its search field. The Close control precedes the search field in tab order.
 Focus stays within the panel: Tab and Shift+Tab move through the Close control,
-the search field, the visible filter controls, the scan retry control when
-visible, and the rendered cards, wrapping at the ends. Keyboard events inside
+the search field, the visible filter chips and clear controls, the scan retry
+control when visible, and the rendered cards, wrapping at the ends. Keyboard events inside
 the panel do not reach Bilibili's player shortcuts.
 
 Command+F and Control+F open the panel for the selected source and focus its
@@ -1387,6 +1412,14 @@ is in the grid, Home and End move to the first and last card of the filtered
 list, and PageUp and PageDown scroll one viewport without moving focus. Moving
 focus reveals its target row.
 
+ArrowDown or ArrowUp on a menu chip opens its menu. Opening focuses the lookup
+field when present, and otherwise the checked option. Inside a menu, ArrowDown
+and ArrowUp move through the lookup field and the enabled options, wrapping at
+the ends. Home and End move to the first and last option. A printable key on an
+option moves focus to the lookup field. Tab closes the menu and continues from
+its chip; Shift+Tab closes the menu and focuses its chip.
+
+Escape with an open filter menu closes the menu and focuses its chip. Otherwise,
 Escape with a non-empty query or an active filter clears both and focuses the
 search field. Escape with neither closes the panel. Clear filters also returns
 focus to the search field. The Close control always closes. Closing by Escape or
