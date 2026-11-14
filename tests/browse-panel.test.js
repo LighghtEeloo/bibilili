@@ -458,15 +458,16 @@ test("browse panel focus order crosses card rows and wraps at the edges", () => 
   const controls = panel.focusableControls();
   assert.equal(controls[0], panel.closeButton);
   assert.equal(controls[1], panel.searchInput);
-  assert.equal(controls.slice(2).every((control) =>
+  assert.equal(controls[2], panel.authorSelect);
+  assert.equal(controls.slice(3).every((control) =>
     control.classList.contains("bibilili-card-link")), true);
-  assert.equal(controls.length, 6);
+  assert.equal(controls.length, 7);
 
-  controls[2].focus();
-  const tab = keyEvent("Tab", { target: controls[2] });
+  controls[3].focus();
+  const tab = keyEvent("Tab", { target: controls[3] });
   panel.handleKeydown(tab);
   assert.equal(tab.defaultPrevented, true);
-  assert.equal(document.activeElement, controls[3]);
+  assert.equal(document.activeElement, controls[4]);
   assert.equal(host.created[1].isConnected, true);
 
   const end = keyEvent("End", { target: document.activeElement });
@@ -538,8 +539,9 @@ test("browse panel moves focus to the next card when a refresh removes the focus
   const source = browseSource(3);
   panel.open({ title: "History", count: 3, language: "en", source });
   const controls = panel.focusableControls();
-  controls[3].focus();
-  assert.equal(controls[3].closest(".bibilili-video-card").renderedItem.title, "Video 2");
+  assert.equal(controls[2], panel.authorSelect);
+  controls[4].focus();
+  assert.equal(controls[4].closest(".bibilili-video-card").renderedItem.title, "Video 2");
 
   panel.update({
     title: "History",
@@ -549,7 +551,7 @@ test("browse panel moves focus to the next card when a refresh removes the focus
   });
 
   assert.equal(panel.filteredCount, 2);
-  assert.equal(document.activeElement, controls[4]);
+  assert.equal(document.activeElement, controls[5]);
   assert.equal(
     document.activeElement.closest(".bibilili-video-card").renderedItem.title,
     "Video 3"
@@ -997,4 +999,73 @@ test("a facet starts the account scan immediately without a query", async () => 
   await waitFor(() => calls === 1 && panel.scanRow.hidden);
   assert.equal(panel.filteredCount, 1);
   assert.equal(panel.grid.tailState(), null);
+});
+
+test("browse filter bar shows available facets with counts and applies clicks", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+  panel.open({ title: "History", count: 3, language: "en", source: facetSource() });
+
+  const status = (value) => panel.statusButtons.get(value);
+  const statusCount = (value) => status(value).querySelector(".bibilili-browse-filter-count").textContent;
+  assert.equal(panel.filterBar.hidden, false);
+  assert.equal(panel.statusGroup.hidden, false);
+  assert.equal(panel.durationSelect.hidden, false);
+  assert.equal(panel.authorSelect.hidden, false);
+  assert.equal(panel.clearFiltersButton.hidden, true);
+  assert.deepEqual(["all", "unfinished", "finished"].map(statusCount), ["3", "2", "1"]);
+  assert.equal(status("all").getAttribute("aria-pressed"), "true");
+
+  status("finished").dispatch("click");
+  assert.equal(panel.filteredCount, 1);
+  assert.equal(status("finished").getAttribute("aria-pressed"), "true");
+  assert.equal(panel.clearFiltersButton.hidden, false);
+  const durationOptions = panel.durationSelect.children;
+  assert.deepEqual(durationOptions.map((option) => option.value),
+    ["all", "short", "medium", "long", "extended"]);
+  assert.deepEqual(durationOptions.map((option) => option.disabled),
+    [false, false, true, true, true]);
+  assert.equal(durationOptions[1].textContent, "browseFilterOptionCount");
+
+  status("all").dispatch("click");
+  panel.authorSelect.value = facetSource().items[1].author;
+  panel.authorSelect.dispatch("change");
+  assert.equal(panel.filteredCount, 2);
+  assert.equal(panel.authorSelect.dataset.active, "true");
+  assert.equal(status("finished").disabled, true);
+
+  panel.durationSelect.value = "long";
+  panel.durationSelect.dispatch("change");
+  assert.equal(panel.filters.duration, "long");
+  assert.equal(panel.filteredCount, 2);
+
+  panel.clearFiltersButton.dispatch("click");
+  assert.equal(panel.filteredCount, 3);
+  assert.equal(panel.clearFiltersButton.hidden, true);
+  assert.equal(panel.durationSelect.value, "all");
+  assert.equal(panel.authorSelect.value, "");
+  assert.equal(document.activeElement, panel.searchInput);
+});
+
+test("browse filter bar hides facets without data", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  panel.open({ title: "Parts", count: 3, language: "en", source: browseSource(3) });
+  assert.equal(panel.filterBar.hidden, false);
+  assert.equal(panel.statusGroup.hidden, true);
+  assert.equal(panel.durationSelect.hidden, true);
+  assert.equal(panel.authorSelect.hidden, false);
+
+  const single = browseSource(3, { kind: "parts" });
+  for (const item of single.items) item.author = "Same";
+  panel.update({ title: "Parts", count: 3, language: "en", source: single });
+  assert.equal(panel.filterBar.hidden, true);
+  assert.equal(panel.focusableControls().includes(panel.authorSelect), false);
 });

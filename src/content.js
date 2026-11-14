@@ -892,6 +892,20 @@
     EXTENDED: "extended"
   });
 
+  const BROWSE_STATUS_MESSAGES = Object.freeze({
+    [BrowseStatusFilter.ALL]: UiMessage.BROWSE_FILTER_STATUS_ALL,
+    [BrowseStatusFilter.UNFINISHED]: UiMessage.BROWSE_FILTER_STATUS_UNFINISHED,
+    [BrowseStatusFilter.FINISHED]: UiMessage.BROWSE_FILTER_STATUS_FINISHED
+  });
+
+  const BROWSE_DURATION_MESSAGES = Object.freeze({
+    [BrowseDurationFilter.ALL]: UiMessage.BROWSE_FILTER_DURATION_ALL,
+    [BrowseDurationFilter.SHORT]: UiMessage.BROWSE_FILTER_DURATION_SHORT,
+    [BrowseDurationFilter.MEDIUM]: UiMessage.BROWSE_FILTER_DURATION_MEDIUM,
+    [BrowseDurationFilter.LONG]: UiMessage.BROWSE_FILTER_DURATION_LONG,
+    [BrowseDurationFilter.EXTENDED]: UiMessage.BROWSE_FILTER_DURATION_EXTENDED
+  });
+
   /** Duration bucket bounds in seconds: inclusive minimum, exclusive maximum. */
   const BROWSE_DURATION_BOUNDS = Object.freeze([
     [BrowseDurationFilter.SHORT, 0, 300],
@@ -8308,7 +8322,11 @@
       this.searchInput.addEventListener("input", () => {
         this.applyQuery(this.searchInput.value);
       });
-      this.searchRow.append(this.searchInput);
+      this.searchField = document.createElement("div");
+      this.searchField.className = "bibilili-browse-search-field";
+      this.searchField.append(this.searchInput);
+      this.filterBar = this.createFilterBar(document);
+      this.searchRow.append(this.searchField, this.filterBar);
       this.visibilityHandler = () => {
         if (this.isOpen && this.document.visibilityState === "visible") {
           this.renderContent();
@@ -8349,6 +8367,102 @@
       this.panel.addEventListener("keydown", (event) => this.handleKeydown(event));
       this.panel.addEventListener("keyup", (event) => event.stopPropagation());
       root.append(this.scrim, this.panel);
+    }
+
+    /**
+     * Builds the facet controls. Status uses pressed buttons; duration and
+     * author use native selects, so their option lists need no popup layer
+     * inside the modal sheet.
+     *
+     * @param {Document} document
+     * @returns {HTMLElement}
+     */
+    createFilterBar(document) {
+      const bar = document.createElement("div");
+      bar.className = "bibilili-browse-filters";
+      bar.hidden = true;
+
+      this.statusGroup = document.createElement("div");
+      this.statusGroup.className = "bibilili-browse-status";
+      this.statusGroup.setAttribute("role", "group");
+      /** @type {Map<string, HTMLButtonElement>} */
+      this.statusButtons = new Map();
+      for (const value of Object.values(BrowseStatusFilter)) {
+        const button = UiControl.button(document, "bibilili-browse-status-option", () => {
+          this.applyFilters({ status: value });
+        });
+        button.dataset.value = value;
+        const label = document.createElement("span");
+        label.className = "bibilili-browse-filter-label";
+        const count = document.createElement("span");
+        count.className = "bibilili-browse-filter-count";
+        button.append(label, count);
+        this.statusButtons.set(value, button);
+        this.statusGroup.append(button);
+      }
+
+      this.durationSelect = BrowsePanel.filterSelect(document, () => {
+        this.applyFilters({ duration: this.durationSelect.value });
+      });
+      this.authorSelect = BrowsePanel.filterSelect(document, () => {
+        this.applyFilters({ author: this.authorSelect.value || null });
+      });
+      this.clearFiltersButton = UiControl.button(document, "bibilili-browse-filter-clear", () => {
+        this.applyFilters(BrowseFilters.empty());
+        this.searchInput.focus?.({ preventScroll: true });
+      });
+      this.clearFiltersButton.hidden = true;
+
+      bar.append(this.statusGroup, this.durationSelect, this.authorSelect, this.clearFiltersButton);
+      return bar;
+    }
+
+    /**
+     * @param {Document} document
+     * @param {() => void} onChange
+     * @returns {HTMLSelectElement}
+     */
+    static filterSelect(document, onChange) {
+      const select = document.createElement("select");
+      select.className = "bibilili-browse-filter-select";
+      select.hidden = true;
+      select.addEventListener("change", onChange);
+      return select;
+    }
+
+    /**
+     * Reconciles select options in place so a scan page does not replace the
+     * option nodes a user is choosing from unless the option set changed.
+     *
+     * @param {Document} document
+     * @param {HTMLSelectElement} select
+     * @param {Array<{value: string, text: string, disabled: boolean}>} options
+     * @param {string} value
+     */
+    static syncSelect(document, select, options, value) {
+      const current = [...select.children];
+      if (current.length !== options.length ||
+        current.some((option, index) => option.value !== options[index].value)) {
+        select.replaceChildren(...options.map(({ value: optionValue }) => {
+          const option = document.createElement("option");
+          option.value = optionValue;
+          return option;
+        }));
+      }
+      [...select.children].forEach((option, index) => {
+        const { text, disabled } = options[index];
+        if (option.textContent !== text) option.textContent = text;
+        if (option.disabled !== disabled) option.disabled = disabled;
+      });
+      if (select.value !== value) select.value = value;
+    }
+
+    /**
+     * @param {HTMLElement} element
+     * @param {string} text
+     */
+    static setText(element, text) {
+      if (element.textContent !== text) element.textContent = text;
     }
 
     /**
@@ -8486,7 +8600,112 @@
         resetScroll,
         queryChanged
       });
+      this.renderFilters();
       this.renderScanStatus();
+    }
+
+    /**
+     * Applies facet availability, counts, and selection to the filter bar. A
+     * facet without data is hidden; options that would empty the result are
+     * disabled unless selected.
+     */
+    renderFilters() {
+      const facets = this.facets;
+      const status = facets?.status ?? null;
+      const duration = facets?.duration ?? null;
+      const author = facets?.author ?? null;
+      const language = this.language;
+      const format = new Intl.NumberFormat(UiStrings.numberLocale(language));
+      const optionText = (label, count) => UiStrings.message(
+        UiMessage.BROWSE_FILTER_OPTION_COUNT,
+        language,
+        [label, format.format(count)]
+      );
+
+      this.filterBar.hidden = !status && !duration && !author;
+
+      this.statusGroup.hidden = !status;
+      this.statusGroup.setAttribute(
+        "aria-label",
+        UiStrings.message(UiMessage.BROWSE_FILTER_STATUS_LABEL, language)
+      );
+      if (status) {
+        for (const [value, button] of this.statusButtons) {
+          const selected = this.filters.status === value;
+          const count = status.get(value) ?? 0;
+          button.setAttribute("aria-pressed", String(selected));
+          button.disabled = !selected && value !== BrowseStatusFilter.ALL && count === 0;
+          BrowsePanel.setText(
+            button.querySelector(".bibilili-browse-filter-label"),
+            UiStrings.message(BROWSE_STATUS_MESSAGES[value], language)
+          );
+          BrowsePanel.setText(
+            button.querySelector(".bibilili-browse-filter-count"),
+            format.format(count)
+          );
+        }
+      }
+
+      this.durationSelect.hidden = !duration;
+      UiControl.setLabel(
+        this.durationSelect,
+        UiStrings.message(UiMessage.BROWSE_FILTER_DURATION_LABEL, language)
+      );
+      if (duration) {
+        BrowsePanel.syncSelect(
+          this.document,
+          this.durationSelect,
+          Object.values(BrowseDurationFilter).map((value) => ({
+            value,
+            text: optionText(
+              UiStrings.message(BROWSE_DURATION_MESSAGES[value], language),
+              duration.get(value) ?? 0
+            ),
+            disabled: value !== BrowseDurationFilter.ALL &&
+              value !== this.filters.duration &&
+              !duration.get(value)
+          })),
+          this.filters.duration
+        );
+      }
+      this.durationSelect.dataset.active = String(
+        this.filters.duration !== BrowseDurationFilter.ALL
+      );
+
+      this.authorSelect.hidden = !author;
+      UiControl.setLabel(
+        this.authorSelect,
+        UiStrings.message(UiMessage.BROWSE_FILTER_AUTHOR_LABEL, language)
+      );
+      if (author) {
+        BrowsePanel.syncSelect(
+          this.document,
+          this.authorSelect,
+          [
+            {
+              value: "",
+              text: optionText(
+                UiStrings.message(UiMessage.BROWSE_FILTER_AUTHOR_ALL, language),
+                author.all
+              ),
+              disabled: false
+            },
+            ...author.authors.map(({ author: name, count }) => ({
+              value: name,
+              text: optionText(name, count),
+              disabled: false
+            }))
+          ],
+          this.filters.author ?? ""
+        );
+      }
+      this.authorSelect.dataset.active = String(this.filters.author !== null);
+
+      this.clearFiltersButton.hidden = !BrowseFilters.isActive(this.filters);
+      UiControl.setTextButtonLabel(
+        this.clearFiltersButton,
+        UiStrings.message(UiMessage.BROWSE_FILTER_CLEAR, language)
+      );
     }
 
     /** Applies the current scan state to the fixed progress row. */
@@ -8824,8 +9043,19 @@
     /** @returns {HTMLElement[]} Controls currently available inside the sheet. */
     focusableControls() {
       return [...this.panel.querySelectorAll(
-        ".bibilili-card-link, .bibilili-card-watch-later-button, button, input"
-      )].filter((control) => !control.disabled && !control.hidden);
+        ".bibilili-card-link, .bibilili-card-watch-later-button, button, input, select"
+      )].filter((control) => !control.disabled && !this.isHiddenWithin(control));
+    }
+
+    /**
+     * @param {HTMLElement} control
+     * @returns {boolean} The control or an ancestor inside the sheet is hidden.
+     */
+    isHiddenWithin(control) {
+      for (let node = control; node && node !== this.panel; node = node.parentElement) {
+        if (node.hidden) return true;
+      }
+      return false;
     }
 
     /**

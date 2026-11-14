@@ -206,7 +206,7 @@
     "description": "Browse panel grid when the local query has no matches."
   },
   "browseSearchEmptyHint": {
-    "message": "试试其他关键词，或按 Esc 清除搜索。",
+    "message": "试试其他关键词或筛选，或按 Esc 全部清除。",
     "description": "Recovery hint under the browse panel empty state."
   },
   "browseScanProgress": {
@@ -216,6 +216,62 @@
   "browseScanRetry": {
     "message": "搜索失败，重试",
     "description": "Retry control after a browse search scan failure."
+  },
+  "browseFilterStatusLabel": {
+    "message": "观看状态",
+    "description": "Accessible name for the browse panel watch-status filter group."
+  },
+  "browseFilterStatusAll": {
+    "message": "全部",
+    "description": "Browse watch-status filter option that keeps every item."
+  },
+  "browseFilterStatusUnfinished": {
+    "message": "未看完",
+    "description": "Browse watch-status filter option for unwatched and partly watched videos."
+  },
+  "browseFilterStatusFinished": {
+    "message": "已看完",
+    "description": "Browse watch-status filter option for finished videos."
+  },
+  "browseFilterDurationLabel": {
+    "message": "时长",
+    "description": "Accessible name for the browse panel duration filter."
+  },
+  "browseFilterDurationAll": {
+    "message": "所有时长",
+    "description": "Browse duration filter option that keeps every length."
+  },
+  "browseFilterDurationShort": {
+    "message": "5 分钟以内",
+    "description": "Browse duration filter option for videos shorter than 5 minutes."
+  },
+  "browseFilterDurationMedium": {
+    "message": "5–20 分钟",
+    "description": "Browse duration filter option for videos from 5 to 20 minutes."
+  },
+  "browseFilterDurationLong": {
+    "message": "20–60 分钟",
+    "description": "Browse duration filter option for videos from 20 to 60 minutes."
+  },
+  "browseFilterDurationExtended": {
+    "message": "60 分钟以上",
+    "description": "Browse duration filter option for videos of 60 minutes or more."
+  },
+  "browseFilterAuthorLabel": {
+    "message": "UP 主",
+    "description": "Accessible name for the browse panel uploader filter."
+  },
+  "browseFilterAuthorAll": {
+    "message": "所有 UP 主",
+    "description": "Browse uploader filter option that keeps every uploader."
+  },
+  "browseFilterOptionCount": {
+    "message": "$1（$2）",
+    "description": "Browse filter option with its result count; $1 is the option and $2 the count."
+  },
+  "browseFilterClear": {
+    "message": "清除筛选",
+    "description": "Control that clears every browse panel filter."
   },
   "browseAllItemsLabel": {
     "message": "全部视频",

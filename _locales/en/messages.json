@@ -206,7 +206,7 @@
     "description": "Browse panel grid when the local query has no matches."
   },
   "browseSearchEmptyHint": {
-    "message": "Try another keyword, or press Esc to clear the search.",
+    "message": "Try other keywords or filters, or press Esc to clear them.",
     "description": "Recovery hint under the browse panel empty state."
   },
   "browseScanProgress": {
@@ -216,6 +216,62 @@
   "browseScanRetry": {
     "message": "Search failed. Retry",
     "description": "Retry control after a browse search scan failure."
+  },
+  "browseFilterStatusLabel": {
+    "message": "Watch status",
+    "description": "Accessible name for the browse panel watch-status filter group."
+  },
+  "browseFilterStatusAll": {
+    "message": "All",
+    "description": "Browse watch-status filter option that keeps every item."
+  },
+  "browseFilterStatusUnfinished": {
+    "message": "Unfinished",
+    "description": "Browse watch-status filter option for unwatched and partly watched videos."
+  },
+  "browseFilterStatusFinished": {
+    "message": "Finished",
+    "description": "Browse watch-status filter option for finished videos."
+  },
+  "browseFilterDurationLabel": {
+    "message": "Duration",
+    "description": "Accessible name for the browse panel duration filter."
+  },
+  "browseFilterDurationAll": {
+    "message": "Any length",
+    "description": "Browse duration filter option that keeps every length."
+  },
+  "browseFilterDurationShort": {
+    "message": "Under 5 min",
+    "description": "Browse duration filter option for videos shorter than 5 minutes."
+  },
+  "browseFilterDurationMedium": {
+    "message": "5–20 min",
+    "description": "Browse duration filter option for videos from 5 to 20 minutes."
+  },
+  "browseFilterDurationLong": {
+    "message": "20–60 min",
+    "description": "Browse duration filter option for videos from 20 to 60 minutes."
+  },
+  "browseFilterDurationExtended": {
+    "message": "60 min or more",
+    "description": "Browse duration filter option for videos of 60 minutes or more."
+  },
+  "browseFilterAuthorLabel": {
+    "message": "Uploader",
+    "description": "Accessible name for the browse panel uploader filter."
+  },
+  "browseFilterAuthorAll": {
+    "message": "Any uploader",
+    "description": "Browse uploader filter option that keeps every uploader."
+  },
+  "browseFilterOptionCount": {
+    "message": "$1 ($2)",
+    "description": "Browse filter option with its result count; $1 is the option and $2 the count."
+  },
+  "browseFilterClear": {
+    "message": "Clear filters",
+    "description": "Control that clears every browse panel filter."
   },
   "browseAllItemsLabel": {
     "message": "All videos",

@@ -1946,13 +1946,20 @@
 }
 
 .bibilili-browse-search {
-  position: relative;
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px 12px;
 }
 
-.bibilili-browse-search::before {
+.bibilili-browse-search-field {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.bibilili-browse-search-field::before {
   position: absolute;
   top: 50%;
   left: 15px;
@@ -1995,6 +2002,123 @@
 .bibilili-browse-search-input::placeholder {
   color: var(--bibilili-muted);
   opacity: 0.82;
+}
+
+.bibilili-browse-filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.bibilili-browse-filters[hidden],
+.bibilili-browse-filters [hidden] {
+  display: none;
+}
+
+.bibilili-browse-status {
+  display: inline-flex;
+  gap: 2px;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bibilili-panel);
+}
+
+.bibilili-browse-status-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--bibilili-muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.bibilili-browse-status-option:hover:not(:disabled) {
+  color: var(--bibilili-text);
+}
+
+.bibilili-browse-status-option[aria-pressed="true"] {
+  background: var(--bibilili-panel-raised);
+  box-shadow: 0 0 0 1px var(--bibilili-button-border);
+  color: var(--bibilili-text);
+}
+
+.bibilili-browse-status-option:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.bibilili-browse-filter-count {
+  color: var(--bibilili-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bibilili-browse-filter-select {
+  box-sizing: border-box;
+  max-width: 220px;
+  height: 36px;
+  padding: 0 30px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  outline: 0;
+  background: var(--bibilili-panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 10px center / 14px no-repeat;
+  color: var(--bibilili-text);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.bibilili-browse-filter-select:hover {
+  border-color: var(--bibilili-button-border);
+}
+
+.bibilili-browse-filter-select[data-active="true"] {
+  border-color: var(--bibilili-selected-border);
+  background-color: var(--bibilili-selected-bg);
+  color: var(--bibilili-selected-text);
+}
+
+.bibilili-browse-filter-clear {
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--bibilili-muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.bibilili-browse-filter-clear:hover {
+  background: var(--bibilili-panel);
+  color: var(--bibilili-text);
+}
+
+.bibilili-browse-status-option:focus-visible,
+.bibilili-browse-filter-select:focus-visible,
+.bibilili-browse-filter-clear:focus-visible {
+  outline: 2px solid var(--bibilili-selected-border);
+  outline-offset: 2px;
 }
 
 .bibilili-browse-body {
@@ -2400,7 +2524,10 @@
   .bibilili-browse-panel .bibilili-video-card,
   .bibilili-browse-panel .bibilili-card-thumb img,
   .bibilili-browse-close,
-  .bibilili-browse-search-input {
+  .bibilili-browse-search-input,
+  .bibilili-browse-status-option,
+  .bibilili-browse-filter-select,
+  .bibilili-browse-filter-clear {
     transition: none;
   }
 
