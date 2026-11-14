@@ -254,8 +254,9 @@ focus; activating the help button also reveals it for touch input.
 Action bar controls whether each list tool or watch action appears on the bar
 or in More. List tools precede watch actions, as they do on the bar. List tools
 are Locate, Start, Refresh, and Search. All actions default to the bar. Show
-More button defaults to enabled and displays the launcher when More contains
-available actions. Disabling it hides the launcher and closes its popup while
+More button follows the watch actions, as More follows them on the bar. It
+defaults to enabled and displays the launcher when More contains available
+actions. Disabling it hides the launcher and closes its popup while
 retaining action placements. The Power and Settings entry points have fixed
 placement.
 

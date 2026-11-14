@@ -442,7 +442,6 @@
       rail.append(this.sourcesSection());
 
       const actions = this.panels.get(SettingsTab.ACTIONS);
-      this.addPreferenceSwitch(actions, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
       for (const group of this.options.actionGroups) {
         actions.append(this.text("h3", group.message));
         for (const definition of group.actions) {
@@ -459,7 +458,10 @@
           actions.append(row);
         }
       }
-      actions.append(this.text("p", UiMessage.SETTINGS_FIXED_HINT, "bibilili-settings-hint"));
+      // More follows the watch actions on the bar, so its switch follows them here.
+      const more = this.element("section", "bibilili-settings-section");
+      this.addPreferenceSwitch(more, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
+      actions.append(more, this.text("p", UiMessage.SETTINGS_FIXED_HINT, "bibilili-settings-hint"));
       const footer = this.element("div", "bibilili-settings-footer");
       this.status = this.element("span", "bibilili-settings-status");
       this.status.setAttribute("role", "status");

@@ -650,6 +650,13 @@ test("the Action bar tab lists list tools before watch actions, as the bar does"
   const kinds = [...view.actions.keys()];
   assert.deepEqual(kinds.slice(0, 4), ["locate", "start", "refresh", "search"]);
   assert.equal(kinds[4], WatchActionKind.LIKE);
+  const more = [...view.inputs.keys()].find((input) => input.name === "moreButton");
+  const children = actions.children;
+  const lastWatchRow = view.actions.get(kinds.at(-1)).button.parentElement;
+  assert.ok(children.indexOf(lastWatchRow) < children.findIndex((child) => child.contains(more)),
+    "the More switch follows the watch actions, as More does on the bar");
+  assert.ok(children.at(-2).contains(more));
+  assert.equal(children.at(-1).className, "bibilili-settings-hint");
 });
 
 test("source order keeps saved kinds once and appends missing kinds canonically", () => {
