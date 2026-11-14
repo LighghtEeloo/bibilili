@@ -8,7 +8,8 @@ const {
   AccountSourceStore,
   LayoutRoot,
   SourceKind,
-  WatchActionKind
+  WatchActionKind,
+  WatchState
 } = loadContentRuntime();
 
 function currentWatchLaterLayout() {
@@ -149,6 +150,49 @@ test("formats account titles, duration, progress, and watch-later ids", () => {
   assert.equal(AccountSourceAdapter.watchLaterAidFor(entry), "123");
 });
 
+test("classifies whole-video watch state from account progress", () => {
+  const state = (entry) => AccountSourceAdapter.watchStateFor(entry);
+
+  assert.equal(state({ duration: 600 }), null);
+  assert.equal(state({ duration: 600, progress: 0 }), WatchState.UNWATCHED);
+  assert.equal(state({ duration: 600, progress: 120 }), WatchState.PARTIAL);
+  assert.equal(state({ duration: 600, progress: 600 }), WatchState.FINISHED);
+  assert.equal(state({ duration: 600, progress: -1 }), WatchState.FINISHED);
+  assert.equal(
+    state({ duration: 600, progress: -1, videos: 3, history: { page: 2 } }),
+    WatchState.PARTIAL
+  );
+  assert.equal(
+    state({ duration: 600, progress: -1, videos: 3, history: { page: 3 } }),
+    WatchState.FINISHED
+  );
+  assert.equal(
+    state({ duration: 600, progress: 0, videos: 3, page: { page: 2 } }),
+    WatchState.PARTIAL
+  );
+  assert.equal(state({ duration: 600, progress: -1, videos: 3 }), WatchState.FINISHED);
+});
+
+test("account items carry numeric duration and watch state for filtering", () => {
+  const [history, favorite] = [
+    AccountSourceAdapter.itemsFromEntries(
+      SourceKind.HISTORY,
+      [{ bvid: "BV1xx411c7mD", title: "History", duration: 754.6, progress: 30 }],
+      "en"
+    )[0],
+    AccountSourceAdapter.itemsFromEntries(
+      SourceKind.FAVORITES,
+      [{ bvid: "BV2xx411c7mD", title: "Favorite", type: 2, page: { duration: 61 } }],
+      "en"
+    )[0]
+  ];
+
+  assert.equal(history.durationSeconds, 754);
+  assert.equal(history.watchState, WatchState.PARTIAL);
+  assert.equal(favorite.durationSeconds, 61);
+  assert.equal(Object.hasOwn(favorite, "watchState"), false);
+});
+
 test("converts account entries into de-duplicated source items", () => {
   const entries = [
     {
@@ -184,6 +228,7 @@ test("converts account entries into de-duplicated source items", () => {
         thumbnailUrl: "https://i0.hdslb.com/bfs/archive/cover.jpg",
         sourceKind: SourceKind.WATCH_LATER,
         duration: "2:05",
+        durationSeconds: 125,
         author: "UP",
         viewCount: null,
         progress: null,

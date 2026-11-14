@@ -862,6 +862,16 @@
     SIGNED_OUT: "signed_out"
   });
 
+  /**
+   * Closed whole-video watch states read from account progress records. A
+   * multipart archive is finished only when its last part is finished.
+   */
+  const WatchState = Object.freeze({
+    UNWATCHED: "unwatched",
+    PARTIAL: "partial",
+    FINISHED: "finished"
+  });
+
   const WATCH_ACTION_ORDER = Object.freeze([
     WatchActionKind.LIKE,
     WatchActionKind.COIN,
@@ -2391,7 +2401,7 @@
         return null;
       }
 
-      return {
+      const item = {
         targetUrl,
         title,
         thumbnailUrl: SourceAdapter.thumbnailFor(target, card),
@@ -2405,6 +2415,13 @@
         viewCount: SourceAdapter.metadataFor(card, "viewCount"),
         progress: SourceAdapter.progressFor(card)
       };
+      const durationSeconds = SourceAdapter.durationSeconds(item.duration);
+
+      if (durationSeconds !== null) {
+        item.durationSeconds = durationSeconds;
+      }
+
+      return item;
     }
 
     /**
@@ -3022,6 +3039,29 @@
     }
 
     /**
+     * Converts a compact `m:ss` or `h:mm:ss` duration token into seconds.
+     *
+     * @param {string | null | undefined} token
+     * @returns {number | null}
+     */
+    static durationSeconds(token) {
+      const parts = token?.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+
+      if (!parts) {
+        return null;
+      }
+
+      const [first, second, third] = parts.slice(1).map((part) =>
+        part === undefined ? null : Number(part)
+      );
+      const seconds = third === null
+        ? first * 60 + second
+        : first * 3600 + second * 60 + third;
+
+      return seconds > 0 ? seconds : null;
+    }
+
+    /**
      * Normalizes image URLs from lazy attributes and protocol-relative values.
      *
      * @param {string | null | undefined} value
@@ -3363,6 +3403,18 @@
         item.timestamp = timestamp;
       }
 
+      const durationSeconds = AccountSourceAdapter.durationSecondsFor(entry);
+
+      if (durationSeconds !== null) {
+        item.durationSeconds = durationSeconds;
+      }
+
+      const watchState = AccountSourceAdapter.watchStateFor(entry);
+
+      if (watchState !== null) {
+        item.watchState = watchState;
+      }
+
       if (kind === SourceKind.WATCH_LATER) {
         const watchLaterAid = AccountSourceAdapter.watchLaterAidFor(entry);
 
@@ -3539,8 +3591,61 @@
      */
     static durationFor(entry) {
       return AccountSourceAdapter.formatDuration(
-        AccountSourceAdapter.numberValue(entry.duration ?? entry.page?.duration)
+        AccountSourceAdapter.durationSecondsFor(entry)
       );
+    }
+
+    /**
+     * Reads the duration in whole seconds from account record duration fields.
+     *
+     * @param {object} entry
+     * @returns {number | null}
+     */
+    static durationSecondsFor(entry) {
+      const seconds = AccountSourceAdapter.numberValue(entry.duration ?? entry.page?.duration);
+
+      return seconds && seconds >= 1 ? Math.floor(seconds) : null;
+    }
+
+    /**
+     * Tests whether account progress marks the last-watched part as finished.
+     *
+     * Note: Bilibili reports a finished part as progress -1.
+     *
+     * @param {object} entry
+     * @param {number} progress
+     * @returns {boolean}
+     */
+    static isPartFinished(entry, progress) {
+      const duration = AccountSourceAdapter.numberValue(entry.duration);
+
+      return progress === -1 || Boolean(duration && progress >= duration);
+    }
+
+    /**
+     * Classifies whole-video watch state from account progress fields. The
+     * progress label describes the last-watched part; this state describes the
+     * archive, so a finished part before the last part is partial.
+     *
+     * @param {object} entry
+     * @returns {string | null} Closed WatchState value.
+     */
+    static watchStateFor(entry) {
+      const progress = AccountSourceAdapter.numberValue(entry.progress);
+
+      if (progress === null) {
+        return null;
+      }
+
+      const partCount = AccountSourceAdapter.numberValue(entry.videos);
+      const page = AccountSourceAdapter.pageNumberFor(entry);
+      const onLastPart = !partCount || partCount <= 1 || !page || page >= partCount;
+
+      if (AccountSourceAdapter.isPartFinished(entry, progress)) {
+        return onLastPart ? WatchState.FINISHED : WatchState.PARTIAL;
+      }
+
+      return progress > 0 || (page && page > 1) ? WatchState.PARTIAL : WatchState.UNWATCHED;
     }
 
     /**
@@ -3557,9 +3662,7 @@
         return null;
       }
 
-      const duration = AccountSourceAdapter.numberValue(entry.duration);
-
-      if (progress === -1 || (duration && progress >= duration)) {
+      if (AccountSourceAdapter.isPartFinished(entry, progress)) {
         return UiStrings.finishedProgress(language);
       }
 
@@ -15257,6 +15360,8 @@
    * @property {string | null} viewCount Optional view count label.
    * @property {string | null} progress Optional watch progress label.
    * @property {number} [timestamp] Source ordering time in Unix milliseconds.
+   * @property {number} [durationSeconds] Duration in whole seconds for filtering.
+   * @property {string} [watchState] Closed WatchState value for account progress.
    * @property {string} [watchLaterAid] Archive id for watch-later removal.
    */
 
@@ -15494,7 +15599,8 @@
       WatchActionKind,
       SourceKind,
       SourceMerger,
-      VideoPreviewStore
+      VideoPreviewStore,
+      WatchState
     });
   }
 

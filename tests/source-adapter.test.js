@@ -258,6 +258,7 @@ test("source discovery shares root reads and reuses an unchanged 80-item source"
     Array.from({ length: 80 }, (_, index) => `Video ${index + 1}`));
   assert.equal(sources[0].items[0].author, "Uploader");
   assert.equal(sources[0].items[0].duration, "02:34");
+  assert.equal(sources[0].items[0].durationSeconds, 154);
   for (const reader of readers) {
     const keys = reader.mock.calls.map((call) => call.arguments[0]);
     assert.equal(keys.length, new Set(keys).size, "each source DOM read is shared within the pass");
@@ -455,6 +456,14 @@ test("lazy title reads retain selector priority and skip invalid higher-priority
   target.children = [];
   target.ownText = "Plain text title";
   assert.equal(SourceAdapter.titleFor(target, target), "Plain text title");
+});
+
+test("parses compact duration tokens into seconds", () => {
+  assert.equal(SourceAdapter.durationSeconds("02:34"), 154);
+  assert.equal(SourceAdapter.durationSeconds("1:02:03"), 3723);
+  assert.equal(SourceAdapter.durationSeconds("0:00"), null);
+  assert.equal(SourceAdapter.durationSeconds("Unknown"), null);
+  assert.equal(SourceAdapter.durationSeconds(null), null);
 });
 
 test("metadata and duration reads stop at the first usable selector result", (t) => {
