@@ -22,6 +22,13 @@
   const SettingsViewMode = Object.freeze({
     CONCISE: "concise", FULLY_FLEDGED: "fully_fledged", ADVANCED: "advanced"
   });
+  /**
+   * Closed rail states for an automatically selected source route: open, open
+   * only for the parts or collection source containing the video, or closed.
+   */
+  const RailOpening = Object.freeze({
+    ALWAYS: "always", CONTEXTUAL: "contextual", NEVER: "never"
+  });
   const FEATURE_DEFAULTS = Object.freeze({
     description: true, thumbnails: true, inPageNavigation: true,
     favoriteToSelectedFolder: true, refreshRailOnStart: true,
@@ -100,6 +107,7 @@
         viewMode: SettingsViewMode.CONCISE,
         language: null,
         operationHistoryLimit: DEFAULT_OPERATION_HISTORY_LIMIT,
+        railOpening: RailOpening.ALWAYS,
         features: { ...FEATURE_DEFAULTS },
         sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
         pinnedActions: { ...storageConfig.actionDefaults }
@@ -118,6 +126,7 @@
       if (OPERATION_HISTORY_LIMITS.includes(value?.operationHistoryLimit)) {
         result.operationHistoryLimit = value.operationHistoryLimit;
       }
+      if (Object.values(RailOpening).includes(value?.railOpening)) result.railOpening = value.railOpening;
       for (const group of ["features", "sources", "pinnedActions"]) {
         const defaults = result[group];
         for (const key of Object.keys(defaults)) {
@@ -524,6 +533,7 @@
    * @property {string} viewMode Closed SettingsViewMode controlling settings visibility.
    * @property {string | null} language Supported UI language; null uses automatic detection.
    * @property {number} operationHistoryLimit Maximum retained operations; one of OPERATION_HISTORY_LIMITS.
+   * @property {string} railOpening Closed RailOpening applied to automatically chosen routes.
    * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, silentRailLoading: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, rail continuation, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
@@ -542,6 +552,7 @@
     SettingsPreference,
     SettingsViewMode,
     SettingsTab,
+    RailOpening,
     SettingsTabPreference,
     OPERATION_HISTORY_LIMITS,
     DEFAULT_OPERATION_HISTORY_LIMIT,

@@ -3,7 +3,7 @@ const test = require("node:test");
 const { FakeStorage, ThrowingStorage, loadContentRuntime } = require("./helpers/content-runtime.js");
 const { railFixture } = require("./helpers/rail-dom.js");
 const { AccountSourceStore, BibililiController, LayoutRoot, SourceKind, WatchActionKind, VideoPreviewStore } = loadContentRuntime();
-const { SettingsPreference, SettingsViewMode, SettingsTabPreference } = global.__bibililiStorageState;
+const { SettingsPreference, SettingsViewMode, SettingsTabPreference, RailOpening } = global.__bibililiStorageState;
 const { UiControl } = global.__bibililiControls;
 const { UiLanguage, UiMessage, UiStrings } = global.__bibililiI18n;
 
@@ -63,6 +63,7 @@ test("settings enable features, sources, and pins while recording defaults off",
   assert.equal(defaults.viewMode, SettingsViewMode.CONCISE);
   assert.equal(defaults.language, null);
   assert.equal(defaults.operationHistoryLimit, 100);
+  assert.equal(defaults.railOpening, RailOpening.ALWAYS);
   assert.deepEqual(Object.keys(defaults.sources), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
   for (const group of [defaults.sources, defaults.pinnedActions]) {
     assert.ok(Object.values(group).every((value) => value === true));
@@ -97,6 +98,7 @@ test("settings persist across reads and tolerate corrupt or blocked storage", (t
   const value = SettingsPreference.defaults();
   value.viewMode = SettingsViewMode.ADVANCED;
   value.operationHistoryLimit = 500;
+  value.railOpening = RailOpening.CONTEXTUAL;
   value.features.thumbnails = false;
   value.features.inPageNavigation = false;
   value.features.favoriteToSelectedFolder = false;

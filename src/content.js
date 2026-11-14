@@ -31,6 +31,7 @@
     SourceRoute,
     SourceRouteStateStore,
     SettingsPreference,
+    RailOpening,
     configure: configureStorageState
   } = window.__bibililiStorageState;
 
@@ -11199,7 +11200,7 @@
 
       const previousSourceKind = this.selectedSourceKind;
       this.selectedSourceKind = this.resolveSourceRoute(sources, resetSourceRoute);
-      this.resolveRailOpenState(previousSourceKind, resetSourceRoute);
+      this.resolveRailOpenState(sources, previousSourceKind, resetSourceRoute);
 
       this.renderSourceDock(sources, activationControl);
 
@@ -14873,12 +14874,17 @@
     }
 
     /**
-     * Preserves closed rail state for the same route and opens new routes.
+     * Preserves the rail state for the same route and applies the rail opening
+     * preference when reconciliation chooses a new route.
      *
+     * Hinted and restored routes carry their own open state; source buttons
+     * open the rail through `routeSource`.
+     *
+     * @param {VideoListSource[]} sources
      * @param {string | null} previousSourceKind
      * @param {boolean} resetSourceRoute
      */
-    resolveRailOpenState(previousSourceKind, resetSourceRoute) {
+    resolveRailOpenState(sources, previousSourceKind, resetSourceRoute) {
       if (!this.selectedSourceKind) {
         this.isRailOpen = false;
         return;
@@ -14890,7 +14896,26 @@
       }
 
       if (resetSourceRoute || previousSourceKind !== this.selectedSourceKind) {
-        this.isRailOpen = true;
+        this.isRailOpen = this.defaultRailOpenState(sources);
+      }
+    }
+
+    /**
+     * Returns the open state for an automatically chosen route. Contextual
+     * opening requires the route to be the parts or collection source that
+     * contains the current video.
+     *
+     * @param {VideoListSource[]} sources
+     * @returns {boolean}
+     */
+    defaultRailOpenState(sources) {
+      switch (this.preferences.railOpening) {
+        case RailOpening.NEVER:
+          return false;
+        case RailOpening.CONTEXTUAL:
+          return this.currentPageSource(sources)?.kind === this.selectedSourceKind;
+        default:
+          return true;
       }
     }
 
