@@ -689,6 +689,7 @@ test("More reuses counted action nodes and preserves their identity across recon
   assert.equal(share.querySelector(".bibilili-action-count").textContent, "123");
   assert.equal(layout.railStartButton.parentElement, layout.moreRailGroup);
   assert.equal(layout.railLocateButton.parentElement, layout.railActionGroup);
+  assert.equal(layout.moreRailGroup.nextSibling, layout.moreWatchGroup, "More lists list tools first");
   controller.setPreferences({ ...controller.preferences, pinnedActions: { ...controller.preferences.pinnedActions, like: false } });
   layout.renderWatchActionGroup(layout.currentActions, anchor);
   layout.renderControlPlacement();

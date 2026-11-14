@@ -11331,11 +11331,11 @@
       this.morePanel.root.id = "bibilili-more-actions";
       this.moreWatchGroup = this.document.createElement("div");
       this.moreRailGroup = this.document.createElement("div");
-      for (const group of [this.moreWatchGroup, this.moreRailGroup]) {
+      for (const group of [this.moreRailGroup, this.moreWatchGroup]) {
         group.className = "bibilili-more-group";
         group.setAttribute("role", "group");
       }
-      this.morePanel.root.append(this.moreWatchGroup, this.moreRailGroup);
+      this.morePanel.root.append(this.moreRailGroup, this.moreWatchGroup);
       this.morePanel.root.addEventListener("click", (event) => {
         const button = event.target.closest("button");
         // Favorite clicks keep More open until the single or double action resolves.

@@ -1009,7 +1009,7 @@ instead of leaving disabled buttons dimmed on the bar. Opening the rail extends
 them again. The tools stay mounted and disabled while retracted, so placement,
 labels, and handlers survive the transition.
 
-More contains unpinned watch actions followed by unpinned list tools, with
+More contains unpinned list tools followed by unpinned watch actions, with
 visible action labels. Each action keeps one button node, count, loading state,
 and click handler as it moves between the bar and popup. Reconciliation retains
 the placement preference. Opening a native action dialog dismisses More first.
