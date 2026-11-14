@@ -285,6 +285,10 @@
     "message": "No matching uploaders",
     "description": "Uploader filter menu when its lookup text matches no uploader."
   },
+  "browseSearchClearAll": {
+    "message": "Clear search and filters",
+    "description": "Empty-state control that clears the browse query and every filter."
+  },
   "browseAllItemsLabel": {
     "message": "All videos",
     "description": "Date section label for a source without timestamps."

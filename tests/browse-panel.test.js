@@ -1166,7 +1166,7 @@ test("browse uploader menu narrows long lists with a lookup field", () => {
   assert.equal(menu.emptyNote.hidden, false);
 });
 
-test("browse clear filters resets several facets", () => {
+test("browse clear controls reset several facets and the empty state", () => {
   const { document, panel, bar, source } = facetFixture();
   bar.statusButtons.get("unfinished").dispatch("click");
   assert.equal(bar.clearButton.hidden, true);
@@ -1177,6 +1177,15 @@ test("browse clear filters resets several facets", () => {
   bar.clearButton.dispatch("click");
   assert.equal(panel.filteredCount, 3);
   assert.equal(bar.clearButton.hidden, true);
+  assert.equal(document.activeElement, panel.searchInput);
+
+  panel.searchInput.value = "nothing";
+  panel.searchInput.dispatch("input");
+  const clear = panel.grid.root.querySelector(".bibilili-browse-empty-clear");
+  assert.equal(clear.hidden, false);
+  clear.dispatch("click");
+  assert.equal(panel.query, "");
+  assert.equal(panel.filteredCount, 3);
   assert.equal(document.activeElement, panel.searchInput);
 });
 

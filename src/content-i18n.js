@@ -150,6 +150,7 @@
     BROWSE_SEARCH_LABEL: "browseSearchLabel",
     BROWSE_SEARCH_EMPTY: "browseSearchEmpty",
     BROWSE_SEARCH_EMPTY_HINT: "browseSearchEmptyHint",
+    BROWSE_SEARCH_CLEAR_ALL: "browseSearchClearAll",
     BROWSE_SCAN_PROGRESS: "browseScanProgress",
     BROWSE_SCAN_RETRY: "browseScanRetry",
     BROWSE_FILTER_STATUS_LABEL: "browseFilterStatusLabel",

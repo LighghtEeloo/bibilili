@@ -2371,7 +2371,8 @@
 
 .bibilili-browse-chip:focus-visible,
 .bibilili-browse-facet-remove:focus-visible,
-.bibilili-browse-filter-clear:focus-visible {
+.bibilili-browse-filter-clear:focus-visible,
+.bibilili-browse-empty-clear:focus-visible {
   outline: 2px solid var(--bibilili-selected-border);
   outline-offset: 2px;
 }
@@ -2631,6 +2632,30 @@
   line-height: 20px;
 }
 
+.bibilili-browse-empty-clear {
+  height: 34px;
+  margin-top: 12px;
+  padding: 0 16px;
+  border: 1px solid var(--bibilili-button-border);
+  border-radius: 999px;
+  background: var(--bibilili-panel-raised);
+  color: var(--bibilili-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.bibilili-browse-empty-clear:hover {
+  border-color: var(--bibilili-button-hover-border);
+  background: var(--bibilili-panel);
+}
+
+.bibilili-browse-empty-clear[hidden] {
+  display: none;
+}
+
 .bibilili-browse-scan-row {
   display: flex;
   align-items: center;
@@ -2783,7 +2808,8 @@
   .bibilili-browse-chip,
   .bibilili-browse-chip .bibilili-browse-chip-chevron,
   .bibilili-browse-facet-remove,
-  .bibilili-browse-filter-clear {
+  .bibilili-browse-filter-clear,
+  .bibilili-browse-empty-clear {
     transition: none;
   }
 

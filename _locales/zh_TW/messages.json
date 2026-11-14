@@ -285,6 +285,10 @@
     "message": "沒有符合的 UP 主",
     "description": "Uploader filter menu when its lookup text matches no uploader."
   },
+  "browseSearchClearAll": {
+    "message": "清除搜尋和篩選",
+    "description": "Empty-state control that clears the browse query and every filter."
+  },
   "browseAllItemsLabel": {
     "message": "全部影片",
     "description": "Date section label for a source without timestamps."

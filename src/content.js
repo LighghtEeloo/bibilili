@@ -7431,6 +7431,7 @@
      * @param {(() => BrowseGridMetrics) | null} [options.measure]
      * @param {(label: string | null) => void} [options.onVisibleSectionChange]
      * @param {(() => void) | null} [options.onFocusLoss]
+     * @param {(() => void) | null} [options.onClearCriteria] Clears the query and facets from the empty state.
      */
     constructor(document, options = {}) {
       this.document = document;
@@ -7438,6 +7439,7 @@
       this.measure = options.measure ?? null;
       this.onVisibleSectionChange = options.onVisibleSectionChange ?? null;
       this.onFocusLoss = options.onFocusLoss ?? null;
+      this.onClearCriteria = options.onClearCriteria ?? null;
 
       this.root = document.createElement("div");
       this.root.id = BROWSE_GRID_ID;
@@ -7926,7 +7928,12 @@
           title.className = "bibilili-browse-empty-title";
           const hint = this.document.createElement("p");
           hint.className = "bibilili-browse-empty-hint";
-          empty.append(icon, title, hint);
+          const clear = UiControl.button(
+            this.document,
+            "bibilili-browse-empty-clear",
+            () => this.onClearCriteria?.()
+          );
+          empty.append(icon, title, hint, clear);
           node.append(empty);
         }
         const title = empty.querySelector(".bibilili-browse-empty-title");
@@ -7941,6 +7948,13 @@
           this.data.language
         );
         if (hint.textContent !== hintText) hint.textContent = hintText;
+        const clearText = UiStrings.message(
+          UiMessage.BROWSE_SEARCH_CLEAR_ALL,
+          this.data.language
+        );
+        const clear = empty.querySelector(".bibilili-browse-empty-clear");
+        clear.hidden = !this.onClearCriteria || !this.data.filtered;
+        if (clear.textContent !== clearText) UiControl.setTextButtonLabel(clear, clearText);
         return node;
       }
 
@@ -9042,7 +9056,8 @@
         cardHost: this.cardHost,
         measure: options.measure ?? null,
         onVisibleSectionChange: (label) => this.setVisibleDate(label),
-        onFocusLoss: () => this.searchInput.focus?.({ preventScroll: true })
+        onFocusLoss: () => this.searchInput.focus?.({ preventScroll: true }),
+        onClearCriteria: () => this.clearSearch()
       });
       this.body.append(this.grid.root);
 
