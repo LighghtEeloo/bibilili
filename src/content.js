@@ -6861,6 +6861,9 @@
     }
   }
 
+  /** Normalized search fields keyed by video item record. */
+  const LIST_SEARCH_FIELDS = new WeakMap();
+
   /**
    * Matches list items by title or author with normalized, case-insensitive
    * search. Whitespace separates terms; every term must appear in the title or
@@ -6886,13 +6889,33 @@
     }
 
     /**
+     * Returns the normalized title and author, cached per item record so
+     * filtering and option counting normalize each item once.
+     *
+     * @param {VideoItem} item
+     * @returns {string[]}
+     */
+    static fields(item) {
+      let fields = LIST_SEARCH_FIELDS.get(item);
+      if (!fields || fields.title !== item.title || fields.author !== item.author) {
+        fields = {
+          title: item.title,
+          author: item.author,
+          values: [item.title, item.author].map((text) => ListSearch.normalize(text))
+        };
+        LIST_SEARCH_FIELDS.set(item, fields);
+      }
+      return fields.values;
+    }
+
+    /**
      * @param {VideoItem} item
      * @param {string[]} terms Normalized terms from `ListSearch.terms`.
      * @returns {boolean}
      */
     static matchesTerms(item, terms) {
       if (terms.length === 0) return true;
-      const fields = [item.title, item.author].map((text) => ListSearch.normalize(text));
+      const fields = ListSearch.fields(item);
       return terms.every((term) => fields.some((field) => field.includes(term)));
     }
 
