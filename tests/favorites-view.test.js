@@ -262,7 +262,7 @@ test("favorite cards retain folder identity and reuse current-card highlighting 
   assert.equal(calls[0][3], "101");
 });
 
-test("settings source switch closes the picker and filters Favorites without changing star placement", (t) => {
+test("hiding the Favorites source closes the picker and filters Favorites without changing star placement", (t) => {
   const { document } = fixture(t);
   const controller = new BibililiController(document);
   t.mock.method(controller, "scheduleReconcile", () => {});
@@ -275,11 +275,9 @@ test("settings source switch closes the picker and filters Favorites without cha
   document.body.append(favoritesView.launcher());
   favoritesView.open(true);
   settingsView.ensure();
-  const sources = [...settingsView.inputs.entries()].filter(([, value]) => value.group === "sources");
-  assert.deepEqual(sources.map(([, value]) => value.key), ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
-  const input = sources.find(([, value]) => value.key === "favorites")[0];
-  input.checked = false;
-  input.dispatch("change");
+  const chips = settingsView.sourceArrangement.chips;
+  assert.deepEqual([...chips.keys()], ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
+  chips.get(SourceKind.FAVORITES).dispatch("click");
   assert.equal(controller.preferences.sources.favorites, false);
   assert.equal(controller.preferences.pinnedActions.favorite, true);
   assert.equal(favoritesView.panel.isOpen, false);

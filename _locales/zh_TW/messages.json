@@ -510,8 +510,28 @@
     "description": "Heading for source availability preferences."
   },
   "settingsSourcesHint": {
-    "message": "啟用的來源有內容時才會顯示。",
-    "description": "Explains that a source preference does not imply available items."
+    "message": "拖曳來源可調整順序或在兩列間移動，點擊來源可顯示或隱藏。使用鍵盤時，左右方向鍵調整順序，上下方向鍵在兩列間移動。顯示的來源有內容時依此順序出現在操作列中。",
+    "description": "Explains source reordering and that a source preference does not imply available items."
+  },
+  "settingsSourcesShownLabel": {
+    "message": "顯示在操作列",
+    "description": "Label for the tray of enabled sources in source bar order."
+  },
+  "settingsSourcesHiddenLabel": {
+    "message": "隱藏",
+    "description": "Label for the tray of disabled sources."
+  },
+  "settingsSourcesShownEmpty": {
+    "message": "拖曳到這裡以顯示",
+    "description": "Placeholder in the empty tray of enabled sources."
+  },
+  "settingsSourcesHiddenEmpty": {
+    "message": "拖曳到這裡以隱藏",
+    "description": "Placeholder in the empty tray of disabled sources."
+  },
+  "settingsSourcesResetLabel": {
+    "message": "重設",
+    "description": "Button that restores default source order and enables every source."
   },
   "settingsFixedHint": {
     "message": "啟用開關與設定始終可用。",

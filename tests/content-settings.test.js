@@ -183,7 +183,7 @@ test("view mode changes preserve other tabs, focus, keyboard navigation, and sav
     features: { ...controller.preferences.features, operationHistory: true } });
   for (const tab of ["rail", "actions", "operation_history", "performance"]) {
     view.selectTab(tab);
-    const control = tab === "rail" ? [...view.inputs.keys()].find((input) => input.name === "history")
+    const control = tab === "rail" ? view.sourceArrangement.chips.get(SourceKind.HISTORY)
       : tab === "actions" ? view.actions.get(WatchActionKind.LIKE).button
         : tab === "performance" ? view.performanceView.copyButton : view.tabs.get(tab);
     control.focus();
@@ -606,10 +606,10 @@ test("the Rail tab holds opening, loading, and every source regardless of the Fe
   const rail = view.panels.get("rail");
   const inputs = [...view.inputs.keys()].filter((input) => rail.contains(input));
   assert.equal(rail.firstElementChild, view.railOpeningSelect.parentElement);
-  assert.deepEqual(inputs.map((input) => input.name), ["refreshRailOnStart", "silentRailLoading",
-    "parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
+  assert.deepEqual(inputs.map((input) => input.name), ["refreshRailOnStart", "silentRailLoading"]);
   assert.equal(view.viewModeSelect.value, SettingsViewMode.CONCISE);
   assert.ok(inputs.every((input) => isSettingsControlVisible(view, input)));
+  assert.ok([...view.sourceArrangement.chips.values()].every((chip) => isSettingsControlVisible(view, chip)));
   assert.equal(isSettingsControlVisible(view, view.railOpeningSelect), true);
   assert.deepEqual([...view.railOpeningSelect.children].map((option) => option.value),
     [RailOpening.ALWAYS, RailOpening.CONTEXTUAL, RailOpening.NEVER]);
@@ -678,6 +678,180 @@ test("the dock follows the saved source order and reorders without reloading acc
   assert.equal(layout.selectedSourceKind, SourceKind.HISTORY, "the first source with items is the default route");
   controller.setPreferences({ ...controller.preferences, sourceOrder });
   assert.equal(controller.scheduleReconcile.mock.callCount(), 1, "an unchanged order does not reconcile");
+});
+
+/**
+ * Opens the Rail tab with a geometry model: trays are 60px tall at y 0 and
+ * 100, and chips are 90px wide on a 100px pitch. Visual boxes include an
+ * inline translate; layout offsets ignore it.
+ */
+function sourceTrays(t, { reducedMotion = false } = {}) {
+  const fixture = settingsFixture(t);
+  const { view, document } = fixture;
+  document.defaultView = { matchMedia: () => ({ matches: reducedMotion }) };
+  view.ensure();
+  view.panel.root.hidden = false;
+  t.mock.method(view.panel, "position", () => {});
+  view.selectTab("rail");
+  const arrangement = view.sourceArrangement;
+  const trayTop = new Map([[arrangement.shown, 0], [arrangement.hidden, 100]]);
+  for (const tray of trayTop.keys()) {
+    tray.clientLeft = 0;
+    tray.clientTop = 0;
+    tray.getBoundingClientRect = () => ({ left: 0, top: trayTop.get(tray), bottom: trayTop.get(tray) + 60 });
+  }
+  const animations = [];
+  for (const chip of arrangement.chips.values()) {
+    Object.defineProperties(chip, {
+      offsetLeft: { get: () => 8 + chip.parentElement.children.indexOf(chip) * 100 },
+      offsetTop: { value: 8 },
+      offsetWidth: { value: 90 },
+      offsetHeight: { value: 30 }
+    });
+    chip.getBoundingClientRect = () => {
+      const [dx = 0, dy = 0] = (chip.style.transform?.match(/-?[\d.]+/g) ?? []).map(Number);
+      return { left: chip.offsetLeft + dx, top: trayTop.get(chip.parentElement) + 8 + dy, width: 90, height: 30 };
+    };
+    chip.animate = (keyframes) => {
+      animations.push([chip.dataset.sourceKind, keyframes[0].transform]);
+      return { finished: Promise.resolve(), cancel() {} };
+    };
+  }
+  arrangement.root.captures = [];
+  arrangement.root.setPointerCapture = (pointerId) => arrangement.root.captures.push(pointerId);
+  const chip = (kind) => arrangement.chips.get(kind);
+  const pointer = (type, kind, pointerId, clientX, clientY, button = 0) => arrangement.root.dispatch(type, {
+    target: kind ? chip(kind) : arrangement.root, pointerId, clientX, clientY, button
+  });
+  return { ...fixture, arrangement, animations, chip, pointer, trays: () => arrangement.arrangement() };
+}
+
+const DEFAULT_SOURCES = ["parts", "collection", "recommendations", "favorites", "watch_later", "history"];
+
+test("source chips mirror saved visibility and order, and Reset restores both", (t) => {
+  const { view, controller, trays, chip } = sourceTrays(t);
+  assert.deepEqual(trays(), { shown: DEFAULT_SOURCES, hidden: [] });
+  assert.equal(chip(SourceKind.PARTS).textContent, "Parts");
+  assert.ok(chip(SourceKind.PARTS).className.includes("bibilili-source-button"), "chips use the source bar style");
+  assert.equal(view.sourceArrangement.hidden.dataset.emptyLabel, "Drag sources here to hide them");
+  const focused = chip(SourceKind.HISTORY);
+  focused.focus();
+  SettingsPreference.write({ ...controller.preferences,
+    sources: { ...controller.preferences.sources, parts: false },
+    sourceOrder: ["history", "recommendations", "parts", "collection", "favorites", "watch_later"] });
+  controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
+  assert.deepEqual(trays(), {
+    shown: ["history", "recommendations", "collection", "favorites", "watch_later"], hidden: ["parts"]
+  });
+  assert.equal(view.document.activeElement, focused, "a moved chip keeps focus");
+  view.panel.root.querySelector(".bibilili-settings-section-reset").dispatch("click");
+  assert.deepEqual(trays(), { shown: DEFAULT_SOURCES, hidden: [] });
+  assert.deepEqual(controller.preferences.sourceOrder, DEFAULT_SOURCES);
+  assert.ok(Object.values(controller.preferences.sources).every(Boolean));
+  assert.equal(controller.preferences.railOpening, RailOpening.ALWAYS, "Reset leaves other settings alone");
+});
+
+test("clicking a chip moves it to the end of the other tray and animates displaced chips", (t) => {
+  const { controller, trays, chip, animations } = sourceTrays(t);
+  chip(SourceKind.COLLECTION).dispatch("click");
+  assert.deepEqual(trays(), {
+    shown: ["parts", "recommendations", "favorites", "watch_later", "history"], hidden: ["collection"]
+  });
+  assert.equal(controller.preferences.sources.collection, false);
+  assert.deepEqual(controller.preferences.sourceOrder, [...trays().shown, ...trays().hidden]);
+  assert.deepEqual(SettingsPreference.read().sourceOrder, controller.preferences.sourceOrder);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 1, "visibility changes reload account lists");
+  assert.deepEqual(animations, [
+    ["collection", "translate(100px, -100px)"],
+    ["recommendations", "translate(100px, 0px)"],
+    ["favorites", "translate(100px, 0px)"],
+    ["watch_later", "translate(100px, 0px)"],
+    ["history", "translate(100px, 0px)"]
+  ]);
+  chip(SourceKind.COLLECTION).dispatch("click");
+  assert.deepEqual(trays().shown.at(-1), "collection");
+  assert.equal(controller.preferences.sources.collection, true);
+});
+
+test("reduced motion moves chips without animation", (t) => {
+  const { chip, trays, animations } = sourceTrays(t, { reducedMotion: true });
+  chip(SourceKind.PARTS).dispatch("click");
+  assert.deepEqual(trays().hidden, ["parts"]);
+  assert.deepEqual(animations, []);
+});
+
+test("arrow keys reorder chips, move them between trays, and keep focus", (t) => {
+  const { controller, trays, chip, document } = sourceTrays(t);
+  const favorites = chip(SourceKind.FAVORITES);
+  favorites.focus();
+  let prevented = 0;
+  const key = (value) => favorites.dispatch("keydown", { key: value, preventDefault() { prevented += 1; } });
+  key("ArrowLeft");
+  assert.deepEqual(trays().shown, ["parts", "collection", "favorites", "recommendations", "watch_later", "history"]);
+  assert.deepEqual(controller.preferences.sourceOrder, trays().shown);
+  assert.equal(document.activeElement, favorites);
+  key("ArrowDown");
+  assert.deepEqual(trays(), {
+    shown: ["parts", "collection", "recommendations", "watch_later", "history"], hidden: ["favorites"]
+  });
+  assert.equal(controller.preferences.sources.favorites, false);
+  assert.equal(document.activeElement, favorites);
+  key("ArrowDown");
+  key("ArrowRight");
+  assert.deepEqual(trays().hidden, ["favorites"], "moves past a tray edge are ignored");
+  key("ArrowUp");
+  assert.deepEqual(trays().shown, ["favorites", "parts", "collection", "recommendations", "watch_later", "history"]);
+  assert.equal(controller.preferences.sources.favorites, true);
+  key("Tab");
+  assert.equal(prevented, 5);
+});
+
+test("a chip drag follows the pointer, previews its slot, and commits on release", (t) => {
+  const { arrangement, controller, trays, chip, pointer } = sourceTrays(t);
+  const history = chip(SourceKind.HISTORY);
+  pointer("pointerdown", SourceKind.HISTORY, 7, 550, 20);
+  pointer("pointermove", null, 7, 553, 20);
+  assert.equal(arrangement.drag, null, "small movement stays a click");
+  pointer("pointermove", null, 7, 250, 20);
+  assert.deepEqual(arrangement.root.captures, [7]);
+  assert.deepEqual(trays().shown, ["parts", "collection", "history", "recommendations", "favorites", "watch_later"]);
+  assert.equal(history.style.transform, "translate(0px, 0px)", "the grab point stays under the pointer");
+  pointer("pointermove", null, 7, 260, 25);
+  assert.equal(history.style.transform, "translate(10px, 5px)");
+  assert.deepEqual(SettingsPreference.read().sourceOrder, DEFAULT_SOURCES, "the preview is not saved");
+  controller.onStorageChange({ key: SettingsPreference.key, storageArea: global.localStorage });
+  assert.equal(trays().shown[2], "history", "reconciliation keeps the drag preview");
+  pointer("pointermove", null, 8, 0, 130);
+  assert.equal(trays().shown[2], "history", "other pointers are ignored");
+  pointer("pointermove", null, 7, 100, 130);
+  assert.deepEqual(trays(), {
+    shown: ["parts", "collection", "recommendations", "favorites", "watch_later"], hidden: ["history"]
+  });
+  pointer("pointerup", null, 7, 100, 130);
+  pointer("lostpointercapture", null, 7, 100, 130);
+  assert.equal(history.style.transform, "");
+  assert.equal(controller.preferences.sources.history, false);
+  assert.deepEqual(controller.preferences.sourceOrder, [...trays().shown, ...trays().hidden]);
+  history.dispatch("click");
+  assert.deepEqual(trays().hidden, ["history"], "the click that ends a drag does not toggle");
+  arrangement.dragEndedAt = -Infinity;
+  history.dispatch("click");
+  assert.deepEqual(trays().hidden, []);
+});
+
+test("a canceled chip drag restores the previous arrangement without saving", (t) => {
+  const { arrangement, controller, trays, chip, pointer } = sourceTrays(t);
+  pointer("pointerdown", SourceKind.PARTS, 3, 50, 20);
+  pointer("pointermove", null, 3, 50, 130);
+  assert.deepEqual(trays().hidden, ["parts"]);
+  pointer("pointercancel", null, 3, 50, 130);
+  assert.deepEqual(trays(), { shown: DEFAULT_SOURCES, hidden: [] });
+  assert.equal(chip(SourceKind.PARTS).style.transform, "");
+  assert.equal(controller.preferences.sources.parts, true);
+  assert.equal(arrangement.drag, null);
+  pointer("pointerdown", SourceKind.PARTS, 4, 50, 20, 2);
+  pointer("pointermove", null, 4, 50, 130);
+  assert.equal(arrangement.drag, null, "secondary buttons do not drag");
 });
 
 test("account continuation reports the revealed count for auto-load progress", async (t) => {

@@ -23,6 +23,290 @@
     { kind: RailOpening.NEVER, message: UiMessage.SETTINGS_RAIL_OPENING_NEVER }
   ]);
 
+  const SOURCES_HINT_ID = "bibilili-settings-sources-hint";
+  const SOURCE_CHIP_CLASS = "bibilili-source-chip";
+  const SOURCE_CHIP_DRAGGING_CLASS = "bibilili-source-chip-dragging";
+  const SOURCE_ARRANGEMENT_DRAGGING_CLASS = "bibilili-source-arrangement-dragging";
+  /** Pointer travel that turns a press on a chip into a drag. */
+  const SOURCE_DRAG_THRESHOLD_PX = 4;
+  /** Window after a drag in which a stray click on the dropped chip is ignored. */
+  const SOURCE_DRAG_CLICK_GUARD_MS = 300;
+  const SOURCE_MOVE_ANIMATION = Object.freeze({ duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" });
+
+  /**
+   * Edits source visibility and order as two trays of source-button chips.
+   * Shown holds enabled sources in source bar order; Hidden holds the rest.
+   * Dragging moves a chip within or between trays, clicking moves it to the
+   * end of the other tray, and arrow keys move it one step. Every arrangement
+   * change animates chips from their previous positions.
+   *
+   * Pointer capture stays on the stable root, so a dragged chip can change
+   * trays without ending the drag.
+   */
+  class SourceArrangement {
+    /**
+     * @param {Document} document
+     * @param {SourceArrangementParts} parts Extension-owned trays and chips built by the view.
+     * @param {(arrangement: SourceArrangementRecord) => void} onCommit Receives a changed arrangement.
+     */
+    constructor(document, parts, onCommit) {
+      this.document = document;
+      this.root = parts.root;
+      this.shown = parts.shown;
+      this.hidden = parts.hidden;
+      this.chips = parts.chips;
+      this.onCommit = onCommit;
+      /** @type {{ chip: HTMLElement, pointerId: number, x: number, y: number } | null} */
+      this.press = null;
+      /** @type {SourceDrag | null} */
+      this.drag = null;
+      this.dragEndedAt = -Infinity;
+      for (const [kind, chip] of this.chips) {
+        chip.dataset.sourceKind = kind;
+        chip.addEventListener("click", () => this.toggle(chip));
+        chip.addEventListener("keydown", (event) => this.moveByKey(chip, event));
+      }
+      this.root.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
+      this.root.addEventListener("pointermove", (event) => this.handlePointerMove(event));
+      this.root.addEventListener("pointerup", (event) => this.handlePointerEnd(event, true));
+      this.root.addEventListener("pointercancel", (event) => this.handlePointerEnd(event, false));
+      this.root.addEventListener("lostpointercapture", (event) => this.handlePointerEnd(event, false));
+    }
+
+    /** @returns {SourceArrangementRecord} Kinds in each tray in displayed order. */
+    arrangement() {
+      const kinds = (tray) => [...tray.children].map((chip) => chip.dataset.sourceKind);
+      return { shown: kinds(this.shown), hidden: kinds(this.hidden) };
+    }
+
+    /**
+     * Shows saved preferences; an active drag keeps its preview.
+     * @param {string[]} order Full configured source order.
+     * @param {Record<string, boolean>} enabled Source switches.
+     */
+    sync(order, enabled) {
+      if (this.drag) return;
+      const target = { shown: order.filter((kind) => enabled[kind]), hidden: order.filter((kind) => !enabled[kind]) };
+      if (SourceArrangement.equal(target, this.arrangement())) return;
+      this.animate(() => this.place(target));
+    }
+
+    /** @param {SourceArrangementRecord} first @param {SourceArrangementRecord} second */
+    static equal(first, second) {
+      const same = (a, b) => a.length === b.length && a.every((kind, index) => kind === b[index]);
+      return same(first.shown, second.shown) && same(first.hidden, second.hidden);
+    }
+
+    /** Places chips without detaching ones already in position. @param {SourceArrangementRecord} arrangement */
+    place(arrangement) {
+      for (const [tray, kinds] of [[this.shown, arrangement.shown], [this.hidden, arrangement.hidden]]) {
+        let previous = null;
+        for (const kind of kinds) {
+          const chip = this.chips.get(kind);
+          UiControl.place(tray, chip, previous);
+          previous = chip;
+        }
+      }
+    }
+
+    /**
+     * Applies a DOM change and animates each moved chip from its previous
+     * visual position. Focus returns to a chip that a move detached.
+     * @param {() => void} change
+     */
+    animate(change) {
+      const chips = [...this.chips.values()].filter((chip) => chip !== this.drag?.chip);
+      const before = new Map(chips.map((chip) => [chip, chip.getBoundingClientRect()]));
+      const focused = [...this.chips.values()].find((chip) => chip === this.document.activeElement);
+      change();
+      if (focused && this.document.activeElement !== focused) focused.focus({ preventScroll: true });
+      if (this.reducedMotion()) return;
+      for (const chip of chips) {
+        chip.getAnimations?.().forEach((animation) => animation.cancel());
+        const from = before.get(chip);
+        const to = chip.getBoundingClientRect();
+        this.slide(chip, from.left - to.left, from.top - to.top);
+      }
+    }
+
+    /** Animates a chip from an offset back to its layout position. @returns {Animation | null} */
+    slide(chip, dx, dy) {
+      if ((!dx && !dy) || typeof chip.animate !== "function") return null;
+      return chip.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], SOURCE_MOVE_ANIMATION);
+    }
+
+    /** @returns {boolean} */
+    reducedMotion() {
+      return Boolean(this.document.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+    }
+
+    /** Reports the arrangement when it differs from the one before a move. @param {SourceArrangementRecord} initial */
+    commit(initial) {
+      const current = this.arrangement();
+      if (!SourceArrangement.equal(current, initial)) this.onCommit(current);
+    }
+
+    /** Moves a chip to the end of the other tray. @param {HTMLElement} chip */
+    toggle(chip) {
+      if (this.drag || Date.now() - this.dragEndedAt < SOURCE_DRAG_CLICK_GUARD_MS) return;
+      const initial = this.arrangement();
+      this.animate(() => (chip.parentElement === this.shown ? this.hidden : this.shown).append(chip));
+      this.commit(initial);
+    }
+
+    /**
+     * Left and Right reorder a chip within its tray; Up and Down move it to the
+     * same position in the other tray, clamped to that tray's length.
+     */
+    moveByKey(chip, event) {
+      if (this.drag || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const tray = chip.parentElement;
+      const siblings = [...tray.children];
+      const index = siblings.indexOf(chip);
+      let target = tray;
+      let reference;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const step = event.key === "ArrowLeft" ? -1 : 1;
+        if (!siblings[index + step]) return;
+        reference = step < 0 ? siblings[index - 1] : siblings[index + 2] ?? null;
+      } else {
+        target = event.key === "ArrowUp" ? this.shown : this.hidden;
+        if (target === tray) return;
+        reference = target.children[index] ?? null;
+      }
+      const initial = this.arrangement();
+      this.animate(() => target.insertBefore(chip, reference));
+      this.commit(initial);
+    }
+
+    /** Records a primary press; a drag starts only after the pointer travels. */
+    handlePointerDown(event) {
+      const chip = event.target.closest?.(`.${SOURCE_CHIP_CLASS}`);
+      if (this.drag || event.button !== 0 || !chip || !this.root.contains(chip)) return;
+      this.press = { chip, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    }
+
+    handlePointerMove(event) {
+      if (this.drag) {
+        if (event.pointerId === this.drag.pointerId) this.updateDrag(event);
+        return;
+      }
+      const press = this.press;
+      if (!press || event.pointerId !== press.pointerId ||
+          Math.hypot(event.clientX - press.x, event.clientY - press.y) < SOURCE_DRAG_THRESHOLD_PX) return;
+      this.press = null;
+      this.startDrag(press, event);
+    }
+
+    /** Lifts the pressed chip and keeps its grab point under the pointer. */
+    startDrag(press, event) {
+      const { chip } = press;
+      chip.getAnimations?.().forEach((animation) => animation.cancel());
+      const rect = this.layoutRect(chip);
+      this.root.setPointerCapture(event.pointerId);
+      this.drag = {
+        chip, pointerId: event.pointerId, initial: this.arrangement(),
+        offsetX: press.x - rect.left, offsetY: press.y - rect.top
+      };
+      chip.classList.toggle(SOURCE_CHIP_DRAGGING_CLASS, true);
+      this.root.classList.toggle(SOURCE_ARRANGEMENT_DRAGGING_CLASS, true);
+      this.updateDrag(event);
+    }
+
+    /** Moves the dragged chip to the drop slot under the pointer, then follows the pointer. */
+    updateDrag(event) {
+      const { chip, offsetX, offsetY } = this.drag;
+      const { tray, reference } = this.dropTarget(event.clientX, event.clientY);
+      if (chip.parentElement !== tray || chip.nextSibling !== reference) {
+        this.animate(() => tray.insertBefore(chip, reference));
+      }
+      const rect = this.layoutRect(chip);
+      chip.style.transform =
+        `translate(${event.clientX - offsetX - rect.left}px, ${event.clientY - offsetY - rect.top}px)`;
+    }
+
+    /**
+     * Chooses the tray nearest the pointer and the first chip, in reading
+     * order, that the pointer precedes. Layout positions ignore running
+     * animations so targets do not flicker while chips slide.
+     */
+    dropTarget(x, y) {
+      const distance = (tray) => {
+        const rect = tray.getBoundingClientRect();
+        return y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+      };
+      const tray = distance(this.shown) <= distance(this.hidden) ? this.shown : this.hidden;
+      const reference = [...tray.children].find((chip) => {
+        if (chip === this.drag.chip) return false;
+        const rect = this.layoutRect(chip);
+        return y < rect.top || (y <= rect.top + rect.height && x < rect.left + rect.width / 2);
+      }) ?? null;
+      return { tray, reference };
+    }
+
+    /**
+     * Returns a chip's untransformed viewport box from offsets within its tray.
+     * Note: trays are positioned so they are each chip's offset parent.
+     */
+    layoutRect(chip) {
+      const tray = chip.parentElement.getBoundingClientRect();
+      const parent = chip.parentElement;
+      return {
+        left: tray.left + parent.clientLeft + chip.offsetLeft,
+        top: tray.top + parent.clientTop + chip.offsetTop,
+        width: chip.offsetWidth,
+        height: chip.offsetHeight
+      };
+    }
+
+    /** Settles a drag: release commits the preview, cancellation restores the initial arrangement. */
+    handlePointerEnd(event, commit) {
+      if (this.press?.pointerId === event.pointerId) this.press = null;
+      if (event.pointerId !== this.drag?.pointerId) return;
+      const { chip, initial } = this.drag;
+      const visual = chip.getBoundingClientRect();
+      if (!commit) this.animate(() => this.place(initial));
+      this.drag = null;
+      this.dragEndedAt = Date.now();
+      chip.style.transform = "";
+      this.root.classList.toggle(SOURCE_ARRANGEMENT_DRAGGING_CLASS, false);
+      const settled = this.layoutRect(chip);
+      const animation = this.reducedMotion() ? null
+        : this.slide(chip, visual.left - settled.left, visual.top - settled.top);
+      // A new drag of the same chip cancels this landing and keeps the chip lifted.
+      const land = () => {
+        if (this.drag?.chip !== chip) chip.classList.toggle(SOURCE_CHIP_DRAGGING_CLASS, false);
+      };
+      if (animation) animation.finished.then(land, land);
+      else land();
+      if (commit) this.commit(initial);
+    }
+  }
+
+  /**
+   * @typedef {object} SourceArrangementRecord
+   * @property {string[]} shown Enabled source kinds in source bar order.
+   * @property {string[]} hidden Disabled source kinds.
+   */
+
+  /**
+   * @typedef {object} SourceArrangementParts
+   * @property {HTMLElement} root Stable pointer-capture surface containing both trays.
+   * @property {HTMLElement} shown Tray of enabled sources.
+   * @property {HTMLElement} hidden Tray of disabled sources.
+   * @property {Map<string, HTMLButtonElement>} chips One chip per source kind.
+   */
+
+  /**
+   * @typedef {object} SourceDrag
+   * @property {HTMLElement} chip Dragged chip.
+   * @property {number} pointerId Captured pointer.
+   * @property {SourceArrangementRecord} initial Arrangement restored on cancellation.
+   * @property {number} offsetX Grab point from the chip's left edge.
+   * @property {number} offsetY Grab point from the chip's top edge.
+   */
+
   /**
    * Renders persisted preferences in a reusable popup with selectable levels of detail.
    * Native action icons are supplied by the layout's existing visual renderer.
@@ -42,6 +326,8 @@
       this.language = "en";
       this.labels = new Map();
       this.helpButtons = new Map();
+      /** @type {Map<HTMLElement, string>} Source trays and their empty-state messages. */
+      this.trayEmptyLabels = new Map();
       this.languageOptions = new Map();
       this.inputs = new Map();
       this.actions = new Map();
@@ -153,13 +439,7 @@
       this.addPreferenceSwitch(rail, "features", "refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL);
       this.addPreferenceSwitch(rail, "features", "silentRailLoading", UiMessage.SETTINGS_SILENT_RAIL_LOADING_LABEL,
         UiMessage.SETTINGS_SILENT_RAIL_LOADING_HINT);
-      const sources = this.element("section", "bibilili-settings-section");
-      sources.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
-      for (const source of this.options.sources) {
-        this.addPreferenceSwitch(sources, "sources", source.kind, source.message);
-      }
-      sources.append(this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint"));
-      rail.append(sources);
+      rail.append(this.sourcesSection());
 
       const actions = this.panels.get(SettingsTab.ACTIONS);
       this.addPreferenceSwitch(actions, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
@@ -309,6 +589,51 @@
       parent.append(row);
     }
 
+    /** Builds Video sources: a reset control, Shown and Hidden trays of source chips, and help. */
+    sourcesSection() {
+      const section = this.element("section", "bibilili-settings-section");
+      const header = this.element("div", "bibilili-settings-section-header");
+      const reset = UiControl.button(this.document, "bibilili-settings-section-reset", () => {
+        const { sources, sourceOrder } = SettingsPreference.defaults();
+        this.options.onChange({ ...this.preferences, sources, sourceOrder });
+      });
+      this.labels.set(reset, UiMessage.SETTINGS_SOURCES_RESET_LABEL);
+      header.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL), reset);
+      const root = this.element("div", "bibilili-source-arrangement");
+      const trays = new Map();
+      for (const [key, message, empty] of [
+        ["shown", UiMessage.SETTINGS_SOURCES_SHOWN_LABEL, UiMessage.SETTINGS_SOURCES_SHOWN_EMPTY],
+        ["hidden", UiMessage.SETTINGS_SOURCES_HIDDEN_LABEL, UiMessage.SETTINGS_SOURCES_HIDDEN_EMPTY]
+      ]) {
+        const label = this.text("span", message, "bibilili-source-tray-label");
+        label.id = `bibilili-settings-sources-${key}-label`;
+        const tray = this.element("div", `bibilili-source-tray bibilili-source-tray-${key}`);
+        tray.setAttribute("role", "group");
+        tray.setAttribute("aria-labelledby", label.id);
+        this.trayEmptyLabels.set(tray, empty);
+        trays.set(key, tray);
+        root.append(label, tray);
+      }
+      const chips = new Map();
+      for (const { kind, message } of this.options.sources) {
+        const chip = this.text("button", message, `bibilili-source-button ${SOURCE_CHIP_CLASS}`);
+        chip.type = "button";
+        chip.setAttribute("aria-describedby", SOURCES_HINT_ID);
+        trays.get("shown").append(chip);
+        chips.set(kind, chip);
+      }
+      this.sourceArrangement = new SourceArrangement(this.document,
+        { root, shown: trays.get("shown"), hidden: trays.get("hidden"), chips }, ({ shown, hidden }) => {
+          this.options.onChange({ ...this.preferences,
+            sources: Object.fromEntries([...shown.map((kind) => [kind, true]), ...hidden.map((kind) => [kind, false])]),
+            sourceOrder: [...shown, ...hidden] });
+        });
+      const hint = this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint");
+      hint.id = SOURCES_HINT_ID;
+      section.append(header, root, hint);
+      return section;
+    }
+
     /** Sends a fresh record to the controller; the view never persists independently. */
     change(group, key, value) {
       this.options.onChange({ ...this.preferences, [group]: { ...this.preferences[group], [key]: value } });
@@ -416,6 +741,8 @@
       for (const [button, key] of this.helpButtons) {
         button.setAttribute("aria-label", UiStrings.message(UiMessage.SETTINGS_HELP_LABEL, this.language, [message(key)]));
       }
+      for (const [tray, key] of this.trayEmptyLabels) tray.dataset.emptyLabel = message(key);
+      this.sourceArrangement.sync(this.preferences.sourceOrder, this.preferences.sources);
       for (const [option, language] of this.languageOptions) {
         const label = UiStrings.message(UiMessage.LANGUAGE_NAME, language);
         if (option.textContent !== label) option.textContent = label;

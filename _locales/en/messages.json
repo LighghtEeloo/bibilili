@@ -510,8 +510,28 @@
     "description": "Heading for source availability preferences."
   },
   "settingsSourcesHint": {
-    "message": "Enabled sources appear when available.",
-    "description": "Explains that a source preference does not imply available items."
+    "message": "Drag a source to reorder it or move it between rows. Click a source to show or hide it. With the keyboard, Left and Right reorder; Up and Down move between rows. Shown sources appear on the bar in this order when available.",
+    "description": "Explains source reordering and that a source preference does not imply available items."
+  },
+  "settingsSourcesShownLabel": {
+    "message": "Shown on the bar",
+    "description": "Label for the tray of enabled sources in source bar order."
+  },
+  "settingsSourcesHiddenLabel": {
+    "message": "Hidden",
+    "description": "Label for the tray of disabled sources."
+  },
+  "settingsSourcesShownEmpty": {
+    "message": "Drag sources here to show them",
+    "description": "Placeholder in the empty tray of enabled sources."
+  },
+  "settingsSourcesHiddenEmpty": {
+    "message": "Drag sources here to hide them",
+    "description": "Placeholder in the empty tray of disabled sources."
+  },
+  "settingsSourcesResetLabel": {
+    "message": "Reset",
+    "description": "Button that restores default source order and enables every source."
   },
   "settingsFixedHint": {
     "message": "Power and Settings always stay available.",

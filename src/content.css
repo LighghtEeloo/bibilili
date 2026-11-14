@@ -3289,6 +3289,103 @@ label.bibilili-settings-row,
   background: #fff;
 }
 
+.bibilili-settings-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.bibilili-settings-body .bibilili-settings-section-header > h3 {
+  margin: 0;
+}
+
+.bibilili-settings .bibilili-settings-section-reset {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: var(--bibilili-muted);
+  background: transparent;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bibilili-settings .bibilili-settings-section-reset:hover {
+  color: var(--bibilili-text);
+}
+
+.bibilili-source-arrangement {
+  display: grid;
+  gap: 6px;
+  user-select: none;
+}
+
+.bibilili-source-tray-label {
+  margin-top: 4px;
+  color: var(--bibilili-muted);
+  font-size: 12px;
+}
+
+.bibilili-source-tray {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--bibilili-bar-gap);
+  min-height: calc(var(--bibilili-bar-control-height) + 18px);
+  padding: 8px;
+  border: 1px solid var(--bibilili-border);
+  border-radius: 8px;
+  background: var(--bibilili-panel);
+}
+
+.bibilili-source-tray-hidden {
+  border-style: dashed;
+  background: transparent;
+}
+
+.bibilili-source-tray:empty::before {
+  content: attr(data-empty-label);
+  align-self: center;
+  color: var(--bibilili-muted);
+  font-size: 12px;
+}
+
+.bibilili-settings .bibilili-source-chip {
+  cursor: grab;
+  touch-action: none;
+}
+
+.bibilili-source-tray-hidden .bibilili-source-chip {
+  border-style: dashed;
+  color: var(--bibilili-muted);
+  background: transparent;
+  font-weight: 500;
+}
+
+.bibilili-source-tray-hidden .bibilili-source-chip:hover {
+  border-color: var(--bibilili-button-hover-border);
+  color: var(--bibilili-text);
+}
+
+.bibilili-source-arrangement-dragging,
+.bibilili-settings .bibilili-source-arrangement-dragging .bibilili-source-chip {
+  cursor: grabbing;
+}
+
+.bibilili-settings .bibilili-source-tray .bibilili-source-chip-dragging {
+  position: relative;
+  z-index: 1;
+  border-style: solid;
+  border-color: var(--bibilili-selected-border);
+  color: var(--bibilili-selected-text);
+  background: var(--bibilili-panel-raised);
+  box-shadow: 0 6px 18px var(--bibilili-shadow);
+  will-change: transform;
+}
+
 .bibilili-settings-action-name {
   display: flex;
   align-items: center;
