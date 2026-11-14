@@ -872,6 +872,34 @@
     FINISHED: "finished"
   });
 
+  /**
+   * Closed browse panel status facet values.
+   */
+  const BrowseStatusFilter = Object.freeze({
+    ALL: "all",
+    UNFINISHED: "unfinished",
+    FINISHED: "finished"
+  });
+
+  /**
+   * Closed browse panel duration facet values.
+   */
+  const BrowseDurationFilter = Object.freeze({
+    ALL: "all",
+    SHORT: "short",
+    MEDIUM: "medium",
+    LONG: "long",
+    EXTENDED: "extended"
+  });
+
+  /** Duration bucket bounds in seconds: inclusive minimum, exclusive maximum. */
+  const BROWSE_DURATION_BOUNDS = Object.freeze([
+    [BrowseDurationFilter.SHORT, 0, 300],
+    [BrowseDurationFilter.MEDIUM, 300, 1200],
+    [BrowseDurationFilter.LONG, 1200, 3600],
+    [BrowseDurationFilter.EXTENDED, 3600, Infinity]
+  ]);
+
   const WATCH_ACTION_ORDER = Object.freeze([
     WatchActionKind.LIKE,
     WatchActionKind.COIN,
@@ -6821,7 +6849,8 @@
 
   /**
    * Matches list items by title or author with normalized, case-insensitive
-   * substring search. Rail and browse surfaces share this rule.
+   * search. Whitespace separates terms; every term must appear in the title or
+   * the author.
    */
   class ListSearch {
     /**
@@ -6833,15 +6862,33 @@
     }
 
     /**
+     * Splits a query into normalized terms.
+     *
+     * @param {string} query
+     * @returns {string[]}
+     */
+    static terms(query) {
+      return ListSearch.normalize(query).split(/\s+/).filter(Boolean);
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {string[]} terms Normalized terms from `ListSearch.terms`.
+     * @returns {boolean}
+     */
+    static matchesTerms(item, terms) {
+      if (terms.length === 0) return true;
+      const fields = [item.title, item.author].map((text) => ListSearch.normalize(text));
+      return terms.every((term) => fields.some((field) => field.includes(term)));
+    }
+
+    /**
      * @param {VideoItem} item
      * @param {string} query
      * @returns {boolean}
      */
     static matches(item, query) {
-      const normalized = ListSearch.normalize(query).trim();
-      if (!normalized) return true;
-      return [item.title, item.author].some((text) =>
-        ListSearch.normalize(text).includes(normalized));
+      return ListSearch.matchesTerms(item, ListSearch.terms(query));
     }
 
     /**
@@ -6850,9 +6897,196 @@
      * @returns {VideoItem[]}
      */
     static filter(items, query) {
-      const normalized = ListSearch.normalize(query).trim();
-      if (!normalized) return items;
-      return items.filter((item) => ListSearch.matches(item, normalized));
+      const terms = ListSearch.terms(query);
+      if (terms.length === 0) return items;
+      return items.filter((item) => ListSearch.matchesTerms(item, terms));
+    }
+  }
+
+  /**
+   * @typedef {object} BrowseFilterState
+   * @property {string} status Closed BrowseStatusFilter value.
+   * @property {string} duration Closed BrowseDurationFilter value.
+   * @property {string | null} author Exact author label, or null for any author.
+   */
+
+  /**
+   * @typedef {object} BrowseFacetCounts
+   * @property {Map<string, number> | null} status Counts by BrowseStatusFilter
+   *   value, or null when no retained item has a watch state.
+   * @property {Map<string, number> | null} duration Counts by
+   *   BrowseDurationFilter value, or null when no retained item has a duration.
+   * @property {{all: number, authors: Array<{author: string, count: number}>} | null} author
+   *   Matching authors by descending count, or null with fewer than two
+   *   retained authors.
+   */
+
+  /**
+   * Applies the browse panel's click-based facets. Each facet's option counts
+   * apply the query and every other facet, so a count is the result size after
+   * choosing that option. An active facet stays available so it can be cleared.
+   */
+  class BrowseFilters {
+    /** @returns {BrowseFilterState} */
+    static empty() {
+      return {
+        status: BrowseStatusFilter.ALL,
+        duration: BrowseDurationFilter.ALL,
+        author: null
+      };
+    }
+
+    /**
+     * @param {BrowseFilterState} filters
+     * @returns {boolean}
+     */
+    static isActive(filters) {
+      return filters.status !== BrowseStatusFilter.ALL ||
+        filters.duration !== BrowseDurationFilter.ALL ||
+        filters.author !== null;
+    }
+
+    /**
+     * @param {BrowseFilterState} a
+     * @param {BrowseFilterState} b
+     * @returns {boolean}
+     */
+    static equal(a, b) {
+      return a.status === b.status && a.duration === b.duration && a.author === b.author;
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @returns {string | null} Closed BrowseDurationFilter bucket.
+     */
+    static durationBucket(item) {
+      const seconds = item.durationSeconds;
+      if (!Number.isFinite(seconds)) return null;
+      const bound = BROWSE_DURATION_BOUNDS.find(([, min, max]) => seconds >= min && seconds < max);
+      return bound ? bound[0] : null;
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {string} status
+     * @returns {boolean}
+     */
+    static statusMatches(item, status) {
+      if (status === BrowseStatusFilter.ALL) return true;
+      if (!item.watchState) return false;
+      const finished = item.watchState === WatchState.FINISHED;
+      return status === BrowseStatusFilter.FINISHED ? finished : !finished;
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {string} duration
+     * @returns {boolean}
+     */
+    static durationMatches(item, duration) {
+      return duration === BrowseDurationFilter.ALL ||
+        BrowseFilters.durationBucket(item) === duration;
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {string | null} author
+     * @returns {boolean}
+     */
+    static authorMatches(item, author) {
+      return author === null || item.author === author;
+    }
+
+    /**
+     * @param {VideoItem} item
+     * @param {BrowseFilterState} filters
+     * @returns {boolean}
+     */
+    static matches(item, filters) {
+      return BrowseFilters.statusMatches(item, filters.status) &&
+        BrowseFilters.durationMatches(item, filters.duration) &&
+        BrowseFilters.authorMatches(item, filters.author);
+    }
+
+    /**
+     * Filters items by query terms and facets in source order.
+     *
+     * @param {VideoItem[]} items
+     * @param {string} query
+     * @param {BrowseFilterState} filters
+     * @returns {VideoItem[]}
+     */
+    static apply(items, query, filters) {
+      const terms = ListSearch.terms(query);
+      if (terms.length === 0 && !BrowseFilters.isActive(filters)) return items;
+      return items.filter((item) =>
+        ListSearch.matchesTerms(item, terms) && BrowseFilters.matches(item, filters));
+    }
+
+    /**
+     * Computes facet availability and option counts in one pass.
+     *
+     * @param {VideoItem[]} items
+     * @param {string} query
+     * @param {BrowseFilterState} filters
+     * @returns {BrowseFacetCounts}
+     */
+    static facets(items, query, filters) {
+      const terms = ListSearch.terms(query);
+      const status = new Map(Object.values(BrowseStatusFilter).map((value) => [value, 0]));
+      const duration = new Map(Object.values(BrowseDurationFilter).map((value) => [value, 0]));
+      const authorCounts = new Map();
+      const retainedAuthors = new Set();
+      let authorAll = 0;
+      let hasWatchState = false;
+      let hasDuration = false;
+
+      for (const item of items) {
+        if (item.watchState) hasWatchState = true;
+        const bucket = BrowseFilters.durationBucket(item);
+        if (bucket) hasDuration = true;
+        if (item.author) retainedAuthors.add(item.author);
+        if (!ListSearch.matchesTerms(item, terms)) continue;
+
+        const statusMatch = BrowseFilters.statusMatches(item, filters.status);
+        const durationMatch = BrowseFilters.durationMatches(item, filters.duration);
+        const authorMatch = BrowseFilters.authorMatches(item, filters.author);
+
+        if (durationMatch && authorMatch) {
+          status.set(BrowseStatusFilter.ALL, status.get(BrowseStatusFilter.ALL) + 1);
+          if (item.watchState) {
+            const value = item.watchState === WatchState.FINISHED
+              ? BrowseStatusFilter.FINISHED
+              : BrowseStatusFilter.UNFINISHED;
+            status.set(value, status.get(value) + 1);
+          }
+        }
+        if (statusMatch && authorMatch) {
+          duration.set(BrowseDurationFilter.ALL, duration.get(BrowseDurationFilter.ALL) + 1);
+          if (bucket) duration.set(bucket, duration.get(bucket) + 1);
+        }
+        if (statusMatch && durationMatch) {
+          authorAll += 1;
+          if (item.author) authorCounts.set(item.author, (authorCounts.get(item.author) ?? 0) + 1);
+        }
+      }
+
+      if (filters.author !== null && !authorCounts.has(filters.author)) {
+        authorCounts.set(filters.author, 0);
+      }
+
+      return {
+        status: hasWatchState || filters.status !== BrowseStatusFilter.ALL ? status : null,
+        duration: hasDuration || filters.duration !== BrowseDurationFilter.ALL ? duration : null,
+        author: retainedAuthors.size >= 2 || filters.author !== null
+          ? {
+              all: authorAll,
+              authors: [...authorCounts]
+                .map(([author, count]) => ({ author, count }))
+                .sort((a, b) => b.count - a.count || a.author.localeCompare(b.author))
+            }
+          : null
+      };
     }
   }
 
@@ -15589,9 +15823,13 @@
       AccountSourceStatus,
       BibililiController,
       BrowseDateGrouping,
+      BrowseDurationFilter,
+      BrowseFilters,
       BrowseGrid,
       BrowsePanel,
       BrowseRowLayout,
+      BrowseStatusFilter,
+      ListSearch,
       LayoutRoot,
       RailWindow,
       RegionDiscovery,
