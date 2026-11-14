@@ -593,6 +593,17 @@ test("silent rail loading persists and refreshes the rail without reloading acco
   assert.equal(input.checked, true);
 });
 
+test("the Action bar tab lists list tools before watch actions, as the bar does", (t) => {
+  const { view } = settingsFixture(t);
+  view.ensure();
+  const actions = view.panels.get("actions");
+  const headings = [...actions.querySelectorAll("h3")].map((heading) => view.labels.get(heading));
+  assert.deepEqual(headings, [UiMessage.RAIL_ACTIONS_LABEL, UiMessage.WATCH_ACTIONS_LABEL]);
+  const kinds = [...view.actions.keys()];
+  assert.deepEqual(kinds.slice(0, 4), ["locate", "start", "refresh", "search"]);
+  assert.equal(kinds[4], WatchActionKind.LIKE);
+});
+
 test("account continuation reports the revealed count for auto-load progress", async (t) => {
   const { controller } = settingsFixture(t);
   t.mock.method(controller.accountSources, "loadMore", async () => {});

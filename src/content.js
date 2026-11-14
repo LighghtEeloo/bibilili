@@ -15020,12 +15020,12 @@
       this.settingsView = new SettingsView(document, {
         sources: SOURCE_ORDER.map((kind) => ({ kind, message: SOURCE_LABEL_MESSAGE_NAMES[kind] })),
         actionGroups: [
+          { message: UiMessage.RAIL_ACTIONS_LABEL, actions: RAIL_ACTION_ORDER.map((kind) => ({
+            kind, message: RAIL_ACTION_MESSAGES[kind]
+          })) },
           { message: UiMessage.WATCH_ACTIONS_LABEL, actions: WATCH_ACTION_ORDER.map((kind) => ({
             kind, message: kind === WatchActionKind.SHARE
               ? UiMessage.WATCH_ACTION_COPY_LINK_LABEL : WATCH_ACTION_LABEL_MESSAGE_NAMES[kind]
-          })) },
-          { message: UiMessage.RAIL_ACTIONS_LABEL, actions: RAIL_ACTION_ORDER.map((kind) => ({
-            kind, message: RAIL_ACTION_MESSAGES[kind]
           })) }
         ],
         onChange: (preferences) => this.setPreferences(preferences),
