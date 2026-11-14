@@ -5,13 +5,22 @@
   const { UiLanguage, UiMessage, UiStrings } = window.__bibililiI18n;
   const { PerformanceView, PerformanceWidget } = window.__bibililiPerformanceView;
   const { OperationHistoryView } = window.__bibililiOperationHistory;
-  const { SettingsPreference, SettingsViewMode, SettingsTab, SettingsTabPreference } = window.__bibililiStorageState;
+  const {
+    SettingsPreference, SettingsViewMode, SettingsTab, SettingsTabPreference, RailOpening
+  } = window.__bibililiStorageState;
 
   /** Ordered view modes; each includes the controls of the preceding one. */
   const SETTINGS_VIEW_MODES = Object.freeze([
     { kind: SettingsViewMode.CONCISE, message: UiMessage.SETTINGS_VIEW_CONCISE },
     { kind: SettingsViewMode.FULLY_FLEDGED, message: UiMessage.SETTINGS_VIEW_FULLY_FLEDGED },
     { kind: SettingsViewMode.ADVANCED, message: UiMessage.SETTINGS_VIEW_ADVANCED }
+  ]);
+
+  /** Ordered rail opening choices, from always open to always closed. */
+  const RAIL_OPENING_CHOICES = Object.freeze([
+    { kind: RailOpening.ALWAYS, message: UiMessage.SETTINGS_RAIL_OPENING_ALWAYS },
+    { kind: RailOpening.CONTEXTUAL, message: UiMessage.SETTINGS_RAIL_OPENING_CONTEXTUAL },
+    { kind: RailOpening.NEVER, message: UiMessage.SETTINGS_RAIL_OPENING_NEVER }
   ]);
 
   /**
@@ -90,6 +99,7 @@
       tabs.setAttribute("role", "tablist");
       for (const [key, message] of [
         [SettingsTab.FEATURES, UiMessage.SETTINGS_FEATURES_LABEL],
+        [SettingsTab.RAIL, UiMessage.SETTINGS_RAIL_LABEL],
         [SettingsTab.ACTIONS, UiMessage.SETTINGS_ACTION_BAR_LABEL],
         [SettingsTab.OPERATION_HISTORY, UiMessage.OPERATION_HISTORY_LABEL],
         [SettingsTab.PERFORMANCE, UiMessage.PERFORMANCE_LABEL]
@@ -125,23 +135,31 @@
         ["inPageNavigation", UiMessage.SETTINGS_IN_PAGE_NAVIGATION_LABEL,
           UiMessage.SETTINGS_IN_PAGE_NAVIGATION_HINT, SettingsViewMode.CONCISE],
         ["favoriteToSelectedFolder", UiMessage.SETTINGS_FAVORITE_FOLDER_LABEL, UiMessage.SETTINGS_FAVORITE_FOLDER_HINT],
-        ["refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL],
-        ["silentRailLoading", UiMessage.SETTINGS_SILENT_RAIL_LOADING_LABEL,
-          UiMessage.SETTINGS_SILENT_RAIL_LOADING_HINT],
         ["operationHistory", UiMessage.OPERATION_HISTORY_LABEL, UiMessage.OPERATION_HISTORY_HINT]
       ]) this.addPreferenceSwitch(features, "features", key, message, hint, viewMode);
+      const diagnostics = this.element("section", "bibilili-settings-section");
+      this.viewModeElements.set(diagnostics, SettingsViewMode.ADVANCED);
+      diagnostics.append(this.text("h3", UiMessage.PERFORMANCE_LABEL));
+      this.addPreferenceSwitch(diagnostics, "features", "performance", UiMessage.PERFORMANCE_TOGGLE, UiMessage.PERFORMANCE_TOGGLE_HINT);
+      features.append(diagnostics);
+
+      const rail = this.panels.get(SettingsTab.RAIL);
+      const opening = this.choiceRow("railOpening", UiMessage.SETTINGS_RAIL_OPENING_LABEL,
+        UiMessage.SETTINGS_RAIL_OPENING_HINT, RAIL_OPENING_CHOICES, (railOpening) => {
+          this.options.onChange({ ...this.preferences, railOpening });
+        });
+      this.railOpeningSelect = opening.select;
+      rail.append(opening.row);
+      this.addPreferenceSwitch(rail, "features", "refreshRailOnStart", UiMessage.SETTINGS_REFRESH_RAIL_ON_START_LABEL);
+      this.addPreferenceSwitch(rail, "features", "silentRailLoading", UiMessage.SETTINGS_SILENT_RAIL_LOADING_LABEL,
+        UiMessage.SETTINGS_SILENT_RAIL_LOADING_HINT);
       const sources = this.element("section", "bibilili-settings-section");
-      this.viewModeElements.set(sources, SettingsViewMode.FULLY_FLEDGED);
       sources.append(this.text("h3", UiMessage.SETTINGS_SOURCES_LABEL));
       for (const source of this.options.sources) {
         this.addPreferenceSwitch(sources, "sources", source.kind, source.message);
       }
       sources.append(this.text("p", UiMessage.SETTINGS_SOURCES_HINT, "bibilili-settings-hint"));
-      const diagnostics = this.element("section", "bibilili-settings-section");
-      this.viewModeElements.set(diagnostics, SettingsViewMode.ADVANCED);
-      diagnostics.append(this.text("h3", UiMessage.PERFORMANCE_LABEL));
-      this.addPreferenceSwitch(diagnostics, "features", "performance", UiMessage.PERFORMANCE_TOGGLE, UiMessage.PERFORMANCE_TOGGLE_HINT);
-      features.append(sources, diagnostics);
+      rail.append(sources);
 
       const actions = this.panels.get(SettingsTab.ACTIONS);
       this.addPreferenceSwitch(actions, "features", "moreButton", UiMessage.SETTINGS_MORE_BUTTON_LABEL);
@@ -189,24 +207,40 @@
 
     /** Creates the Features view selector without changing feature values or tab availability. */
     viewModeRow() {
+      const { row, select } = this.choiceRow("viewMode", UiMessage.SETTINGS_VIEW_LABEL,
+        UiMessage.SETTINGS_VIEW_HINT, SETTINGS_VIEW_MODES, (viewMode) => {
+          this.options.onChange({ ...this.preferences, viewMode });
+        });
+      this.viewModeSelect = select;
+      return row;
+    }
+
+    /**
+     * Creates a labeled native selector for one closed preference, with help beside its label.
+     * @param {string} key Preference name.
+     * @param {string} message Label message.
+     * @param {string} hint Help message.
+     * @param {readonly { kind: string, message: string }[]} choices Ordered closed values.
+     * @param {(value: string) => void} onChange Receives the selected value.
+     * @returns {{ row: HTMLElement, select: HTMLSelectElement }}
+     */
+    choiceRow(key, message, hint, choices, onChange) {
       const row = this.element("div", "bibilili-settings-row bibilili-settings-row-with-help");
       const name = this.element("span", "bibilili-settings-name");
-      this.viewModeSelect = this.element("select", "bibilili-settings-select");
-      this.viewModeSelect.id = "bibilili-settings-view-mode";
-      this.viewModeSelect.name = "viewMode";
-      const label = this.text("label", UiMessage.SETTINGS_VIEW_LABEL);
-      label.setAttribute("for", this.viewModeSelect.id);
-      name.append(label, this.helpControl("view-mode", UiMessage.SETTINGS_VIEW_LABEL, UiMessage.SETTINGS_VIEW_HINT));
-      for (const { kind, message } of SETTINGS_VIEW_MODES) {
-        const option = this.text("option", message);
-        option.value = kind;
-        this.viewModeSelect.append(option);
+      const select = this.element("select", "bibilili-settings-select");
+      select.id = `bibilili-settings-${key}`;
+      select.name = key;
+      const label = this.text("label", message);
+      label.setAttribute("for", select.id);
+      name.append(label, this.helpControl(key, message, hint));
+      for (const choice of choices) {
+        const option = this.text("option", choice.message);
+        option.value = choice.kind;
+        select.append(option);
       }
-      this.viewModeSelect.addEventListener("change", () => {
-        this.options.onChange({ ...this.preferences, viewMode: this.viewModeSelect.value });
-      });
-      row.append(name, this.viewModeSelect);
-      return row;
+      select.addEventListener("change", () => onChange(select.value));
+      row.append(name, select);
+      return { row, select };
     }
 
     /** Creates a native language selector with each language named in its own language. */
@@ -300,7 +334,7 @@
     isTabAvailable(tab) {
       if (tab === SettingsTab.OPERATION_HISTORY) return this.preferences.features.operationHistory;
       if (tab === SettingsTab.PERFORMANCE) return this.preferences.features.performance;
-      return tab === SettingsTab.FEATURES || tab === SettingsTab.ACTIONS;
+      return tab === SettingsTab.FEATURES || tab === SettingsTab.RAIL || tab === SettingsTab.ACTIONS;
     }
 
     /** Hides controls in place and moves focus to the selector if a focused row disappears. */
@@ -388,6 +422,9 @@
       }
       const languageValue = this.preferences.language ?? "";
       if (this.viewModeSelect.value !== this.preferences.viewMode) this.viewModeSelect.value = this.preferences.viewMode;
+      if (this.railOpeningSelect.value !== this.preferences.railOpening) {
+        this.railOpeningSelect.value = this.preferences.railOpening;
+      }
       if (this.languageSelect.value !== languageValue) this.languageSelect.value = languageValue;
       this.activationInput.checked = this.enabled;
       for (const [input, { group, key }] of this.inputs) input.checked = this.preferences[group][key];

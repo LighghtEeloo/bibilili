@@ -57,7 +57,7 @@ test("history is opt-in, precedes Performance, and unavailable tabs are skipped 
   assert.equal(view.operationHistoryView.root, null);
   assert.equal(SettingsPreference.defaults().features.operationHistory, false);
   const historyView = enable();
-  assert.deepEqual([...view.tabs.keys()], ["features", "actions", "operation_history", "performance"]);
+  assert.deepEqual([...view.tabs.keys()], ["features", "rail", "actions", "operation_history", "performance"]);
   assert.equal(view.tabs.get(SettingsTab.OPERATION_HISTORY).hidden, false);
   assert.equal(historyView.empty.hidden, false);
   assert.equal(SettingsTabPreference.read(), SettingsTab.OPERATION_HISTORY);

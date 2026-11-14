@@ -429,6 +429,30 @@
     "message": "功能",
     "description": "Settings tab for feature switches."
   },
+  "settingsRailLabel": {
+    "message": "列表",
+    "description": "Settings tab for rail opening, loading, and video sources."
+  },
+  "settingsRailOpeningLabel": {
+    "message": "新影片時展開",
+    "description": "Selects whether the rail opens when a new video loads."
+  },
+  "settingsRailOpeningHint": {
+    "message": "選擇開啟新影片時是否展開列表。「僅分P和合輯」只在影片屬於分P或合輯時展開。從列表開啟的影片會保持列表展開，點擊來源按鈕也總會展開列表。",
+    "description": "Explains the rail opening choices and the cases that open the rail regardless."
+  },
+  "settingsRailOpeningAlways": {
+    "message": "總是",
+    "description": "Rail opening choice that opens the rail for every new video."
+  },
+  "settingsRailOpeningContextual": {
+    "message": "僅分P和合輯",
+    "description": "Rail opening choice that opens the rail only when the video belongs to its parts or collection."
+  },
+  "settingsRailOpeningNever": {
+    "message": "從不",
+    "description": "Rail opening choice that keeps the rail closed for new videos."
+  },
   "settingsActionBarLabel": {
     "message": "操作列",
     "description": "Settings tab for shortcut placement."

@@ -16,7 +16,8 @@
   const DEFAULT_OPERATION_HISTORY_LIMIT = 100;
   /** Closed settings tabs shared by the view and its persisted navigation state. */
   const SettingsTab = Object.freeze({
-    FEATURES: "features", ACTIONS: "actions", OPERATION_HISTORY: "operation_history", PERFORMANCE: "performance"
+    FEATURES: "features", RAIL: "rail", ACTIONS: "actions", OPERATION_HISTORY: "operation_history",
+    PERFORMANCE: "performance"
   });
   /** Closed settings view modes, independent of feature values. */
   const SettingsViewMode = Object.freeze({

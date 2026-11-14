@@ -140,7 +140,7 @@ test("view modes reveal settings progressively while retaining feature values an
   assert.equal(select.value, SettingsViewMode.CONCISE);
   assert.equal(select.parentElement, view.panels.get("features").firstElementChild);
   assert.deepEqual(visibleInputs(), ["description", "inPageNavigation"]);
-  assert.deepEqual(visibleTabs(), ["features", "actions"]);
+  assert.deepEqual(visibleTabs(), ["features", "rail", "actions"]);
   assert.equal(isSettingsControlVisible(view, view.languageSelect), true);
   assert.equal(isSettingsControlVisible(view, view.activationInput), true);
 
@@ -151,8 +151,7 @@ test("view modes reveal settings progressively while retaining feature values an
   controller.setPreferences(saved);
   const reconciles = controller.scheduleReconcile.mock.callCount();
   const refreshes = controller.refreshAccountSources.mock.callCount();
-  const fullInputs = ["description", "thumbnails", "inPageNavigation", "favoriteToSelectedFolder",
-    "refreshRailOnStart", "silentRailLoading", "operationHistory", "parts", "collection", "recommendations", "favorites", "watch_later", "history"];
+  const fullInputs = ["description", "thumbnails", "inPageNavigation", "favoriteToSelectedFolder", "operationHistory"];
   select.focus();
   for (const [viewMode, expectedInputs] of [
     [SettingsViewMode.FULLY_FLEDGED, fullInputs],
@@ -162,7 +161,7 @@ test("view modes reveal settings progressively while retaining feature values an
     select.value = viewMode;
     select.dispatch("change");
     assert.deepEqual(visibleInputs(), expectedInputs);
-    assert.deepEqual(visibleTabs(), ["features", "actions", "operation_history", "performance"]);
+    assert.deepEqual(visibleTabs(), ["features", "rail", "actions", "operation_history", "performance"]);
     assert.deepEqual(SettingsPreference.read(), { ...saved, viewMode });
     assert.equal(document.activeElement, select);
     assert.equal(view.viewModeSelect, select);
@@ -182,10 +181,11 @@ test("view mode changes preserve other tabs, focus, keyboard navigation, and sav
   view.panel.root.hidden = false;
   controller.setPreferences({ ...controller.preferences,
     features: { ...controller.preferences.features, operationHistory: true } });
-  for (const tab of ["actions", "operation_history", "performance"]) {
+  for (const tab of ["rail", "actions", "operation_history", "performance"]) {
     view.selectTab(tab);
-    const control = tab === "actions" ? view.actions.get(WatchActionKind.LIKE).button
-      : tab === "performance" ? view.performanceView.copyButton : view.tabs.get(tab);
+    const control = tab === "rail" ? [...view.inputs.keys()].find((input) => input.name === "history")
+      : tab === "actions" ? view.actions.get(WatchActionKind.LIKE).button
+        : tab === "performance" ? view.performanceView.copyButton : view.tabs.get(tab);
     control.focus();
     for (const viewMode of [SettingsViewMode.FULLY_FLEDGED, SettingsViewMode.ADVANCED, SettingsViewMode.CONCISE]) {
       SettingsPreference.write({ ...controller.preferences, viewMode });
@@ -206,7 +206,7 @@ test("view mode changes preserve other tabs, focus, keyboard navigation, and sav
   assert.equal(restored.viewModeSelect.value, SettingsViewMode.CONCISE);
   assert.equal(restored.tab, "performance");
   for (const [key, expected] of [
-    ["Home", "features"], ["ArrowRight", "actions"], ["ArrowRight", "operation_history"],
+    ["Home", "features"], ["ArrowRight", "rail"], ["ArrowRight", "actions"], ["ArrowRight", "operation_history"],
     ["End", "performance"], ["ArrowLeft", "operation_history"]
   ]) {
     restored.tabs.get(restored.tab).dispatch("keydown", { key, preventDefault() {} });
@@ -215,12 +215,12 @@ test("view mode changes preserve other tabs, focus, keyboard navigation, and sav
   }
 });
 
-test("a view mode change from another tab moves focus out of a hidden feature or source row", (t) => {
+test("a view mode change from another tab moves focus out of a hidden feature row", (t) => {
   const { view, controller, document } = settingsFixture(t, { viewMode: SettingsViewMode.FULLY_FLEDGED });
   view.ensure();
   t.mock.method(view.panel, "position", () => {});
   view.panel.root.hidden = false;
-  for (const name of ["thumbnails", "favorites"]) {
+  for (const name of ["thumbnails", "favoriteToSelectedFolder"]) {
     controller.setPreferences({ ...controller.preferences, viewMode: SettingsViewMode.FULLY_FLEDGED });
     const input = [...view.inputs.keys()].find((input) => input.name === name);
     input.focus();
@@ -330,11 +330,13 @@ test("a recording change from another tab moves focus out of hidden statistics a
   assert.equal(controller.performance.snapshot().states.visible.counters.navigationTicks, 1);
 });
 
-test("all three settings tabs support roving keyboard focus and persisted selection", (t) => {
+test("available settings tabs support roving keyboard focus and persisted selection", (t) => {
   const { view, document } = settingsFixture(t, { performance: true, viewMode: SettingsViewMode.ADVANCED });
   view.ensure();
   view.selectTab("features");
   const key = (value) => view.tabs.get(view.tab).dispatch("keydown", { key: value, preventDefault() {} });
+  key("ArrowRight");
+  assert.equal(view.tab, "rail");
   key("ArrowRight");
   assert.equal(view.tab, "actions");
   key("ArrowRight");
@@ -557,7 +559,7 @@ for (const feature of ["inPageNavigation", "refreshRailOnStart"]) {
     view.render();
     const input = [...view.inputs.keys()].find((input) => input.name === feature);
     assert.equal(input.checked, true);
-    assert.ok(view.panels.get("features").contains(input));
+    assert.ok(view.panels.get(feature === "inPageNavigation" ? "features" : "rail").contains(input));
     input.checked = false;
     input.dispatch("change");
     assert.equal(controller.preferences.features[feature], false);
@@ -583,7 +585,7 @@ test("silent rail loading persists and refreshes the rail without reloading acco
   view.render();
   const input = [...view.inputs.keys()].find((input) => input.name === "silentRailLoading");
   assert.equal(input.checked, true);
-  assert.ok(view.panels.get("features").contains(input));
+  assert.ok(view.panels.get("rail").contains(input));
   input.checked = false;
   input.dispatch("change");
   assert.equal(controller.preferences.features.silentRailLoading, false);
@@ -593,6 +595,50 @@ test("silent rail loading persists and refreshes the rail without reloading acco
   assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
   controller.setPreferences(SettingsPreference.defaults());
   assert.equal(input.checked, true);
+});
+
+test("the Rail tab holds opening, loading, and every source regardless of the Features view", (t) => {
+  const { view } = settingsFixture(t);
+  view.ensure();
+  view.panel.root.hidden = false;
+  t.mock.method(view.panel, "position", () => {});
+  view.selectTab("rail");
+  const rail = view.panels.get("rail");
+  const inputs = [...view.inputs.keys()].filter((input) => rail.contains(input));
+  assert.equal(rail.firstElementChild, view.railOpeningSelect.parentElement);
+  assert.deepEqual(inputs.map((input) => input.name), ["refreshRailOnStart", "silentRailLoading",
+    "parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
+  assert.equal(view.viewModeSelect.value, SettingsViewMode.CONCISE);
+  assert.ok(inputs.every((input) => isSettingsControlVisible(view, input)));
+  assert.equal(isSettingsControlVisible(view, view.railOpeningSelect), true);
+  assert.deepEqual([...view.railOpeningSelect.children].map((option) => option.value),
+    [RailOpening.ALWAYS, RailOpening.CONTEXTUAL, RailOpening.NEVER]);
+});
+
+test("the rail opening choice persists, syncs across tabs, and restores without reconciling", (t) => {
+  const { view, controller, layout } = settingsFixture(t);
+  view.ensure();
+  view.panel.root.hidden = false;
+  t.mock.method(view.panel, "position", () => {});
+  view.render();
+  const select = view.railOpeningSelect;
+  assert.equal(select.value, RailOpening.ALWAYS);
+  for (const value of [null, "", "open", {}]) {
+    assert.equal(SettingsPreference.normalize({ railOpening: value }).railOpening, RailOpening.ALWAYS);
+  }
+  select.value = RailOpening.NEVER;
+  select.dispatch("change");
+  assert.equal(controller.preferences.railOpening, RailOpening.NEVER);
+  assert.equal(layout.preferences.railOpening, RailOpening.NEVER);
+  assert.equal(SettingsPreference.read().railOpening, RailOpening.NEVER);
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  SettingsPreference.write({ ...controller.preferences, railOpening: RailOpening.CONTEXTUAL });
+  controller.onStorageChange({ storageArea: global.localStorage, key: SettingsPreference.key });
+  assert.equal(select.value, RailOpening.CONTEXTUAL);
+  view.panel.root.querySelector(".bibilili-settings-restore").dispatch("click");
+  assert.equal(controller.preferences.railOpening, RailOpening.ALWAYS);
+  assert.equal(select.value, RailOpening.ALWAYS);
 });
 
 test("the Action bar tab lists list tools before watch actions, as the bar does", (t) => {

@@ -429,6 +429,30 @@
     "message": "Features",
     "description": "Settings tab for feature switches."
   },
+  "settingsRailLabel": {
+    "message": "Rail",
+    "description": "Settings tab for rail opening, loading, and video sources."
+  },
+  "settingsRailOpeningLabel": {
+    "message": "Open on new videos",
+    "description": "Selects whether the rail opens when a new video loads."
+  },
+  "settingsRailOpeningHint": {
+    "message": "Choose whether the rail opens when a new video loads. Parts and collections opens it only when the video belongs to one. Videos opened from the rail keep it open, and source buttons always open it.",
+    "description": "Explains the rail opening choices and the cases that open the rail regardless."
+  },
+  "settingsRailOpeningAlways": {
+    "message": "Always",
+    "description": "Rail opening choice that opens the rail for every new video."
+  },
+  "settingsRailOpeningContextual": {
+    "message": "Parts and collections",
+    "description": "Rail opening choice that opens the rail only when the video belongs to its parts or collection."
+  },
+  "settingsRailOpeningNever": {
+    "message": "Never",
+    "description": "Rail opening choice that keeps the rail closed for new videos."
+  },
   "settingsActionBarLabel": {
     "message": "Action bar",
     "description": "Settings tab for shortcut placement."
