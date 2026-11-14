@@ -207,7 +207,7 @@ Disabling thumbnail enrichment cancels pending cover requests and uses
 page-provided thumbnails.
 
 The Rail tab controls rail opening, rail refresh on return to start, automatic
-rail continuation, and each video source. Its rows appear in every Settings
+rail continuation, and video sources. Its controls appear in every Settings
 view. Refresh, continuation, and every source default to enabled.
 
 Rail opening sets the open state of a route that reconciliation selects
@@ -218,38 +218,57 @@ keep their recorded open state, and source buttons open the rail under every
 choice. A changed choice applies to the next automatic route and leaves the
 current rail unchanged.
 
+Video sources arranges one chip per source kind in two trays. Chips use the
+source button style. Shown holds enabled sources in the configured source
+order; Hidden holds disabled sources. The saved order lists shown sources, then
+hidden ones. Reset enables every source in the default order and leaves other
+preferences unchanged.
+
+Dragging a chip lifts it and keeps its grab point under the pointer. The chip
+moves to the slot it hovers in the nearer tray: before the first chip, in
+reading order, whose midpoint the pointer precedes. Release saves the
+arrangement; cancellation restores the previous one. Pointer capture stays on
+the tray container, so a chip can change trays mid-drag. A press becomes a drag
+after 4 px of travel; a shorter press is a click. Clicking a chip moves it to
+the end of the other tray. Left and Right reorder a focused chip; Up and Down
+move it to the same position in the other tray.
+
+Every arrangement change slides chips from their previous positions, and a
+released chip settles into its slot. Reduced motion places chips without
+animation. A moved chip keeps focus. Storage events rearrange the chips in
+place; an active drag keeps its preview. Reordering alone updates the source
+bar without reloading account lists.
+
 Disabling a source removes it from routing and source root marking. A disabled
 account source cancels outstanding list requests and retains its cached items
-and expansion for a refresh when re-enabled. Favorites appears before Watch
-later in Rail, as it does in the dock. Disabling Favorites closes its picker and
-cancels folder video requests. Folder metadata remains available to direct
-saves in either click mapping. The current-video favorite action retains its
-independent behavior and Action bar preferences.
+and expansion for a refresh when re-enabled. Disabling Favorites closes its
+picker and cancels folder video requests. Folder metadata remains available to
+direct saves in either click mapping. The current-video favorite action retains
+its independent behavior and Action bar preferences.
 
 Settings with non-obvious behavior, including video switching, direct saves,
 automatic continuation, and rail opening, explain it through question-mark help
-buttons beside their labels. The explanation appears on
-hover or keyboard focus; activating the help button also reveals it for touch
-input.
+buttons beside their labels. The explanation appears on hover or keyboard
+focus; activating the help button also reveals it for touch input.
 
 Action bar controls whether each list tool or watch action appears on the bar
 or in More. List tools precede watch actions, as they do on the bar. List tools
 are Locate, Start, Refresh, and Search. All actions default to the bar. Show
 More button defaults to enabled and displays the launcher when More contains
 available actions. Disabling it hides the launcher and closes its popup while
-retaining action placements.
-Source order and the Power and Settings entry points have fixed placement.
+retaining action placements. The Power and Settings entry points have fixed
+placement.
 
 Preferences use a validated record of settings view mode, UI language, history
-capacity, rail opening, and feature, source, and action booleans in Bilibili
-origin-local storage. Changes persist across videos and reloads and propagate through
-storage events to other Bilibili tabs. History capacity applies when its slider
-loses focus; other preferences apply immediately.
-Unavailable storage leaves the current page's choices active and displays a
-save-failure status. Restore defaults resets language, history capacity, rail
-opening, feature, source, and placement preferences while retaining the
-settings view mode, available selected tab, activation state, and pane
-dimensions.
+capacity, rail opening, configured source order, and feature, source, and action
+booleans in Bilibili origin-local storage. Changes persist across videos and
+reloads and propagate through storage events to other Bilibili tabs. History
+capacity applies when its slider loses focus; other preferences apply
+immediately. Unavailable storage leaves the current page's choices active and
+displays a save-failure status. Restore defaults resets language, history
+capacity, rail opening, source order, feature, source, and placement preferences
+while retaining the settings view mode, available selected tab, activation
+state, and pane dimensions.
 
 Settings rows keep their control identity through reconciliation. Native watch
 icons use the same sanitized visual renderer and watch-later snapshot as dock
@@ -540,6 +559,10 @@ A video list source is a Bilibili list that can produce video items. Source
 kinds form a closed set: parts, collection, recommendations, favorites, watch
 later, and history. A source kind is shown when page markup or an account list
 exposes matching content.
+
+The configured source order arranges every source kind once. It sets source
+button order and default route priority. It defaults to the closed-set order
+and is edited in the Rail tab of Settings.
 
 Each source has a stable source kind, optional page-owned root node, and ordered
 set of extracted video items. Source adapters convert page-owned list markup and
@@ -935,8 +958,8 @@ order can take effect without changing Bilibili behavior.
 ## Source Route
 
 The source route is the selected source kind and optional favorite-folder id
-for the list dock. It defaults to the first source with valid items in source
-order: parts, collection, recommendations, favorites, watch later, history.
+for the list dock. It defaults to the first source with valid items in the
+configured source order.
 Favorites provides a folder-selection surface when no source has valid items.
 An automatically selected, unchosen Favorites surface yields to sources that
 load valid items. Explicitly selected and restored routes retain their source
@@ -968,9 +991,9 @@ after their fetch completes.
 The source bar is the control row inside the enabled list dock. It begins with
 the activation control, then contains one route button per discovered source
 kind, then the rail action group, then the pinned watch action group when
-native watch actions are available. Source buttons represent parts, collection, recommendations,
-favorites, watch later, and history when those sources are available. Their
-labels use the current UI language.
+native watch actions are available. Source buttons represent the available
+sources in the configured source order. Their labels use the current UI
+language.
 
 The selected source button keeps `aria-current` for the remembered route and
 exposes the rail open state with `aria-expanded`. The selected visual treatment
