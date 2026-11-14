@@ -273,6 +273,26 @@
     "message": "Clear filters",
     "description": "Control that clears every browse panel filter."
   },
+  "browseFiltersLabel": {
+    "message": "Filters",
+    "description": "Accessible name for the browse panel filter toolbar."
+  },
+  "browseFilterFacetValue": {
+    "message": "$1: $2",
+    "description": "Accessible name of an active browse filter chip; $1 is the filter and $2 the selected option."
+  },
+  "browseFilterRemove": {
+    "message": "Clear filter: $1",
+    "description": "Control that clears one browse filter; $1 is the filter."
+  },
+  "browseFilterAuthorSearch": {
+    "message": "Find uploader",
+    "description": "Accessible name and placeholder for narrowing the uploader filter menu."
+  },
+  "browseFilterAuthorEmpty": {
+    "message": "No matching uploaders",
+    "description": "Uploader filter menu when its lookup text matches no uploader."
+  },
   "browseAllItemsLabel": {
     "message": "All videos",
     "description": "Date section label for a source without timestamps."

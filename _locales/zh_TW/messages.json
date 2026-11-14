@@ -273,6 +273,26 @@
     "message": "清除篩選",
     "description": "Control that clears every browse panel filter."
   },
+  "browseFiltersLabel": {
+    "message": "篩選",
+    "description": "Accessible name for the browse panel filter toolbar."
+  },
+  "browseFilterFacetValue": {
+    "message": "$1：$2",
+    "description": "Accessible name of an active browse filter chip; $1 is the filter and $2 the selected option."
+  },
+  "browseFilterRemove": {
+    "message": "清除篩選：$1",
+    "description": "Control that clears one browse filter; $1 is the filter."
+  },
+  "browseFilterAuthorSearch": {
+    "message": "尋找 UP 主",
+    "description": "Accessible name and placeholder for narrowing the uploader filter menu."
+  },
+  "browseFilterAuthorEmpty": {
+    "message": "沒有符合的 UP 主",
+    "description": "Uploader filter menu when its lookup text matches no uploader."
+  },
   "browseAllItemsLabel": {
     "message": "全部影片",
     "description": "Date section label for a source without timestamps."
