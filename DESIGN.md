@@ -591,7 +591,9 @@ and unrelated page mutations reuse unchanged native source items.
 
 The route model converts playable Bilibili URLs into route identities, archive
 preview identities, canonical archive URLs, and route keys. Archive route keys
-include the page number; bangumi route keys use the playable bangumi identity.
+include the page number; bangumi route keys use the playable bangumi identity. A
+source match key selects the archive identity for watch later and the route key
+for other focusable sources.
 
 Parts and collection sources require at least two valid items. A one-item list
 does not provide navigation and remains absent from the source bar. Other source
@@ -633,9 +635,10 @@ each source. History starts with a request for 30 entries and retains the
 response cursor for older pages. Watch later retains the returned list and
 initially exposes up to 80 items. Favorites starts with 20 entries and retains
 a numbered continuation for each folder. Each expansion reveals up to 30
-retained items or fetches one continuation page. Pages merge by playable route
-identity in API order. Empty raw pages, missing continuations, and repeated
-cursors end continuation; a page whose entries are all filtered can continue.
+retained items or fetches one continuation page. Pages merge by source match key
+in API order: watch later uses the archive identity, while history and favorites
+use the page route. Empty raw pages, missing continuations, and repeated cursors
+end continuation; a page whose entries are all filtered can continue.
 
 Watch-later expansion can advance directly to the batch containing a cached
 target. It retains any deeper expansion and leaves an absent target unchanged.
@@ -1045,10 +1048,13 @@ accessible name. It centers the current video in the displayed rail. It is
 disabled when the rail is closed or the displayed items contain no current
 video. Locate preserves the selected source and account expansion depth.
 
-Locate matches the current watch route or the collection's native current-row
-marker. Reconciliation records the first matching item's logical index while
-building rail entries. Activation uses that index to render the destination
-window through the existing rail positioning path.
+Locate matches items by the current source match key, or by the collection's
+native current-row marker. Parts, collections, and favorites match the current
+watch route, including its page number. Watch later matches the current archive
+identity because one to-view record represents one archive, not one part.
+Reconciliation records the first matching item's logical index while building
+rail entries. Activation uses that index to render the destination window
+through the existing rail positioning path.
 
 ## Rail Start
 
@@ -1154,11 +1160,13 @@ archive matches the current video. A native current-row marker is equivalent to
 an archive match. The rail scrolls to that card once for the current page
 session and again when the collection route is opened explicitly.
 
-When the selected source is watch later, the rail uses the same current-card
-matching, positioning, and highlight path as collection. Selecting or reopening
-the route searches all retained account items and reveals the batch containing
-the current watch route before rendering. The rail scrolls to that card when
-present. Subsequent reconciliation preserves manual scrolling.
+When the selected source is watch later, the rail matches the card by archive
+identity, not by page number, because a to-view record represents one archive
+and carries at most one part. It uses the same positioning and highlight path as
+collection. Selecting or reopening the route searches all retained account items
+and reveals the batch containing the current archive before rendering. The rail
+scrolls to that card when present. Subsequent reconciliation preserves manual
+scrolling.
 
 Current-card positioning uses the item's logical index and renders the
 destination window directly.

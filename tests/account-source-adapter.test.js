@@ -238,6 +238,39 @@ test("converts account entries into de-duplicated source items", () => {
   );
 });
 
+test("merges watch-later parts by archive while history keeps page routes", () => {
+  const watchLater = (page) => AccountSourceAdapter.itemsFromEntries(
+    SourceKind.WATCH_LATER,
+    [{ bvid: "BV1xx411c7mD", title: "Watch later", page: { page } }],
+    "en"
+  )[0];
+  const history = (page) => AccountSourceAdapter.itemsFromEntries(
+    SourceKind.HISTORY,
+    [{ bvid: "BV1xx411c7mD", title: "History", history: { page } }],
+    "en"
+  )[0];
+
+  assert.equal(
+    AccountSourceAdapter.itemKey(watchLater(1)),
+    AccountSourceAdapter.itemKey(watchLater(2))
+  );
+  assert.notEqual(
+    AccountSourceAdapter.itemKey(history(1)),
+    AccountSourceAdapter.itemKey(history(2))
+  );
+  assert.equal(
+    AccountSourceAdapter.itemsFromEntries(
+      SourceKind.WATCH_LATER,
+      [
+        { bvid: "BV1xx411c7mD", title: "Watch later", page: { page: 1 } },
+        { bvid: "BV1xx411c7mD", title: "Watch later", page: { page: 2 } }
+      ],
+      "en"
+    ).length,
+    1
+  );
+});
+
 test("converts account source times into millisecond timestamps", () => {
   const [history] = AccountSourceAdapter.itemsFromEntries(
     SourceKind.HISTORY,

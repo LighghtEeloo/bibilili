@@ -377,6 +377,61 @@ test("current-video positioning renders the destination without intermediate car
   assert.equal(fixture.rail.scrollLeft, 0);
 });
 
+test("Locate matches watch-later cards by archive across parts", () => {
+  const previousHref = global.location.href;
+
+  try {
+    for (const [itemPage, currentPage] of [[1, 2], [2, 1], [2, 2]]) {
+      const { layout, source, rail } = railFixture(
+        LayoutRoot, 100, SourceKind.WATCH_LATER
+      );
+      layout.createRailLocate();
+      source.items[40].targetUrl =
+        `https://www.bilibili.com/video/BV1aa411c7mD?p=${itemPage}`;
+      global.location.href =
+        `https://www.bilibili.com/video/BV1aa411c7mD?p=${currentPage}`;
+      layout.renderRail(source, true);
+
+      assert.equal(layout.railLocateIndex, 40);
+      assert.equal(layout.railLocateButton.disabled, false);
+      assert.ok(rail.scrollLeft > 0);
+
+      rail.scrollLeft = 0;
+      layout.renderRailWindow();
+      layout.locateCurrentRailItem();
+      assert.ok(rail.scrollLeft > 0);
+    }
+  } finally {
+    global.location.href = previousHref;
+  }
+});
+
+test("Locate keeps parts matching exact to the page", () => {
+  const previousHref = global.location.href;
+
+  try {
+    const { layout, source } = railFixture(LayoutRoot, 100, SourceKind.PARTS);
+    layout.createRailLocate();
+    source.items[40].targetUrl =
+      "https://www.bilibili.com/video/BV1aa411c7mD?p=1";
+    global.location.href =
+      "https://www.bilibili.com/video/BV1aa411c7mD?p=2";
+    layout.renderRail(source, true);
+
+    assert.equal(layout.railLocateIndex, -1);
+    assert.equal(layout.railLocateButton.disabled, true);
+
+    source.items[40].targetUrl =
+      "https://www.bilibili.com/video/BV1aa411c7mD?p=2";
+    layout.renderRail(source, true);
+
+    assert.equal(layout.railLocateIndex, 40);
+    assert.equal(layout.railLocateButton.disabled, false);
+  } finally {
+    global.location.href = previousHref;
+  }
+});
+
 test("Locate jumps to a cached current item in a large rail without rebuilding entries", () => {
   for (const kind of [SourceKind.PARTS, SourceKind.COLLECTION, SourceKind.WATCH_LATER, SourceKind.HISTORY]) {
     const { layout, source, rail, created, card } = railFixture(LayoutRoot, 10000, kind);

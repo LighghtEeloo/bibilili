@@ -125,23 +125,50 @@ test("reveals a cached watch-later target in batches without another request", a
   assert.equal(requests.length, 2);
 });
 
-test("watch-later reveal leaves unloaded, absent, and different-part targets alone", async (t) => {
+test("watch-later reveal leaves unloaded, absent, and non-archive targets alone", async (t) => {
   const requests = mockApi(t, entries(1, 131), [payload([])]);
   const store = new AccountSourceStore(() => {});
   assert.equal(store.revealWatchLaterItem("https://www.bilibili.com/video/av100"), null);
   assert.equal(requests.length, 0);
   await store.refresh("en");
 
+  const revealed = store.revealWatchLaterItem(
+    "https://www.bilibili.com/video/av100?p=2"
+  );
+  assert.equal(revealed.items.length, 110);
+  assert.equal(revealed.items[99].watchLaterAid, "100");
+
   for (const targetUrl of [
     "https://www.bilibili.com/video/av999",
-    "https://www.bilibili.com/video/av100?p=2",
     "https://example.com/video/av100",
     "invalid"
   ]) {
     assert.equal(store.revealWatchLaterItem(targetUrl), null);
   }
-  assert.equal(source(store, SourceKind.WATCH_LATER).items.length, 80);
+  assert.equal(source(store, SourceKind.WATCH_LATER).items.length, 110);
   assert.equal(store.currentWatchLaterCount(), 131);
+  assert.equal(requests.length, 2);
+});
+
+test("watch-later reveal matches one archive across parts", async (t) => {
+  const list = entries(1, 131);
+  list[99] = {
+    aid: 100,
+    bvid: "BV1xx411c7mD",
+    page: { page: 2 },
+    title: "Video 100"
+  };
+  const requests = mockApi(t, list, [payload([])]);
+  const store = new AccountSourceStore(() => {});
+  await store.refresh("en");
+
+  for (const part of [1, 2]) {
+    const revealed = store.revealWatchLaterItem(
+      `https://www.bilibili.com/video/BV1xx411c7mD?p=${part}`
+    );
+    assert.equal(revealed.items.length, 110);
+    assert.equal(revealed.items[99].watchLaterAid, "100");
+  }
   assert.equal(requests.length, 2);
 });
 

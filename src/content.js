@@ -2838,7 +2838,7 @@
     }
 
     /**
-     * Returns the current watch route key used to locate collection cards.
+     * Returns the current watch route key used to locate page-owned cards.
      *
      * @returns {string | null}
      */
@@ -2854,6 +2854,23 @@
      */
     static watchRouteKeyForUrl(value) {
       return BilibiliRoute.watchRouteKeyForUrl(value, window.location.href);
+    }
+
+    /**
+     * Returns the stable card match key for one source kind.
+     *
+     * Note: Bilibili watch-later records are archive-level and carry one page,
+     * so watch later matches the archive identity. Other focusable sources
+     * match the full watch route, including its page number.
+     *
+     * @param {string} sourceKind
+     * @param {string | URL | null | undefined} value
+     * @returns {string | null}
+     */
+    static matchKeyForUrl(sourceKind, value) {
+      return sourceKind === SourceKind.WATCH_LATER
+        ? SourceAdapter.playableIdentityForUrl(value)
+        : SourceAdapter.watchRouteKeyForUrl(value);
     }
 
     /**
@@ -3404,13 +3421,17 @@
     }
 
     /**
-     * Returns the playable route identity used to merge account pages.
+     * Returns the stable match key used to merge account pages.
+     *
+     * Note: Watch later is archive-level, so every page of one archive shares
+     * a key. History and favorites keep the page route.
      *
      * @param {VideoItem} item
      * @returns {string}
      */
     static itemKey(item) {
-      return SourceAdapter.watchRouteKeyForUrl(item.targetUrl) ?? item.targetUrl;
+      return SourceAdapter.matchKeyForUrl(item.sourceKind, item.targetUrl) ??
+        item.targetUrl;
     }
 
     /**
@@ -3985,19 +4006,28 @@
     /**
      * Reveals the cached watch-later batch containing a target without fetching.
      *
+     * Watch later matches the archive identity because one to-view record
+     * represents the whole archive, not a specific part.
+     *
      * Existing expansion is retained. An absent target leaves the source alone.
      *
      * @param {string} targetUrl
      * @returns {VideoListSource | null} Revealed source, or null for no match.
      */
     revealWatchLaterItem(targetUrl) {
-      const routeKey = SourceAdapter.watchRouteKeyForUrl(targetUrl);
-      if (!routeKey) {
+      const matchKey = SourceAdapter.matchKeyForUrl(
+        SourceKind.WATCH_LATER,
+        targetUrl
+      );
+      if (!matchKey) {
         return null;
       }
       const record = this.records.get(SourceKind.WATCH_LATER);
       const index = record.items.findIndex(
-        (item) => AccountSourceAdapter.itemKey(item) === routeKey
+        (item) => SourceAdapter.matchKeyForUrl(
+          SourceKind.WATCH_LATER,
+          item.targetUrl
+        ) === matchKey
       );
       if (index === -1) {
         return null;
@@ -13452,8 +13482,8 @@
       this.renderFavoriteRailState(source, title);
       const watchRouteKey = SourceAdapter.currentWatchRouteKey();
       const locateKey = watchRouteKey ? `route:${watchRouteKey}` : null;
-      const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
-        ? watchRouteKey
+      const currentMatchKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+        ? SourceAdapter.matchKeyForUrl(source.kind, window.location.href)
         : null;
       const keyCounts = new Map();
       this.railSource = source;
@@ -13461,14 +13491,14 @@
       this.railLocateIndex = -1;
       this.railEntries = source.items.map((item, index) => {
         const key = this.videoCardRenderKey(item, keyCounts);
-        const itemRouteKey = currentRouteKey
-          ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
+        const itemMatchKey = currentMatchKey
+          ? SourceAdapter.matchKeyForUrl(source.kind, item.targetUrl)
           : null;
         const isCurrent = Boolean(this.currentRailItemMatchReason(
           source.kind,
           item,
-          currentRouteKey,
-          itemRouteKey
+          currentMatchKey,
+          itemMatchKey
         ));
         if (this.railLocateIndex === -1 && (isCurrent || key === locateKey)) {
           this.railLocateIndex = index;
@@ -13496,13 +13526,13 @@
 
       const currentIndex = this.railEntries.findIndex((entry) => entry.isCurrent);
       let centerIndex = -1;
-      if (currentIndex !== -1 && currentRouteKey) {
+      if (currentIndex !== -1 && currentMatchKey) {
         if (!moreInteraction && (
-          resetScroll || this.locatedCurrentRouteKeys.get(sourceKey) !== currentRouteKey
+          resetScroll || this.locatedCurrentRouteKeys.get(sourceKey) !== currentMatchKey
         )) {
           centerIndex = currentIndex;
         }
-        this.locatedCurrentRouteKeys.set(sourceKey, currentRouteKey);
+        this.locatedCurrentRouteKeys.set(sourceKey, currentMatchKey);
       }
       const saved = source.kind === SourceKind.FAVORITES
         ? this.favoriteRailPositions.get(source.folderId) : undefined;
@@ -14052,7 +14082,7 @@
     }
 
     /**
-     * Returns true when the source can scroll to the current watch route.
+     * Returns true when the source can scroll to the current watch target.
      *
      * @param {string} sourceKind
      * @returns {boolean}
@@ -14224,15 +14254,15 @@
      *
      * @param {string} sourceKind
      * @param {VideoItem} item
-     * @param {string | null} currentRouteKey
-     * @param {string | null} itemRouteKey
+     * @param {string | null} currentMatchKey
+     * @param {string | null} itemMatchKey
      * @returns {string | null}
      */
     currentRailItemMatchReason(
       sourceKind,
       item,
-      currentRouteKey,
-      itemRouteKey
+      currentMatchKey,
+      itemMatchKey
     ) {
       if (sourceKind === SourceKind.COLLECTION && item.isCurrent) {
         return "native-current-marker";
@@ -14240,34 +14270,34 @@
 
       if (
         LayoutRoot.sourceLocatesCurrentCard(sourceKind) &&
-        currentRouteKey &&
-        itemRouteKey === currentRouteKey
+        currentMatchKey &&
+        itemMatchKey === currentMatchKey
       ) {
-        return "route-key";
+        return "match-key";
       }
 
       return null;
     }
 
     /**
-     * Matches a browse card to the current watch route with the rail's rule.
+     * Matches a browse card to the current watch target with the rail's rule.
      *
      * @param {VideoListSource} source
      * @param {VideoItem} item
      * @returns {boolean}
      */
     browseCardIsCurrent(source, item) {
-      const currentRouteKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
-        ? SourceAdapter.currentWatchRouteKey()
+      const currentMatchKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+        ? SourceAdapter.matchKeyForUrl(source.kind, window.location.href)
         : null;
-      const itemRouteKey = currentRouteKey
-        ? SourceAdapter.watchRouteKeyForUrl(item.targetUrl)
+      const itemMatchKey = currentMatchKey
+        ? SourceAdapter.matchKeyForUrl(source.kind, item.targetUrl)
         : null;
       return Boolean(this.currentRailItemMatchReason(
         source.kind,
         item,
-        currentRouteKey,
-        itemRouteKey
+        currentMatchKey,
+        itemMatchKey
       ));
     }
 
@@ -16438,7 +16468,7 @@
    * @property {string} watchLaterActionKey Stable mutation key or empty string.
    * @property {string} watchLaterActionTargetUrl Add target URL or empty string.
    * @property {string} watchLaterActionLabel Accessible mutation label.
-   * @property {boolean} isCurrent Current watch-route state.
+   * @property {boolean} isCurrent Whether the card matches the current target.
    */
 
   /**
@@ -16464,7 +16494,7 @@
    * @typedef {object} RailCardEntry
    * @property {VideoItem} item Source metadata, independent of rendered DOM.
    * @property {string} key Stable key including duplicate-route occurrence.
-   * @property {boolean} isCurrent Whether this item matches the watch route.
+   * @property {boolean} isCurrent Whether this item matches the current target.
    */
 
   /**
