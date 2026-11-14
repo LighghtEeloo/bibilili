@@ -7433,7 +7433,7 @@
      * @param {string | null} data.sourceKey
      * @param {Array<{key: string, label: string, items: object[]}>} data.sections
      * @param {string} data.language
-     * @param {string} data.query
+     * @param {boolean} data.filtered Query or facets narrow the source.
      * @param {{phase: "scanning" | "error", scanned: number} | null} [data.scan]
      * @param {boolean} [data.resetScroll]
      * @param {boolean} [data.queryChanged]
@@ -7706,7 +7706,7 @@
     /** @returns {"loading" | "error" | "more" | null} */
     tailState() {
       const source = this.data?.source;
-      if (!source || this.data?.query.trim()) return null;
+      if (!source || this.data?.filtered) return null;
       if (source.root !== null || !source.pagination?.hasMore) return null;
       const status = source.pagination?.status ?? AccountSourceStatus.READY;
       if (status === AccountSourceStatus.LOADING) return "loading";
@@ -8012,7 +8012,7 @@
     maybeRequestMore() {
       const source = this.data?.source;
       const host = this.cardHost;
-      if (!this.isOpen || !source || !host?.requestMore || this.data.query.trim()) return;
+      if (!this.isOpen || !source || !host?.requestMore || this.data.filtered) return;
       if (source.root !== null || !source.pagination?.hasMore) return;
       const status = source.pagination?.status ?? AccountSourceStatus.READY;
       if (status !== AccountSourceStatus.READY || this.stalledKeys.has(this.data.sourceKey)) return;
@@ -8240,6 +8240,10 @@
       this.sourceKey = null;
       this.sections = [];
       this.query = "";
+      /** @type {BrowseFilterState} */
+      this.filters = BrowseFilters.empty();
+      /** @type {BrowseFacetCounts | null} */
+      this.facets = null;
       this.headerCount = 0;
       this.filteredCount = 0;
       this.visibleDate = null;
@@ -8386,7 +8390,7 @@
       }
       this.grid.open();
       this.focusInitial();
-      if (this.query.trim() && this.canScan()) {
+      if (this.hasCriteria() && this.canScan()) {
         this.prepareScan({ immediate: true });
         this.renderContent();
       }
@@ -8421,6 +8425,7 @@
       if (sourceChanged) {
         this.stopScan();
         this.query = "";
+        this.filters = BrowseFilters.empty();
         this.searchInput.value = "";
       }
 
@@ -8455,7 +8460,8 @@
      */
     renderContent({ resetScroll = false, queryChanged = false } = {}) {
       const items = this.source?.items ?? [];
-      const filtered = ListSearch.filter(items, this.query);
+      const filtered = BrowseFilters.apply(items, this.query, this.filters);
+      this.facets = this.source ? BrowseFilters.facets(items, this.query, this.filters) : null;
       const keyCounts = new Map();
       const entries = filtered.map((item, index) => ({
         item,
@@ -8475,7 +8481,7 @@
         sourceKey: this.sourceKey,
         sections: this.sections,
         language: this.language,
-        query: this.query,
+        filtered: this.hasCriteria(),
         scan: this.scanState,
         resetScroll,
         queryChanged
@@ -8522,7 +8528,7 @@
     renderHeaderCount() {
       const count = this.source ? this.filteredCount : this.headerCount;
       const format = new Intl.NumberFormat(UiStrings.numberLocale(this.language));
-      const filtered = Boolean(this.source && this.query.trim());
+      const filtered = Boolean(this.source && this.hasCriteria());
       const label = filtered
         ? format.format(count) + " / " + format.format(this.headerCount)
         : format.format(count);
@@ -8544,6 +8550,11 @@
       if (this.dateLabel.hidden !== !label) this.dateLabel.hidden = !label;
     }
 
+    /** @returns {boolean} The query or a facet narrows the source. */
+    hasCriteria() {
+      return Boolean(this.query.trim()) || BrowseFilters.isActive(this.filters);
+    }
+
     /**
      * @param {string} value
      */
@@ -8556,15 +8567,37 @@
       this.renderContent({ resetScroll: true, queryChanged: true });
     }
 
-    /** Clears the search query. @returns {boolean} */
-    clearQuery() {
-      if (!this.searchInput?.value) return false;
+    /**
+     * Replaces the facet selection. Facet changes come from clicks, so a scan
+     * starts without the query debounce.
+     *
+     * @param {Partial<BrowseFilterState>} changes
+     */
+    applyFilters(changes) {
+      const filters = { ...this.filters, ...changes };
+      if (BrowseFilters.equal(filters, this.filters)) return;
+      this.filters = filters;
+      this.prepareScan({ immediate: true });
+      this.renderContent({ resetScroll: true, queryChanged: true });
+    }
+
+    /**
+     * Clears the query and every facet.
+     *
+     * @returns {boolean} Whether anything was cleared.
+     */
+    clearSearch() {
+      const hadQuery = Boolean(this.searchInput?.value || this.query);
+      const hadFilters = BrowseFilters.isActive(this.filters);
+      if (!hadQuery && !hadFilters) return false;
+      this.query = "";
       this.searchInput.value = "";
-      this.applyQuery("");
+      this.filters = BrowseFilters.empty();
+      this.prepareScan();
+      this.renderContent({ resetScroll: true, queryChanged: true });
       this.searchInput.focus?.({ preventScroll: true });
       return true;
     }
-
 
     /**
      * Returns true when the selected source has a continuation that can be
@@ -8599,7 +8632,7 @@
       this.cancelScanTimer();
       this.scanGeneration += 1;
       this.resolveScanWaiters(false);
-      const scanning = Boolean(this.query.trim() && this.canScan());
+      const scanning = Boolean(this.hasCriteria() && this.canScan());
       this.scanState = scanning
         ? { phase: "scanning", scanned: this.source?.items?.length ?? 0 }
         : null;
@@ -8627,7 +8660,7 @@
      */
     async runScan(generation) {
       let steps = 0;
-      while (generation === this.scanGeneration && this.isOpen && this.query.trim()) {
+      while (generation === this.scanGeneration && this.isOpen && this.hasCriteria()) {
         steps += 1;
         if (steps > BROWSE_SCAN_MAX_STEPS) {
           this.finishScanError(generation);
@@ -8687,7 +8720,8 @@
     }
 
     /**
-     * Replaces the panel source with one scanned page while keeping the query.
+     * Replaces the panel source with one scanned page while keeping the query
+     * and facets.
      *
      * @param {VideoListSource} source
      * @param {number} generation
@@ -8729,7 +8763,7 @@
 
     /** Restarts a failed scan from the retained source cursor. */
     retryScan() {
-      if (!this.isOpen || !this.query.trim() || !this.canScan()) return;
+      if (!this.isOpen || !this.hasCriteria() || !this.canScan()) return;
       const hadFocus = this.document.activeElement === this.scanRetry;
       this.prepareScan({ immediate: true });
       this.renderContent();
@@ -8795,8 +8829,8 @@
     }
 
     /**
-     * Keeps Tab inside the sheet and gives Escape its query-first, then close
-     * order.
+     * Keeps Tab inside the sheet. Escape clears the query and facets first,
+     * then closes.
      *
      * @param {KeyboardEvent} event
      */
@@ -8806,7 +8840,7 @@
 
       if (event.key === "Escape" && !event.isComposing) {
         event.preventDefault();
-        if (this.clearQuery()) return;
+        if (this.clearSearch()) return;
         this.close(true);
         return;
       }
@@ -8867,11 +8901,13 @@
       }
     }
 
-    /** Clears the source instance, query, and scroll for a new page session. */
+    /** Clears the source instance, query, facets, and scroll for a new page session. */
     resetSession() {
       this.close(false);
       this.stopScan();
       this.query = "";
+      this.filters = BrowseFilters.empty();
+      this.facets = null;
       this.searchInput.value = "";
       this.source = null;
       this.sourceKey = null;

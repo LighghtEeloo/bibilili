@@ -905,3 +905,96 @@ test("closing the browse panel stops its scan and reopening resumes it", async (
   assert.equal(panel.filteredCount, 3);
   assert.equal(panel.scanRow.hidden, true);
 });
+
+function facetSource(overrides = {}) {
+  const items = [
+    { ...scanItem(0, "Short one"), durationSeconds: 120, watchState: "finished" },
+    { ...scanItem(1, "Long one"), durationSeconds: 1800, watchState: "partial" },
+    { ...scanItem(2, "Long two"), durationSeconds: 2400, watchState: "unwatched" }
+  ];
+  items[2].author = items[1].author;
+  return scanSource(items, { pagination: { hasMore: false, status: "ready" }, ...overrides });
+}
+
+test("browse facets narrow the grid, count matches, and Escape clears them with the query", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+  panel.open({ title: "History", count: 3, language: "en", source: facetSource() });
+
+  panel.applyFilters({ status: "unfinished" });
+  assert.equal(panel.filteredCount, 2);
+  assert.equal(panel.count.textContent, itemCount("2 / 3"));
+  assert.equal(panel.facets.duration.get("long"), 2);
+
+  panel.applyFilters({ duration: "short" });
+  assert.equal(panel.filteredCount, 0);
+  assert.equal(panel.grid.data.filtered, true);
+
+  panel.searchInput.value = "long";
+  panel.searchInput.dispatch("input");
+  const escape = keyEvent("Escape", { target: panel.searchInput });
+  panel.handleKeydown(escape);
+
+  assert.equal(panel.isOpen, true);
+  assert.equal(panel.query, "");
+  assert.equal(panel.searchInput.value, "");
+  assert.equal(panel.filters.status, "all");
+  assert.equal(panel.filters.duration, "all");
+  assert.equal(panel.filteredCount, 3);
+  assert.equal(panel.grid.data.filtered, false);
+
+  panel.handleKeydown(keyEvent("Escape", { target: panel.searchInput }));
+  assert.equal(panel.isOpen, false);
+});
+
+test("browse facets persist across reopening and reset on a source change", () => {
+  const { document, panel } = browseFixture();
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+  const source = facetSource();
+  panel.open({ title: "History", count: 3, language: "en", source });
+  panel.applyFilters({ author: source.items[1].author });
+  assert.equal(panel.filteredCount, 2);
+
+  panel.close();
+  panel.open({ title: "History", count: 3, language: "en", source });
+  assert.equal(panel.filters.author, source.items[1].author);
+  assert.equal(panel.filteredCount, 2);
+
+  panel.update({ title: "Watch later", count: 3, language: "en", source: facetSource({ kind: "watch_later" }) });
+  assert.equal(panel.filters.author, null);
+  assert.equal(panel.filteredCount, 3);
+});
+
+test("a facet starts the account scan immediately without a query", async () => {
+  let calls = 0;
+  const { document, panel } = browseFixture({
+    scanDebounceMs: 10000,
+    scanPage: async () => {
+      calls += 1;
+      return finalPage;
+    }
+  });
+  const host = cardHost(document);
+  panel.cardHost = host;
+  panel.grid.cardHost = host;
+  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+
+  const initial = scanSource([{ ...scanItem(0), watchState: "finished" }]);
+  const finalPage = scanSource(
+    [{ ...scanItem(0), watchState: "finished" }, { ...scanItem(1), watchState: "partial" }],
+    { pagination: { hasMore: false, status: "ready" } }
+  );
+  panel.open({ title: "History", count: 1, language: "en", source: initial });
+  panel.applyFilters({ status: "unfinished" });
+  assert.equal(panel.scanRow.hidden, false);
+
+  await waitFor(() => calls === 1 && panel.scanRow.hidden);
+  assert.equal(panel.filteredCount, 1);
+  assert.equal(panel.grid.tailState(), null);
+});
