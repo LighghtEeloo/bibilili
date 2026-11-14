@@ -733,6 +733,15 @@ list's own ordering time: history `view_at`, favorite `fav_time`, or watch-later
 Cards do not display it. A source without a usable timestamp renders as one
 ungrouped section.
 
+A video item may carry `durationSeconds`, the duration in whole seconds. Account
+adapters read it from record duration fields; page-owned adapters parse it from
+the duration token. Account records with progress also carry a `watchState`:
+unwatched, partial, or finished. Bilibili reports progress for the
+last-watched part. A multipart archive is finished only when that part is the
+last part and its progress marks it finished; otherwise any progress makes it
+partial. The card's progress label continues to describe the last-watched part.
+The browse panel uses both fields for filters.
+
 For page-owned sources, the target URL resolves to a playable Bilibili watch
 route. Video archive routes and bangumi play routes are valid targets. Profile,
 submission, and sidebar navigation routes do not produce video items. Page-owned
@@ -1035,9 +1044,9 @@ with its search field focused, including when the tool was in More. The tool
 declares a dialog popup with `aria-haspopup`, exposes the panel's open state
 with `aria-expanded`, and references the panel with `aria-controls`.
 
-The rail does not filter its own cards. The browse panel owns the query for the
-selected source. Closing the panel leaves the rail's route, open state, and
-scroll position unchanged.
+The rail does not filter its own cards. The browse panel owns the query and
+filters for the selected source. Closing the panel leaves the rail's route, open
+state, and scroll position unchanged.
 
 ## List Rail
 
@@ -1191,18 +1200,19 @@ reconciliation updates an open panel in place. The panel is excluded from
 native DOM discovery; its changes are extension-owned mutations.
 
 A source instance first opens the panel at the top. It retains its panel scroll
-position and query while the page session and layout session continue, and a
-reopened panel restores the first visible card by key when it still exists and
-otherwise opens at the top. A new page session starts at the top. The panel's
-open state does not survive a document load. The panel does not move to the
-current video; the rail retains that positioning behavior.
+position, query, and filters while the page session and layout session continue,
+and a reopened panel restores the first visible card by key when it still exists
+and otherwise opens at the top. A new page session starts at the top. The
+panel's open state does not survive a document load. The panel does not move to
+the current video; the rail retains that positioning behavior.
 
-The panel header titles the source and shows a second line with the visible
-date group and a count of renderable items. While a query is active, the count
-reads matching items over retained items. Counts describe renderable items, not
-account or folder metadata totals. The header, search row, and scan progress row
-stay fixed; the card grid owns the panel's vertical scroll. Panel labels and date sections use
-the UI language; folder titles keep Bilibili's wording.
+The panel header titles the source and shows a second line with the visible date
+group and a count of renderable items. While a query or filter is active, the
+count reads matching items over retained items. Counts describe renderable
+items, not account or folder metadata totals. The header, search row, and scan
+progress row stay fixed; the card grid owns the panel's vertical scroll. Panel
+labels and date sections use the UI language; folder titles keep Bilibili's
+wording.
 
 Browse cards are the rail's cards rendered into a different geometry: a fluid
 card with a 16:9 thumbnail above a fixed text block. The panel uses the same card
@@ -1238,9 +1248,9 @@ Date headers are layout rows in the virtual grid and scroll with the cards. The
 panel header shows the date group of the first visible card row while the grid
 scrolls, so the current date remains identifiable without a pinned header.
 
-Search filters items before sections are built. Section headers and counts
-describe the filtered result. Section boundaries follow source order; the panel
-does not reorder items by timestamp.
+Search and filters narrow items before sections are built. Section headers and
+counts describe the filtered result. Section boundaries follow source order; the
+panel does not reorder items by timestamp.
 
 ## Browse Virtual Grid
 
@@ -1278,24 +1288,26 @@ the viewport begins in a date header or in a gap between rows, the grid retains
 the exact scroll offset so near-top updates do not snap to the next card row. If
 the source shrinks past the current position, the grid clamps to its new end.
 
-Changing the query rebuilds the layout rows and returns the panel to the top.
-Clearing the query rebuilds the unfiltered rows at the top. Matches that arrive
-from a scan extend the rows without moving the current scroll position.
+Changing the query or a filter rebuilds the layout rows and returns the panel to
+the top. Clearing them rebuilds the unfiltered rows at the top. Matches that
+arrive from a scan extend the rows without moving the current scroll position.
 
 ## Browse Search
 
 The panel has its own persistent search field. Its accessible name and
 placeholder name the selected source, not a broader video library. It searches
 the complete selected source rather than only the items retained by the rail.
-Matching uses the rail's case-insensitive, Unicode-normalized substring over
-title and author. Favorites searches the selected folder.
+Whitespace separates query terms. Each term must appear in the title or author
+as a case-insensitive, Unicode-normalized substring. Favorites searches the
+selected folder.
 
 Page-owned sources and account sources with no continuation filter locally. An
 account source with a continuation starts a full-source scan after a short input
-debounce. The scan requests one continuation page at a time through the source's
-normal request path and adds matches to their date sections as pages complete.
-An empty continuation page that advances the cursor remains a scan step; a
-missing or repeated cursor ends the scan.
+debounce. A filter change starts the scan without the debounce. The scan
+requests one continuation page at a time through the source's normal request
+path and adds matches to their date sections as pages complete. An empty
+continuation page that advances the cursor remains a scan step; a missing or
+repeated cursor ends the scan.
 
 The panel reports the scan as provisional. The result count updates as pages
 arrive, and the no-matches state appears only when the scan reaches the end. A
@@ -1314,22 +1326,52 @@ reconcile; the rail renders the expanded list when the panel closes. Scan pages
 update the panel and the source store without a page discovery pass or a
 player, comment, or dock remount.
 
-The panel owns the list query. Closing and reopening the panel retains the
-query while the source instance continues. Reopening a panel with a retained
-query resumes its scan when the source can continue.
+The panel owns the list query and filters. Closing and reopening the panel
+retains them while the source instance continues; a source instance change or a
+new page session clears them. Reopening a panel with a retained query or filter
+resumes its scan when the source can continue.
 
-The header count compares matching items with retained items while a query is
-active. The no-matches state sits in the grid while the query stays visible in
-the search field, and explains that Escape clears it.
+The header count compares matching items with retained items while a query or
+filter is active. The no-matches state sits in the grid while the query and
+filters stay visible, and explains that Escape clears them.
+
+## Browse Filters
+
+Browse filters are click-based controls that narrow the selected source together
+with the query. The filters are watch status, duration, and uploader. They follow
+the query field in the search row and wrap below it on narrow panels.
+
+Watch status is a group of three pressed buttons: All, Unfinished, and Finished.
+Unfinished covers unwatched and partial items. Duration and uploader are native
+selects. Duration buckets are under 5 minutes, 5 to 20 minutes, 20 to 60
+minutes, and 60 minutes or more; each bucket includes its lower bound. Uploader
+options list authors by descending count. Clear filters appears while any filter
+is active and resets every filter without changing the query.
+
+A filter appears when retained items carry its data: a watch state, a duration,
+or at least two distinct authors. An active filter stays visible so it can be
+cleared. Without an available filter, the search row contains only the query
+field. Items without a watch state or duration match only that filter's All
+option.
+
+Each option shows the item count it would leave. The count applies the query and
+the other filters. Status and duration options that would leave no items are
+disabled unless selected. Uploader options include authors with matching items
+and the selected author. Scan pages update option text in place and replace
+option nodes only when the option set changes.
+
+The query and filters combine conjunctively and keep source order. A filter
+change has the same effects as a query change: it updates the header count,
+suspends automatic continuation, and returns the grid to the top.
 
 ## Browse Keyboard and Focus
 
 The panel is a modal dialog labelled by its source title. Opening moves focus to
 its search field. The Close control precedes the search field in tab order.
 Focus stays within the panel: Tab and Shift+Tab move through the Close control,
-the search field, the scan retry control when visible, and the rendered cards,
-wrapping at the ends. Keyboard events inside the panel do not reach Bilibili's
-player shortcuts.
+the search field, the visible filter controls, the scan retry control when
+visible, and the rendered cards, wrapping at the ends. Keyboard events inside
+the panel do not reach Bilibili's player shortcuts.
 
 Command+F and Control+F open the panel for the selected source and focus its
 query field. The shortcut follows the Search tool's availability: it consumes
@@ -1345,12 +1387,13 @@ is in the grid, Home and End move to the first and last card of the filtered
 list, and PageUp and PageDown scroll one viewport without moving focus. Moving
 focus reveals its target row.
 
-Escape with a non-empty query clears it and focuses the search field. Escape
-with an empty query closes the panel. The Close control always closes. Closing
-by Escape or the Close control returns focus to the Search tool, to the More
-launcher when the tool is unpinned, or to the selected source button or
-activation control when the tool is no longer available. A scrim pointer
-dismissal closes without forcing focus.
+Escape with a non-empty query or an active filter clears both and focuses the
+search field. Escape with neither closes the panel. Clear filters also returns
+focus to the search field. The Close control always closes. Closing by Escape or
+the Close control returns focus to the Search tool, to the More launcher when
+the tool is unpinned, or to the selected source button or activation control
+when the tool is no longer available. A scrim pointer dismissal closes without
+forcing focus.
 
 A plain same-tab card activation closes the panel before navigation; focus
 follows the destination navigation. Modified and new-tab activations leave the
