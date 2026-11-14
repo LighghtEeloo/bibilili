@@ -179,16 +179,16 @@ storage is available. Storage events apply changes to other open Bilibili tabs.
 Settings manages extension preferences on the watch page. Its button follows
 the activation control onto the native page when the layout is disabled and
 sits at the end of the dock when enabled. The same button opens a nonmodal popup
-with Features, Action bar, Operation history, and Performance tabs. Operation
-history and Performance require their respective features to be enabled.
+with Features, Rail, Action bar, Operation history, and Performance tabs.
+Operation history and Performance require their respective features to be
+enabled.
 
 The Settings view selector starts the Features tab. Concise is the default and
 shows UI language, description and tags, and in-page video switching.
-Fully fledged adds thumbnail enrichment, favorite click behavior, rail refresh,
-automatic rail continuation, video sources, and operation history. Advanced
-adds performance recording, exposing every feature setting. View modes control
-the rows in Features and preserve tab availability, the selected tab, feature
-values, source choices, and action placements.
+Fully fledged adds thumbnail enrichment, favorite click behavior, and operation
+history. Advanced adds performance recording, exposing every feature setting.
+View modes control the rows in Features and preserve tab availability, the
+selected tab, feature values, rail and source choices, and action placements.
 
 Settings remembers the last selected tab across videos and page reloads in
 origin-local storage. Features is the initial tab when no valid selection is
@@ -197,43 +197,59 @@ tabs and rows. Tab selection is stored independently of feature preferences.
 
 The UI language selector follows Settings view. Language names appear in their
 own language. The tab also controls the description and tags, missing-thumbnail
-enrichment, in-page video switching, single-click favorite saves, rail refresh
-on return to start, automatic rail continuation, each video source, operation
+enrichment, in-page video switching, single-click favorite saves, operation
 history, and performance recording. These features default to enabled except
 operation history and performance recording, which default to off.
 
 Disabling the description restores its native node and removes its extension
 presentation.
 Disabling thumbnail enrichment cancels pending cover requests and uses
-page-provided thumbnails. Disabling a source removes it from routing and source
-root marking. A disabled account source cancels outstanding list requests and
-retains its cached items and expansion for a refresh when re-enabled. Favorites
-appears before Watch later in Features, as it does in the dock. Disabling
-Favorites closes its picker and cancels folder video requests. Folder metadata
-remains available to direct saves in either click mapping. The current-video
-favorite action retains its independent behavior and Action bar preferences.
+page-provided thumbnails.
 
-The video-switching and direct-save settings explain their behavior through
-question-mark help buttons beside their labels. The explanation appears on
+The Rail tab controls rail opening, rail refresh on return to start, automatic
+rail continuation, and each video source. Its rows appear in every Settings
+view. Refresh, continuation, and every source default to enabled.
+
+Rail opening sets the open state of a route that reconciliation selects
+automatically. Always opens the rail and is the default. Parts and collections
+opens it when the route is the parts or collection source containing the
+current video. Never leaves the dock controls-only. Origin and restored routes
+keep their recorded open state, and source buttons open the rail under every
+choice. A changed choice applies to the next automatic route and leaves the
+current rail unchanged.
+
+Disabling a source removes it from routing and source root marking. A disabled
+account source cancels outstanding list requests and retains its cached items
+and expansion for a refresh when re-enabled. Favorites appears before Watch
+later in Rail, as it does in the dock. Disabling Favorites closes its picker and
+cancels folder video requests. Folder metadata remains available to direct
+saves in either click mapping. The current-video favorite action retains its
+independent behavior and Action bar preferences.
+
+Settings with non-obvious behavior, including video switching, direct saves,
+automatic continuation, and rail opening, explain it through question-mark help
+buttons beside their labels. The explanation appears on
 hover or keyboard focus; activating the help button also reveals it for touch
 input.
 
-Action bar controls whether each watch action or list tool appears on the bar
-or in More. List tools are Locate, Start, Refresh, and Search. All
-actions default to the bar. Show More button defaults to enabled and displays the
-launcher when More contains available actions. Disabling it
-hides the launcher and closes its popup while retaining action placements.
+Action bar controls whether each list tool or watch action appears on the bar
+or in More. List tools precede watch actions, as they do on the bar. List tools
+are Locate, Start, Refresh, and Search. All actions default to the bar. Show
+More button defaults to enabled and displays the launcher when More contains
+available actions. Disabling it hides the launcher and closes its popup while
+retaining action placements.
 Source order and the Power and Settings entry points have fixed placement.
 
 Preferences use a validated record of settings view mode, UI language, history
-capacity, and feature, source, and action booleans in Bilibili origin-local
-storage. Changes persist across videos and reloads and propagate through
+capacity, rail opening, and feature, source, and action booleans in Bilibili
+origin-local storage. Changes persist across videos and reloads and propagate through
 storage events to other Bilibili tabs. History capacity applies when its slider
 loses focus; other preferences apply immediately.
 Unavailable storage leaves the current page's choices active and displays a
-save-failure status. Restore defaults resets language, history capacity, feature,
-source, and placement preferences while retaining the settings view mode,
-available selected tab, activation state, and pane dimensions.
+save-failure status. Restore defaults resets language, history capacity, rail
+opening, feature, source, and placement preferences while retaining the
+settings view mode, available selected tab, activation state, and pane
+dimensions.
 
 Settings rows keep their control identity through reconciliation. Native watch
 icons use the same sanitized visual renderer and watch-later snapshot as dock
@@ -926,7 +942,8 @@ An automatically selected, unchosen Favorites surface yields to sources that
 load valid items. Explicitly selected and restored routes retain their source
 while folders load. Reconciliation preserves a chosen route while its source
 remains available; when the route disappears, the first available source
-becomes selected.
+becomes selected. An automatically selected route takes its open state from the
+rail opening preference.
 
 An origin route is a one-navigation source-route hint created by normal
 same-tab activation of an extension-owned video card. The next watch page
@@ -1057,7 +1074,7 @@ bottom presentation.
 
 The rail accepts horizontal gestures and translates unmodified vertical wheel
 input into horizontal scrolling. Modified wheel input retains browser handling.
-Route changes replace the group in place and reopen the rail.
+Route changes replace the group in place. Selecting a source reopens the rail.
 
 A rail window contains the visible cards and up to three neighbors on each
 side. The row retains the width of all revealed items while only window cards
