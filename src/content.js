@@ -11167,7 +11167,8 @@
     /**
      * Renders visible source controls and the bottom rail.
      *
-     * Source route state is applied only through this method. It preserves a
+     * Enabled sources follow the configured source order, which also sets the
+     * default route priority. Source route state is applied only through this method. It preserves a
      * pending route hint until that source appears, so account-backed sources
      * can arrive after the first render without losing the user's navigation
      * context.
@@ -11182,7 +11183,9 @@
         return;
       }
 
-      sources = sources.filter((source) => this.preferences.sources[source.kind]);
+      const order = this.preferences.sourceOrder;
+      sources = sources.filter((source) => this.preferences.sources[source.kind])
+        .sort((first, second) => order.indexOf(first.kind) - order.indexOf(second.kind));
       this.currentSources = sources;
       this.watchLaterArchiveKeys = LayoutRoot.watchLaterArchiveKeysFor(sources);
       this.currentActivationControl = activationControl;
@@ -15904,11 +15907,12 @@
               key === "refreshRailOnStart" || key === "silentRailLoading")) &&
             previous[group][key] !== this.preferences[group][key]));
       /*
-       * Note: Silent rail loading changes only the continuation presentation;
-       * it reconciles the rail without refreshing loaded account lists.
+       * Note: Silent rail loading and source order change only the dock
+       * presentation; they reconcile without refreshing loaded account lists.
        */
       const railPresentationChanged =
-        previous.features.silentRailLoading !== this.preferences.features.silentRailLoading;
+        previous.features.silentRailLoading !== this.preferences.features.silentRailLoading ||
+        previous.sourceOrder.some((kind, index) => kind !== this.preferences.sourceOrder[index]);
       const saved = !persist || SettingsPreference.write(this.preferences);
       this.applyFeaturePreferences();
       this.settingsView.update(this.preferences, this.enabled, this.resolveUiLanguage());

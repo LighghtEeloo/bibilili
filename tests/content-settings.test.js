@@ -652,6 +652,34 @@ test("the Action bar tab lists list tools before watch actions, as the bar does"
   assert.equal(kinds[4], WatchActionKind.LIKE);
 });
 
+test("source order keeps saved kinds once and appends missing kinds canonically", () => {
+  const canonical = SettingsPreference.defaults().sourceOrder;
+  assert.deepEqual(canonical, ["parts", "collection", "recommendations", "favorites", "watch_later", "history"]);
+  assert.deepEqual(SettingsPreference.normalize({ sourceOrder: ["history", "unknown", "parts", "history", 3] }).sourceOrder,
+    ["history", "parts", "collection", "recommendations", "favorites", "watch_later"]);
+  for (const sourceOrder of [undefined, "history", {}, []]) {
+    assert.deepEqual(SettingsPreference.normalize({ sourceOrder }).sourceOrder, canonical);
+  }
+});
+
+test("the dock follows the saved source order and reorders without reloading account lists", (t) => {
+  const { controller, layout, anchor } = settingsFixture(t);
+  t.mock.method(layout, "markSourceRoots", () => {});
+  t.mock.method(layout, "renderSourceDock", () => {});
+  const history = { kind: SourceKind.HISTORY, root: null, items: [{ targetUrl: "https://example.test/h", title: "H" }] };
+  const recommendations = { kind: SourceKind.RECOMMENDATIONS, root: null,
+    items: [{ targetUrl: "https://example.test/r", title: "R" }] };
+  const sourceOrder = ["history", "parts", "collection", "recommendations", "favorites", "watch_later"];
+  controller.setPreferences({ ...controller.preferences, sourceOrder });
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 1);
+  assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
+  layout.setSources([recommendations, history], true, anchor, null);
+  assert.deepEqual(layout.currentSources, [history, recommendations]);
+  assert.equal(layout.selectedSourceKind, SourceKind.HISTORY, "the first source with items is the default route");
+  controller.setPreferences({ ...controller.preferences, sourceOrder });
+  assert.equal(controller.scheduleReconcile.mock.callCount(), 1, "an unchanged order does not reconcile");
+});
+
 test("account continuation reports the revealed count for auto-load progress", async (t) => {
   const { controller } = settingsFixture(t);
   t.mock.method(controller.accountSources, "loadMore", async () => {});

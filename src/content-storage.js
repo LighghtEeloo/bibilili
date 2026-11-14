@@ -111,6 +111,7 @@
         railOpening: RailOpening.ALWAYS,
         features: { ...FEATURE_DEFAULTS },
         sources: Object.fromEntries(storageConfig.sourceOrder.map((kind) => [kind, true])),
+        sourceOrder: [...storageConfig.sourceOrder],
         pinnedActions: { ...storageConfig.actionDefaults }
       };
     }
@@ -128,6 +129,7 @@
         result.operationHistoryLimit = value.operationHistoryLimit;
       }
       if (Object.values(RailOpening).includes(value?.railOpening)) result.railOpening = value.railOpening;
+      result.sourceOrder = SettingsPreference.normalizeSourceOrder(value?.sourceOrder);
       for (const group of ["features", "sources", "pinnedActions"]) {
         const defaults = result[group];
         for (const key of Object.keys(defaults)) {
@@ -135,6 +137,19 @@
         }
       }
       return result;
+    }
+
+    /**
+     * Keeps known source kinds once in their saved order and appends missing
+     * kinds in canonical order, so the result is always a full permutation.
+     * @param {unknown} value
+     * @returns {string[]}
+     */
+    static normalizeSourceOrder(value) {
+      const canonical = storageConfig.sourceOrder;
+      const saved = Array.isArray(value)
+        ? value.filter((kind, index) => canonical.includes(kind) && value.indexOf(kind) === index) : [];
+      return [...saved, ...canonical.filter((kind) => !saved.includes(kind))];
     }
 
     /** @returns {SettingsPreferenceRecord} Saved preferences or defaults when unavailable. */
@@ -537,6 +552,7 @@
    * @property {string} railOpening Closed RailOpening applied to automatically chosen routes.
    * @property {{ description: boolean, thumbnails: boolean, inPageNavigation: boolean, favoriteToSelectedFolder: boolean, refreshRailOnStart: boolean, silentRailLoading: boolean, moreButton: boolean, operationHistory: boolean, performance: boolean }} features Optional presentations, video switching, rail continuation, recording, and action behavior.
    * @property {Record<string, boolean>} sources Enabled source kinds.
+   * @property {string[]} sourceOrder Every source kind once, in source bar and default-route order.
    * @property {Record<string, boolean>} pinnedActions True places an action on the bar; false uses More.
    */
 
