@@ -92,6 +92,7 @@ class RailElement {
 
   getBoundingClientRect() {
     const rail = this.ownerDocument.rail;
+    if (!rail) return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
     return { left: this === rail ? 0 : 12 - rail.scrollLeft };
   }
 }

@@ -458,7 +458,7 @@ test("browse panel focus order crosses card rows and wraps at the edges", () => 
   const controls = panel.focusableControls();
   assert.equal(controls[0], panel.closeButton);
   assert.equal(controls[1], panel.searchInput);
-  assert.equal(controls[2], panel.authorSelect);
+  assert.equal(controls[2], panel.filterBar.authorMenu.trigger);
   assert.equal(controls.slice(3).every((control) =>
     control.classList.contains("bibilili-card-link")), true);
   assert.equal(controls.length, 7);
@@ -539,7 +539,7 @@ test("browse panel moves focus to the next card when a refresh removes the focus
   const source = browseSource(3);
   panel.open({ title: "History", count: 3, language: "en", source });
   const controls = panel.focusableControls();
-  assert.equal(controls[2], panel.authorSelect);
+  assert.equal(controls[2], panel.filterBar.authorMenu.trigger);
   controls[4].focus();
   assert.equal(controls[4].closest(".bibilili-video-card").renderedItem.title, "Video 2");
 
@@ -1001,52 +1001,182 @@ test("a facet starts the account scan immediately without a query", async () => 
   assert.equal(panel.grid.tailState(), null);
 });
 
-test("browse filter bar shows available facets with counts and applies clicks", () => {
-  const { document, panel } = browseFixture();
-  const host = cardHost(document);
-  panel.cardHost = host;
-  panel.grid.cardHost = host;
-  panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
-  panel.open({ title: "History", count: 3, language: "en", source: facetSource() });
+function facetFixture(source = facetSource()) {
+  const fixture = browseFixture();
+  const host = cardHost(fixture.document);
+  fixture.panel.cardHost = host;
+  fixture.panel.grid.cardHost = host;
+  fixture.panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
+  fixture.panel.open({ title: "History", count: source.items.length, language: "en", source });
+  return { ...fixture, bar: fixture.panel.filterBar, source };
+}
 
-  const status = (value) => panel.statusButtons.get(value);
-  const statusCount = (value) => status(value).querySelector(".bibilili-browse-filter-count").textContent;
-  assert.equal(panel.filterBar.hidden, false);
-  assert.equal(panel.statusGroup.hidden, false);
-  assert.equal(panel.durationSelect.hidden, false);
-  assert.equal(panel.authorSelect.hidden, false);
-  assert.equal(panel.clearFiltersButton.hidden, true);
-  assert.deepEqual(["all", "unfinished", "finished"].map(statusCount), ["3", "2", "1"]);
-  assert.equal(status("all").getAttribute("aria-pressed"), "true");
+function menuOptions(menu) {
+  return menu.list.children.map((button) => ({
+    value: button.dataset.value,
+    disabled: Boolean(button.disabled),
+    checked: button.getAttribute("aria-checked") === "true",
+    count: button.querySelector(".bibilili-browse-option-count").textContent
+  }));
+}
 
-  status("finished").dispatch("click");
+test("browse status chips toggle with counts and release back to every status", () => {
+  const { panel, bar } = facetFixture();
+  const chip = (value) => bar.statusButtons.get(value);
+  const count = (value) => chip(value).querySelector(".bibilili-browse-chip-count").textContent;
+
+  assert.equal(bar.root.hidden, false);
+  assert.equal(bar.statusGroup.hidden, false);
+  assert.deepEqual([...bar.statusButtons.keys()], ["unfinished", "finished"]);
+  assert.deepEqual(["unfinished", "finished"].map(count), ["2", "1"]);
+  assert.equal(chip("finished").getAttribute("aria-pressed"), "false");
+
+  chip("finished").dispatch("click");
+  assert.equal(panel.filters.status, "finished");
   assert.equal(panel.filteredCount, 1);
-  assert.equal(status("finished").getAttribute("aria-pressed"), "true");
-  assert.equal(panel.clearFiltersButton.hidden, false);
-  const durationOptions = panel.durationSelect.children;
-  assert.deepEqual(durationOptions.map((option) => option.value),
-    ["all", "short", "medium", "long", "extended"]);
-  assert.deepEqual(durationOptions.map((option) => option.disabled),
-    [false, false, true, true, true]);
-  assert.equal(durationOptions[1].textContent, "browseFilterOptionCount");
+  assert.equal(chip("finished").getAttribute("aria-pressed"), "true");
 
-  status("all").dispatch("click");
-  panel.authorSelect.value = facetSource().items[1].author;
-  panel.authorSelect.dispatch("change");
+  chip("unfinished").dispatch("click");
+  assert.equal(panel.filters.status, "unfinished");
   assert.equal(panel.filteredCount, 2);
-  assert.equal(panel.authorSelect.dataset.active, "true");
-  assert.equal(status("finished").disabled, true);
 
-  panel.durationSelect.value = "long";
-  panel.durationSelect.dispatch("change");
+  chip("unfinished").dispatch("click");
+  assert.equal(panel.filters.status, "all");
+  assert.equal(panel.filteredCount, 3);
+});
+
+test("browse facet menus list counts, apply a choice, and clear from the chip", () => {
+  const { document, panel, bar } = facetFixture();
+  const menu = bar.durationMenu;
+  assert.equal(menu.root.hidden, false);
+  assert.equal(menu.isOpen, false);
+  assert.equal(menu.root.dataset.active, "false");
+  assert.equal(menu.triggerLabel.textContent, UiStrings.message(UiMessage.BROWSE_FILTER_DURATION_LABEL, "en"));
+
+  menu.trigger.dispatch("click");
+  assert.equal(menu.isOpen, true);
+  assert.equal(menu.trigger.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(menuOptions(menu), [
+    { value: "all", disabled: false, checked: true, count: "3" },
+    { value: "short", disabled: false, checked: false, count: "1" },
+    { value: "medium", disabled: true, checked: false, count: "0" },
+    { value: "long", disabled: false, checked: false, count: "2" },
+    { value: "extended", disabled: true, checked: false, count: "0" }
+  ]);
+  const fill = (value) => menu.optionButtons.get(value)
+    .querySelector(".bibilili-browse-option-meter-fill").style.width;
+  assert.deepEqual(["short", "long"].map(fill), ["50%", "100%"]);
+  assert.equal(document.activeElement, menu.optionButtons.get("all"));
+
+  panel.handleKeydown(keyEvent("ArrowDown", { target: document.activeElement }));
+  assert.equal(document.activeElement, menu.optionButtons.get("short"));
+  panel.handleKeydown(keyEvent("ArrowDown", { target: document.activeElement }));
+  assert.equal(document.activeElement, menu.optionButtons.get("long"));
+
+  document.activeElement.dispatch("click");
   assert.equal(panel.filters.duration, "long");
   assert.equal(panel.filteredCount, 2);
+  assert.equal(menu.isOpen, false);
+  assert.equal(document.activeElement, menu.trigger);
+  assert.equal(menu.root.dataset.active, "true");
+  assert.equal(menu.triggerLabel.textContent, UiStrings.message(UiMessage.BROWSE_FILTER_DURATION_LONG, "en"));
+  assert.equal(menu.removeButton.hidden, false);
+  assert.equal(bar.clearButton.hidden, true);
 
-  panel.clearFiltersButton.dispatch("click");
+  menu.removeButton.dispatch("click");
+  assert.equal(panel.filters.duration, "all");
   assert.equal(panel.filteredCount, 3);
-  assert.equal(panel.clearFiltersButton.hidden, true);
-  assert.equal(panel.durationSelect.value, "all");
-  assert.equal(panel.authorSelect.value, "");
+  assert.equal(menu.removeButton.hidden, true);
+  assert.equal(document.activeElement, menu.trigger);
+});
+
+test("browse facet menus close on Escape, Tab, outside presses, and another menu", () => {
+  const { document, panel, bar } = facetFixture();
+  const duration = bar.durationMenu;
+  const author = bar.authorMenu;
+
+  const open = keyEvent("ArrowDown", { target: duration.trigger });
+  panel.handleKeydown(open);
+  assert.equal(open.defaultPrevented, true);
+  assert.equal(duration.isOpen, true);
+
+  panel.searchInput.value = "long";
+  panel.searchInput.dispatch("input");
+  panel.handleKeydown(keyEvent("Escape", { target: document.activeElement }));
+  assert.equal(duration.isOpen, false);
+  assert.equal(document.activeElement, duration.trigger);
+  assert.equal(panel.query, "long");
+  assert.equal(panel.isOpen, true);
+
+  duration.trigger.dispatch("click");
+  const tab = keyEvent("Tab", { target: document.activeElement });
+  panel.handleKeydown(tab);
+  assert.equal(duration.isOpen, false);
+  assert.equal(tab.defaultPrevented, false);
+  assert.equal(document.activeElement, duration.trigger);
+
+  duration.trigger.dispatch("click");
+  author.trigger.dispatch("click");
+  assert.equal(duration.isOpen, false);
+  assert.equal(author.isOpen, true);
+
+  panel.panel.dispatch("pointerdown", { target: panel.searchInput });
+  assert.equal(author.isOpen, false);
+
+  author.trigger.dispatch("click");
+  panel.close();
+  assert.equal(author.isOpen, false);
+  assert.equal(author.trigger.getAttribute("aria-expanded"), "false");
+});
+
+test("browse uploader menu narrows long lists with a lookup field", () => {
+  const source = browseSource(10);
+  const { document, panel, bar } = facetFixture(source);
+  const menu = bar.authorMenu;
+
+  menu.trigger.dispatch("click");
+  assert.equal(menu.hasLookup, true);
+  assert.equal(menu.lookupField.hidden, false);
+  assert.equal(document.activeElement, menu.lookupInput);
+  assert.equal(menu.list.children.length, 11);
+
+  menu.lookupInput.value = "author 1";
+  menu.lookupInput.dispatch("input");
+  assert.deepEqual(menu.list.children.map((button) => button.dataset.value),
+    ["", "Author 1", "Author 10"]);
+  assert.equal(menu.emptyNote.hidden, true);
+
+  panel.handleKeydown(keyEvent("ArrowDown", { target: menu.lookupInput }));
+  assert.equal(document.activeElement, menu.optionButtons.get(""));
+  panel.handleKeydown(keyEvent("x", { target: document.activeElement }));
+  assert.equal(document.activeElement, menu.lookupInput);
+
+  const enter = keyEvent("Enter", { target: menu.lookupInput });
+  panel.handleKeydown(enter);
+  assert.equal(enter.defaultPrevented, true);
+  assert.equal(panel.filters.author, "Author 1");
+  assert.equal(panel.filteredCount, 1);
+  assert.equal(menu.triggerLabel.textContent, "Author 1");
+
+  menu.trigger.dispatch("click");
+  assert.equal(menu.lookupInput.value, "");
+  menu.lookupInput.value = "nobody";
+  menu.lookupInput.dispatch("input");
+  assert.equal(menu.list.children.length, 1);
+  assert.equal(menu.emptyNote.hidden, false);
+});
+
+test("browse clear filters resets several facets", () => {
+  const { document, panel, bar, source } = facetFixture();
+  bar.statusButtons.get("unfinished").dispatch("click");
+  assert.equal(bar.clearButton.hidden, true);
+  panel.applyFilters({ author: source.items[0].author });
+  assert.equal(panel.filteredCount, 0);
+  assert.equal(bar.clearButton.hidden, false);
+
+  bar.clearButton.dispatch("click");
+  assert.equal(panel.filteredCount, 3);
+  assert.equal(bar.clearButton.hidden, true);
   assert.equal(document.activeElement, panel.searchInput);
 });
 
@@ -1058,14 +1188,20 @@ test("browse filter bar hides facets without data", () => {
   panel.grid.measure = () => ({ width: 610, height: 500, cardWidth: 190, cardHeight: 126, gap: 10 });
 
   panel.open({ title: "Parts", count: 3, language: "en", source: browseSource(3) });
-  assert.equal(panel.filterBar.hidden, false);
-  assert.equal(panel.statusGroup.hidden, true);
-  assert.equal(panel.durationSelect.hidden, true);
-  assert.equal(panel.authorSelect.hidden, false);
+  const bar = panel.filterBar;
+  assert.equal(bar.root.hidden, false);
+  assert.equal(bar.statusGroup.hidden, true);
+  assert.equal(bar.durationMenu.root.hidden, true);
+  assert.equal(bar.authorMenu.root.hidden, false);
+
+  bar.authorMenu.trigger.dispatch("click");
+  assert.equal(bar.authorMenu.hasLookup, false);
+  assert.equal(bar.authorMenu.lookupField.hidden, true);
 
   const single = browseSource(3, { kind: "parts" });
   for (const item of single.items) item.author = "Same";
   panel.update({ title: "Parts", count: 3, language: "en", source: single });
-  assert.equal(panel.filterBar.hidden, true);
-  assert.equal(panel.focusableControls().includes(panel.authorSelect), false);
+  assert.equal(bar.root.hidden, true);
+  assert.equal(bar.authorMenu.isOpen, false);
+  assert.equal(panel.focusableControls().includes(bar.authorMenu.trigger), false);
 });

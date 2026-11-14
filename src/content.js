@@ -54,6 +54,12 @@
   const BROWSE_CARD_HEIGHT_FALLBACK =
     Math.round(BROWSE_CARD_MIN_WIDTH * BROWSE_CARD_THUMB_RATIO) + BROWSE_CARD_TEXT_HEIGHT;
   const BROWSE_CARD_GAP_FALLBACK = 12;
+  /** Uploader menus with at least this many uploaders show a lookup field. */
+  const BROWSE_FACET_LOOKUP_MIN = 8;
+  const BROWSE_FACET_MENU_GAP = 6;
+  const BROWSE_FACET_MENU_INSET = 12;
+  const BROWSE_FACET_MENU_MIN_HEIGHT = 160;
+  const BROWSE_FACET_MENU_MAX_HEIGHT = 360;
   const SOURCE_ROOT_ATTR = "data-bibilili-source-kind";
   const NATIVE_OVERLAY_ATTR = "data-bibilili-native-overlay";
   const NATIVE_OVERLAY_POSITION_ATTR =
@@ -892,8 +898,25 @@
     EXTENDED: "extended"
   });
 
+  /**
+   * Closed browse panel facets presented as chip menus. Watch status uses
+   * toggle chips instead.
+   */
+  const BrowseFacetKind = Object.freeze({
+    DURATION: "duration",
+    AUTHOR: "author"
+  });
+
+  /**
+   * Status values offered as toggle chips. ALL is the unpressed state, so it
+   * has no chip of its own.
+   */
+  const BROWSE_STATUS_CHIPS = Object.freeze([
+    BrowseStatusFilter.UNFINISHED,
+    BrowseStatusFilter.FINISHED
+  ]);
+
   const BROWSE_STATUS_MESSAGES = Object.freeze({
-    [BrowseStatusFilter.ALL]: UiMessage.BROWSE_FILTER_STATUS_ALL,
     [BrowseStatusFilter.UNFINISHED]: UiMessage.BROWSE_FILTER_STATUS_UNFINISHED,
     [BrowseStatusFilter.FINISHED]: UiMessage.BROWSE_FILTER_STATUS_FINISHED
   });
@@ -6978,9 +7001,17 @@
      * @returns {boolean}
      */
     static isActive(filters) {
-      return filters.status !== BrowseStatusFilter.ALL ||
-        filters.duration !== BrowseDurationFilter.ALL ||
-        filters.author !== null;
+      return BrowseFilters.activeCount(filters) > 0;
+    }
+
+    /**
+     * @param {BrowseFilterState} filters
+     * @returns {number} Number of facets that narrow the source.
+     */
+    static activeCount(filters) {
+      return Number(filters.status !== BrowseStatusFilter.ALL) +
+        Number(filters.duration !== BrowseDurationFilter.ALL) +
+        Number(filters.author !== null);
     }
 
     /**
@@ -8240,6 +8271,629 @@
   }
 
   /**
+   * @typedef {object} BrowseFacetOption
+   * @property {string} value Option value; the reset option carries the facet's reset value.
+   * @property {string} label Visible option text.
+   * @property {number} count Result size after choosing the option.
+   * @property {boolean} disabled The option would leave no items.
+   */
+
+  /**
+   * @typedef {object} BrowseFacetView
+   * @property {string} label Facet name.
+   * @property {string} resetValue Value that leaves the facet inactive.
+   * @property {string} value Selected value.
+   * @property {string} valueLabel Visible text of the selected option.
+   * @property {BrowseFacetOption[]} options Reset option first, then facet values.
+   * @property {string} language UI language.
+   * @property {string} [lookupLabel] Placeholder for the lookup field.
+   * @property {string} [emptyLabel] Note shown when the lookup matches nothing.
+   */
+
+  /**
+   * One chip-anchored facet menu in the browse filter bar. The chip names the
+   * facet while inactive and shows the selected option with its own clear
+   * control while active. The menu is a nonmodal popover inside the sheet: a
+   * radio group whose options carry result counts and share meters, preceded
+   * by a lookup field for long lists. Choosing an option applies it, closes the
+   * menu, and returns focus to the chip.
+   */
+  class BrowseFacetMenu {
+    /**
+     * @param {Document} document
+     * @param {object} options
+     * @param {string} options.facet Closed BrowseFacetKind value.
+     * @param {string} options.icon Icon registry key shown in the chip.
+     * @param {boolean} [options.lookup] Long option lists show a lookup field.
+     * @param {(value: string) => void} options.onSelect Applies a chosen value.
+     * @param {(menu: BrowseFacetMenu) => void} [options.onOpen] Runs before the menu opens.
+     * @param {(() => HTMLElement | null) | null} [options.bounds] Element whose box clamps the menu.
+     */
+    constructor(document, options) {
+      this.document = document;
+      this.facet = options.facet;
+      this.onSelect = options.onSelect;
+      this.onOpen = options.onOpen ?? null;
+      this.bounds = options.bounds ?? null;
+      /** @type {BrowseFacetView | null} */
+      this.view = null;
+      /** @type {Map<string, HTMLButtonElement>} Option buttons keyed by value. */
+      this.optionButtons = new Map();
+      this.resizeHandler = () => this.position();
+
+      this.root = document.createElement("div");
+      this.root.className = "bibilili-browse-facet";
+      this.root.dataset.facet = this.facet;
+      this.root.dataset.active = "false";
+      this.root.hidden = true;
+
+      const menuId = BROWSE_PANEL_ID + "-" + this.facet + "-menu";
+      this.trigger = UiControl.button(
+        document,
+        "bibilili-browse-chip bibilili-browse-facet-trigger",
+        () => this.toggle()
+      );
+      this.trigger.setAttribute("aria-haspopup", "dialog");
+      this.trigger.setAttribute("aria-expanded", "false");
+      this.trigger.setAttribute("aria-controls", menuId);
+      this.triggerLabel = document.createElement("span");
+      this.triggerLabel.className = "bibilili-browse-chip-label";
+      const chevron = UiControl.icon(document, "chevronDown");
+      chevron.setAttribute("class", "bibilili-local-icon bibilili-browse-chip-chevron");
+      this.trigger.append(UiControl.icon(document, options.icon), this.triggerLabel, chevron);
+
+      this.removeButton = UiControl.button(document, "bibilili-browse-facet-remove", () => {
+        const view = this.view;
+        this.close(false);
+        this.trigger.focus?.({ preventScroll: true });
+        if (view && view.value !== view.resetValue) this.onSelect(view.resetValue);
+      });
+      this.removeButton.append(UiControl.icon(document, "close"));
+      this.removeButton.hidden = true;
+
+      this.menu = document.createElement("div");
+      this.menu.id = menuId;
+      this.menu.className = "bibilili-browse-menu";
+      this.menu.dataset.facet = this.facet;
+      this.menu.setAttribute("role", "dialog");
+      this.menu.hidden = true;
+
+      this.lookupField = null;
+      this.lookupInput = null;
+      if (options.lookup) {
+        this.lookupField = document.createElement("div");
+        this.lookupField.className = "bibilili-browse-menu-lookup";
+        this.lookupInput = document.createElement("input");
+        this.lookupInput.className = "bibilili-browse-menu-lookup-input";
+        this.lookupInput.type = "search";
+        this.lookupInput.autocomplete = "off";
+        this.lookupInput.addEventListener("input", () => this.renderOptions());
+        this.lookupField.append(this.lookupInput);
+        this.menu.append(this.lookupField);
+      }
+
+      this.list = document.createElement("div");
+      this.list.className = "bibilili-browse-menu-options";
+      this.list.setAttribute("role", "radiogroup");
+      this.emptyNote = document.createElement("p");
+      this.emptyNote.className = "bibilili-browse-menu-empty";
+      this.emptyNote.hidden = true;
+      this.menu.append(this.list, this.emptyNote);
+      this.root.append(this.trigger, this.removeButton, this.menu);
+    }
+
+    /** @returns {boolean} Whether the menu popover is visible. */
+    get isOpen() {
+      return !this.menu.hidden;
+    }
+
+    /** @returns {boolean} The lookup field applies to the current option list. */
+    get hasLookup() {
+      return Boolean(this.lookupInput && this.view &&
+        this.view.options.length - 1 >= BROWSE_FACET_LOOKUP_MIN);
+    }
+
+    /**
+     * Applies availability, selection, and options. A null view hides the
+     * facet and closes its menu.
+     *
+     * @param {BrowseFacetView | null} view
+     */
+    render(view) {
+      this.view = view;
+      this.root.hidden = !view;
+      if (!view) {
+        this.close(false);
+        return;
+      }
+
+      const active = view.value !== view.resetValue;
+      this.root.dataset.active = String(active);
+      BrowsePanel.setText(this.triggerLabel, active ? view.valueLabel : view.label);
+      UiControl.setLabel(
+        this.trigger,
+        active
+          ? UiStrings.message(UiMessage.BROWSE_FILTER_FACET_VALUE, view.language, [
+              view.label,
+              view.valueLabel
+            ])
+          : view.label
+      );
+      this.removeButton.hidden = !active;
+      UiControl.setLabel(
+        this.removeButton,
+        UiStrings.message(UiMessage.BROWSE_FILTER_REMOVE, view.language, [view.label])
+      );
+      this.menu.setAttribute("aria-label", view.label);
+      this.list.setAttribute("aria-label", view.label);
+      if (this.lookupInput) {
+        const lookupLabel = view.lookupLabel ?? view.label;
+        UiControl.setLabel(this.lookupInput, lookupLabel);
+        this.lookupInput.placeholder = lookupLabel;
+      }
+      if (this.isOpen) {
+        this.renderOptions();
+        this.position();
+      }
+    }
+
+    /**
+     * Reconciles option buttons by value so counts can update while a scan
+     * runs without replacing the option under focus.
+     */
+    renderOptions() {
+      const view = this.view;
+      if (!view) return;
+      const lookup = this.hasLookup;
+      if (this.lookupField) this.lookupField.hidden = !lookup;
+      const needle = lookup ? ListSearch.normalize(this.lookupInput.value).trim() : "";
+      const shown = view.options.filter((option) => option.value === view.resetValue ||
+        !needle || ListSearch.normalize(option.label).includes(needle));
+      let maxCount = 1;
+      for (const option of view.options) {
+        if (option.value !== view.resetValue) maxCount = Math.max(maxCount, option.count);
+      }
+      const format = new Intl.NumberFormat(UiStrings.numberLocale(view.language));
+
+      const focused = this.document.activeElement;
+      const used = new Set();
+      let previous = null;
+      for (const option of shown) {
+        let button = this.optionButtons.get(option.value);
+        if (!button) {
+          button = this.createOption(option.value);
+          this.optionButtons.set(option.value, button);
+        }
+        used.add(option.value);
+        const reset = option.value === view.resetValue;
+        this.updateOption(button, option, {
+          checked: option.value === view.value,
+          reset,
+          share: reset ? 0 : option.count / maxCount,
+          count: format.format(option.count)
+        });
+        UiControl.place(this.list, button, previous);
+        previous = button;
+      }
+      const lostFocus = Boolean(focused && this.list.contains(focused) &&
+        !used.has(focused.dataset?.value));
+      UiControl.removeStaleButtons(this.optionButtons, used);
+      if (lostFocus) (this.hasLookup ? this.lookupInput : this.trigger).focus?.({ preventScroll: true });
+
+      this.emptyNote.hidden = !(needle && shown.length <= 1);
+      BrowsePanel.setText(this.emptyNote, view.emptyLabel ?? "");
+    }
+
+    /**
+     * @param {string} value
+     * @returns {HTMLButtonElement}
+     */
+    createOption(value) {
+      const button = UiControl.button(this.document, "bibilili-browse-option", () => {
+        this.choose(value);
+      });
+      button.dataset.value = value;
+      button.setAttribute("role", "radio");
+      const check = UiControl.icon(this.document, "check");
+      check.setAttribute("class", "bibilili-local-icon bibilili-browse-option-check");
+      const label = this.document.createElement("span");
+      label.className = "bibilili-browse-option-label";
+      const meter = this.document.createElement("span");
+      meter.className = "bibilili-browse-option-meter";
+      meter.setAttribute("aria-hidden", "true");
+      const fill = this.document.createElement("span");
+      fill.className = "bibilili-browse-option-meter-fill";
+      meter.append(fill);
+      const count = this.document.createElement("span");
+      count.className = "bibilili-browse-option-count";
+      button.append(check, label, meter, count);
+      return button;
+    }
+
+    /**
+     * @param {HTMLButtonElement} button
+     * @param {BrowseFacetOption} option
+     * @param {{checked: boolean, reset: boolean, share: number, count: string}} state
+     */
+    updateOption(button, option, { checked, reset, share, count }) {
+      button.setAttribute("aria-checked", String(checked));
+      button.dataset.reset = String(reset);
+      const disabled = option.disabled && !checked;
+      if (button.disabled !== disabled) button.disabled = disabled;
+      BrowsePanel.setText(button.querySelector(".bibilili-browse-option-label"), option.label);
+      BrowsePanel.setText(button.querySelector(".bibilili-browse-option-count"), count);
+      const width = Math.round(share * 1000) / 10 + "%";
+      const fill = button.querySelector(".bibilili-browse-option-meter-fill");
+      if (fill.style.width !== width) fill.style.width = width;
+    }
+
+    /** @returns {HTMLButtonElement[]} Enabled options in display order. */
+    enabledOptions() {
+      return [...this.list.children].filter((button) => !button.disabled);
+    }
+
+    /** Opens the menu when closed and closes it with focus return when open. */
+    toggle() {
+      if (this.isOpen) this.close(true);
+      else this.open();
+    }
+
+    /**
+     * Opens the menu and focuses the lookup field, the checked option, or the
+     * first enabled option.
+     */
+    open() {
+      if (!this.view || this.isOpen) return;
+      this.onOpen?.(this);
+      if (this.lookupInput) this.lookupInput.value = "";
+      this.menu.hidden = false;
+      this.trigger.setAttribute("aria-expanded", "true");
+      this.renderOptions();
+      this.position();
+      this.document.defaultView?.addEventListener("resize", this.resizeHandler);
+
+      const checked = [...this.list.children].find((button) =>
+        button.getAttribute("aria-checked") === "true") ?? null;
+      checked?.scrollIntoView?.({ block: "nearest" });
+      const target = this.hasLookup
+        ? this.lookupInput
+        : checked && !checked.disabled ? checked : this.enabledOptions()[0];
+      target?.focus?.({ preventScroll: true });
+    }
+
+    /**
+     * Hides the menu. Focus inside the menu always returns to the chip so the
+     * sheet keeps a focused control.
+     *
+     * @param {boolean} [restoreFocus]
+     */
+    close(restoreFocus = false) {
+      if (!this.isOpen) return;
+      const hadFocus = this.menu.contains(this.document.activeElement);
+      this.menu.hidden = true;
+      this.trigger.setAttribute("aria-expanded", "false");
+      this.document.defaultView?.removeEventListener("resize", this.resizeHandler);
+      if (restoreFocus || hadFocus) this.trigger.focus?.({ preventScroll: true });
+    }
+
+    /**
+     * Applies an option. The chip keeps focus because the option list closes.
+     *
+     * @param {string} value
+     */
+    choose(value) {
+      const view = this.view;
+      this.close(false);
+      this.trigger.focus?.({ preventScroll: true });
+      if (view && value !== view.value) this.onSelect(value);
+    }
+
+    /**
+     * Keeps the menu below its chip and inside the sheet. The menu shifts left
+     * when it would cross the sheet's trailing edge and shortens to the space
+     * above the sheet's bottom edge.
+     */
+    position() {
+      const bounds = this.bounds?.();
+      if (!this.isOpen || !bounds) return;
+      this.menu.style.left = "";
+      this.menu.style.maxHeight = "";
+      const area = bounds.getBoundingClientRect();
+      const anchor = this.root.getBoundingClientRect();
+      const menu = this.menu.getBoundingClientRect();
+      if (!(menu.width > 0)) return;
+      const minLeft = area.left + BROWSE_FACET_MENU_INSET - anchor.left;
+      const maxLeft = area.right - BROWSE_FACET_MENU_INSET - menu.width - anchor.left;
+      this.menu.style.left = Math.max(minLeft, Math.min(0, maxLeft)) + "px";
+      const available = area.bottom - BROWSE_FACET_MENU_INSET -
+        (anchor.bottom + BROWSE_FACET_MENU_GAP);
+      this.menu.style.maxHeight = Math.min(
+        BROWSE_FACET_MENU_MAX_HEIGHT,
+        Math.max(BROWSE_FACET_MENU_MIN_HEIGHT, available)
+      ) + "px";
+    }
+
+    /**
+     * Handles chip and menu keys. Arrow keys on the chip open the menu. Inside
+     * the menu, arrows move through the lookup field and enabled options, Tab
+     * closes and continues from the chip, and printable keys on an option type
+     * into the lookup field. BrowseFilterBar handles Escape.
+     *
+     * @param {KeyboardEvent} event
+     * @returns {boolean} Whether the menu consumed the event.
+     */
+    handleKeydown(event) {
+      const target = event.target;
+      if (target === this.trigger) {
+        if ((event.key === "ArrowDown" || event.key === "ArrowUp") && this.view) {
+          event.preventDefault();
+          if (!this.isOpen) this.open();
+          else (this.hasLookup ? this.lookupInput : this.enabledOptions()[0])?.focus?.();
+          return true;
+        }
+        return false;
+      }
+      if (!this.isOpen || !this.menu.contains(target)) return false;
+      if (event.altKey || event.ctrlKey || event.metaKey) return false;
+
+      const inLookup = target === this.lookupInput;
+      switch (event.key) {
+        case "Tab":
+          this.close(true);
+          if (!event.shiftKey) return false;
+          event.preventDefault();
+          return true;
+        case "Enter":
+          if (!inLookup || event.isComposing) return false;
+          event.preventDefault();
+          {
+            const first = this.enabledOptions().find((button) =>
+              button.dataset.reset !== "true") ?? null;
+            if (first) this.choose(first.dataset.value);
+          }
+          return true;
+        case "ArrowDown":
+        case "ArrowUp":
+        case "Home":
+        case "End": {
+          if (inLookup && (event.key === "Home" || event.key === "End")) return false;
+          const options = this.enabledOptions();
+          const items = this.hasLookup ? [this.lookupInput, ...options] : options;
+          if (items.length === 0) return false;
+          let next;
+          if (event.key === "Home") next = options[0];
+          else if (event.key === "End") next = options[options.length - 1];
+          else {
+            const index = items.indexOf(target);
+            const delta = event.key === "ArrowDown" ? 1 : -1;
+            next = items[(index + delta + items.length) % items.length];
+          }
+          event.preventDefault();
+          next?.focus?.({ preventScroll: true });
+          next?.scrollIntoView?.({ block: "nearest" });
+          return true;
+        }
+        default:
+          if (!inLookup && this.hasLookup && event.key.length === 1) {
+            // Focus moves before the key's default action, so the character
+            // lands in the lookup field.
+            this.lookupInput.focus?.({ preventScroll: true });
+          }
+          return false;
+      }
+    }
+  }
+
+  /**
+   * Owns the browse filter bar: watch-status toggle chips, the duration and
+   * uploader facet menus, and the clear control. It renders BrowseFacetCounts
+   * and reports selection changes; BrowsePanel owns the filter state.
+   */
+  class BrowseFilterBar {
+    /**
+     * @param {Document} document
+     * @param {object} options
+     * @param {(changes: Partial<BrowseFilterState>) => void} options.onChange
+     * @param {() => void} options.onClear Clears every facet.
+     * @param {(() => HTMLElement | null) | null} [options.bounds] Element whose box clamps menus.
+     */
+    constructor(document, options) {
+      this.document = document;
+      this.onChange = options.onChange;
+      /** @type {BrowseFilterState} */
+      this.filters = BrowseFilters.empty();
+
+      this.root = document.createElement("div");
+      this.root.className = "bibilili-browse-filters";
+      this.root.setAttribute("role", "group");
+      this.root.hidden = true;
+
+      this.statusGroup = document.createElement("div");
+      this.statusGroup.className = "bibilili-browse-status";
+      this.statusGroup.setAttribute("role", "group");
+      /** @type {Map<string, HTMLButtonElement>} */
+      this.statusButtons = new Map();
+      for (const value of BROWSE_STATUS_CHIPS) {
+        const button = UiControl.button(
+          document,
+          "bibilili-browse-chip bibilili-browse-status-chip",
+          () => this.onChange({
+            status: this.filters.status === value ? BrowseStatusFilter.ALL : value
+          })
+        );
+        button.dataset.value = value;
+        const label = document.createElement("span");
+        label.className = "bibilili-browse-chip-label";
+        const count = document.createElement("span");
+        count.className = "bibilili-browse-chip-count";
+        button.append(label, count);
+        this.statusButtons.set(value, button);
+        this.statusGroup.append(button);
+      }
+
+      const onOpen = (menu) => this.closeMenus(menu);
+      this.durationMenu = new BrowseFacetMenu(document, {
+        facet: BrowseFacetKind.DURATION,
+        icon: "clock",
+        onSelect: (value) => this.onChange({ duration: value }),
+        onOpen,
+        bounds: options.bounds
+      });
+      this.authorMenu = new BrowseFacetMenu(document, {
+        facet: BrowseFacetKind.AUTHOR,
+        icon: "person",
+        lookup: true,
+        onSelect: (value) => this.onChange({ author: value || null }),
+        onOpen,
+        bounds: options.bounds
+      });
+      this.menus = [this.durationMenu, this.authorMenu];
+
+      this.clearButton = UiControl.button(
+        document,
+        "bibilili-browse-filter-clear",
+        () => options.onClear()
+      );
+      this.clearButton.hidden = true;
+
+      this.root.append(
+        this.statusGroup,
+        this.durationMenu.root,
+        this.authorMenu.root,
+        this.clearButton
+      );
+    }
+
+    /** @returns {BrowseFacetMenu | null} */
+    get openMenu() {
+      return this.menus.find((menu) => menu.isOpen) ?? null;
+    }
+
+    /**
+     * Applies facet availability, counts, and selection. A facet without data
+     * is hidden. Status chips and duration options that would empty the result
+     * are disabled unless selected.
+     *
+     * @param {BrowseFacetCounts | null} facets
+     * @param {BrowseFilterState} filters
+     * @param {string} language
+     */
+    render(facets, filters, language) {
+      this.filters = filters;
+      const status = facets?.status ?? null;
+      const duration = facets?.duration ?? null;
+      const author = facets?.author ?? null;
+      const message = (name, substitutions) => UiStrings.message(name, language, substitutions);
+      const format = new Intl.NumberFormat(UiStrings.numberLocale(language));
+
+      this.root.hidden = !status && !duration && !author;
+      this.root.setAttribute("aria-label", message(UiMessage.BROWSE_FILTERS_LABEL));
+
+      this.statusGroup.hidden = !status;
+      this.statusGroup.setAttribute("aria-label", message(UiMessage.BROWSE_FILTER_STATUS_LABEL));
+      if (status) {
+        for (const [value, button] of this.statusButtons) {
+          const pressed = filters.status === value;
+          const count = status.get(value) ?? 0;
+          button.setAttribute("aria-pressed", String(pressed));
+          button.disabled = !pressed && count === 0;
+          BrowsePanel.setText(
+            button.querySelector(".bibilili-browse-chip-label"),
+            message(BROWSE_STATUS_MESSAGES[value])
+          );
+          BrowsePanel.setText(
+            button.querySelector(".bibilili-browse-chip-count"),
+            format.format(count)
+          );
+        }
+      }
+
+      this.durationMenu.render(duration
+        ? {
+            label: message(UiMessage.BROWSE_FILTER_DURATION_LABEL),
+            resetValue: BrowseDurationFilter.ALL,
+            value: filters.duration,
+            valueLabel: message(BROWSE_DURATION_MESSAGES[filters.duration]),
+            options: Object.values(BrowseDurationFilter).map((value) => ({
+              value,
+              label: message(BROWSE_DURATION_MESSAGES[value]),
+              count: duration.get(value) ?? 0,
+              disabled: value !== BrowseDurationFilter.ALL && !duration.get(value)
+            })),
+            language
+          }
+        : null);
+
+      this.authorMenu.render(author
+        ? {
+            label: message(UiMessage.BROWSE_FILTER_AUTHOR_LABEL),
+            resetValue: "",
+            value: filters.author ?? "",
+            valueLabel: filters.author ?? "",
+            options: [
+              {
+                value: "",
+                label: message(UiMessage.BROWSE_FILTER_AUTHOR_ALL),
+                count: author.all,
+                disabled: false
+              },
+              ...author.authors.map(({ author: name, count }) => ({
+                value: name,
+                label: name,
+                count,
+                disabled: count === 0
+              }))
+            ],
+            lookupLabel: message(UiMessage.BROWSE_FILTER_AUTHOR_SEARCH),
+            emptyLabel: message(UiMessage.BROWSE_FILTER_AUTHOR_EMPTY),
+            language
+          }
+        : null);
+
+      this.clearButton.hidden = BrowseFilters.activeCount(filters) < 2;
+      UiControl.setTextButtonLabel(this.clearButton, message(UiMessage.BROWSE_FILTER_CLEAR));
+    }
+
+    /**
+     * Closes every menu except one.
+     *
+     * @param {BrowseFacetMenu | null} [except]
+     */
+    closeMenus(except = null) {
+      for (const menu of this.menus) {
+        if (menu !== except) menu.close(false);
+      }
+    }
+
+    /**
+     * Routes keys to the facet menus. Escape closes an open menu wherever
+     * focus is inside the sheet.
+     *
+     * @param {KeyboardEvent} event
+     * @returns {boolean} Whether a menu consumed the event.
+     */
+    handleKeydown(event) {
+      const open = this.openMenu;
+      if (open && event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        open.close(true);
+        return true;
+      }
+      return this.menus.some((menu) => menu.handleKeydown(event));
+    }
+
+    /**
+     * Closes an open menu when a pointer press starts outside its facet.
+     *
+     * @param {PointerEvent} event
+     */
+    handlePointerDown(event) {
+      const open = this.openMenu;
+      if (open && !open.root.contains(event.target)) open.close(false);
+    }
+  }
+
+  /**
    * @typedef {object} BrowsePanelOptions
    * @property {() => void} [onClose] Updates the launcher after any close.
    * @property {() => void} [onFocusFallback] Focus target when the launcher is unavailable.
@@ -8348,8 +9002,15 @@
       this.searchField = document.createElement("div");
       this.searchField.className = "bibilili-browse-search-field";
       this.searchField.append(this.searchInput);
-      this.filterBar = this.createFilterBar(document);
-      this.searchRow.append(this.searchField, this.filterBar);
+      this.filterBar = new BrowseFilterBar(document, {
+        onChange: (changes) => this.applyFilters(changes),
+        onClear: () => {
+          this.applyFilters(BrowseFilters.empty());
+          this.searchInput.focus?.({ preventScroll: true });
+        },
+        bounds: () => this.panel
+      });
+      this.searchRow.append(this.searchField, this.filterBar.root);
       this.visibilityHandler = () => {
         if (this.isOpen && this.document.visibilityState === "visible") {
           this.renderContent();
@@ -8389,95 +9050,12 @@
       this.panel.append(header, this.searchRow, this.scanRow, this.body);
       this.panel.addEventListener("keydown", (event) => this.handleKeydown(event));
       this.panel.addEventListener("keyup", (event) => event.stopPropagation());
+      this.panel.addEventListener(
+        "pointerdown",
+        (event) => this.filterBar.handlePointerDown(event),
+        true
+      );
       root.append(this.scrim, this.panel);
-    }
-
-    /**
-     * Builds the facet controls. Status uses pressed buttons; duration and
-     * author use native selects, so their option lists need no popup layer
-     * inside the modal sheet.
-     *
-     * @param {Document} document
-     * @returns {HTMLElement}
-     */
-    createFilterBar(document) {
-      const bar = document.createElement("div");
-      bar.className = "bibilili-browse-filters";
-      bar.hidden = true;
-
-      this.statusGroup = document.createElement("div");
-      this.statusGroup.className = "bibilili-browse-status";
-      this.statusGroup.setAttribute("role", "group");
-      /** @type {Map<string, HTMLButtonElement>} */
-      this.statusButtons = new Map();
-      for (const value of Object.values(BrowseStatusFilter)) {
-        const button = UiControl.button(document, "bibilili-browse-status-option", () => {
-          this.applyFilters({ status: value });
-        });
-        button.dataset.value = value;
-        const label = document.createElement("span");
-        label.className = "bibilili-browse-filter-label";
-        const count = document.createElement("span");
-        count.className = "bibilili-browse-filter-count";
-        button.append(label, count);
-        this.statusButtons.set(value, button);
-        this.statusGroup.append(button);
-      }
-
-      this.durationSelect = BrowsePanel.filterSelect(document, () => {
-        this.applyFilters({ duration: this.durationSelect.value });
-      });
-      this.authorSelect = BrowsePanel.filterSelect(document, () => {
-        this.applyFilters({ author: this.authorSelect.value || null });
-      });
-      this.clearFiltersButton = UiControl.button(document, "bibilili-browse-filter-clear", () => {
-        this.applyFilters(BrowseFilters.empty());
-        this.searchInput.focus?.({ preventScroll: true });
-      });
-      this.clearFiltersButton.hidden = true;
-
-      bar.append(this.statusGroup, this.durationSelect, this.authorSelect, this.clearFiltersButton);
-      return bar;
-    }
-
-    /**
-     * @param {Document} document
-     * @param {() => void} onChange
-     * @returns {HTMLSelectElement}
-     */
-    static filterSelect(document, onChange) {
-      const select = document.createElement("select");
-      select.className = "bibilili-browse-filter-select";
-      select.hidden = true;
-      select.addEventListener("change", onChange);
-      return select;
-    }
-
-    /**
-     * Reconciles select options in place so a scan page does not replace the
-     * option nodes a user is choosing from unless the option set changed.
-     *
-     * @param {Document} document
-     * @param {HTMLSelectElement} select
-     * @param {Array<{value: string, text: string, disabled: boolean}>} options
-     * @param {string} value
-     */
-    static syncSelect(document, select, options, value) {
-      const current = [...select.children];
-      if (current.length !== options.length ||
-        current.some((option, index) => option.value !== options[index].value)) {
-        select.replaceChildren(...options.map(({ value: optionValue }) => {
-          const option = document.createElement("option");
-          option.value = optionValue;
-          return option;
-        }));
-      }
-      [...select.children].forEach((option, index) => {
-        const { text, disabled } = options[index];
-        if (option.textContent !== text) option.textContent = text;
-        if (option.disabled !== disabled) option.disabled = disabled;
-      });
-      if (select.value !== value) select.value = value;
     }
 
     /**
@@ -8561,6 +9139,7 @@
 
       if (sourceChanged) {
         this.stopScan();
+        this.filterBar.closeMenus();
         this.query = "";
         this.filters = BrowseFilters.empty();
         this.searchInput.value = "";
@@ -8627,108 +9206,9 @@
       this.renderScanStatus();
     }
 
-    /**
-     * Applies facet availability, counts, and selection to the filter bar. A
-     * facet without data is hidden; options that would empty the result are
-     * disabled unless selected.
-     */
+    /** Applies facet availability, counts, and selection to the filter bar. */
     renderFilters() {
-      const facets = this.facets;
-      const status = facets?.status ?? null;
-      const duration = facets?.duration ?? null;
-      const author = facets?.author ?? null;
-      const language = this.language;
-      const format = new Intl.NumberFormat(UiStrings.numberLocale(language));
-      const optionText = (label, count) => UiStrings.message(
-        UiMessage.BROWSE_FILTER_OPTION_COUNT,
-        language,
-        [label, format.format(count)]
-      );
-
-      this.filterBar.hidden = !status && !duration && !author;
-
-      this.statusGroup.hidden = !status;
-      this.statusGroup.setAttribute(
-        "aria-label",
-        UiStrings.message(UiMessage.BROWSE_FILTER_STATUS_LABEL, language)
-      );
-      if (status) {
-        for (const [value, button] of this.statusButtons) {
-          const selected = this.filters.status === value;
-          const count = status.get(value) ?? 0;
-          button.setAttribute("aria-pressed", String(selected));
-          button.disabled = !selected && value !== BrowseStatusFilter.ALL && count === 0;
-          BrowsePanel.setText(
-            button.querySelector(".bibilili-browse-filter-label"),
-            UiStrings.message(BROWSE_STATUS_MESSAGES[value], language)
-          );
-          BrowsePanel.setText(
-            button.querySelector(".bibilili-browse-filter-count"),
-            format.format(count)
-          );
-        }
-      }
-
-      this.durationSelect.hidden = !duration;
-      UiControl.setLabel(
-        this.durationSelect,
-        UiStrings.message(UiMessage.BROWSE_FILTER_DURATION_LABEL, language)
-      );
-      if (duration) {
-        BrowsePanel.syncSelect(
-          this.document,
-          this.durationSelect,
-          Object.values(BrowseDurationFilter).map((value) => ({
-            value,
-            text: optionText(
-              UiStrings.message(BROWSE_DURATION_MESSAGES[value], language),
-              duration.get(value) ?? 0
-            ),
-            disabled: value !== BrowseDurationFilter.ALL &&
-              value !== this.filters.duration &&
-              !duration.get(value)
-          })),
-          this.filters.duration
-        );
-      }
-      this.durationSelect.dataset.active = String(
-        this.filters.duration !== BrowseDurationFilter.ALL
-      );
-
-      this.authorSelect.hidden = !author;
-      UiControl.setLabel(
-        this.authorSelect,
-        UiStrings.message(UiMessage.BROWSE_FILTER_AUTHOR_LABEL, language)
-      );
-      if (author) {
-        BrowsePanel.syncSelect(
-          this.document,
-          this.authorSelect,
-          [
-            {
-              value: "",
-              text: optionText(
-                UiStrings.message(UiMessage.BROWSE_FILTER_AUTHOR_ALL, language),
-                author.all
-              ),
-              disabled: false
-            },
-            ...author.authors.map(({ author: name, count }) => ({
-              value: name,
-              text: optionText(name, count),
-              disabled: false
-            }))
-          ],
-          this.filters.author ?? ""
-        );
-      }
-      this.authorSelect.dataset.active = String(this.filters.author !== null);
-
-      this.clearFiltersButton.hidden = !BrowseFilters.isActive(this.filters);
-      UiControl.setTextButtonLabel(
-        this.clearFiltersButton,
-        UiStrings.message(UiMessage.BROWSE_FILTER_CLEAR, language)
-      );
+      this.filterBar.render(this.facets, this.filters, this.language);
     }
 
     /** Applies the current scan state to the fixed progress row. */
@@ -9082,14 +9562,16 @@
     }
 
     /**
-     * Keeps Tab inside the sheet. Escape clears the query and facets first,
-     * then closes.
+     * Keeps Tab inside the sheet. An open facet menu takes keys first. Escape
+     * then clears the query and facets, then closes.
      *
      * @param {KeyboardEvent} event
      */
     handleKeydown(event) {
       // Note: Bilibili handles player shortcuts on the containing document.
       event.stopPropagation();
+
+      if (this.filterBar.handleKeydown(event)) return;
 
       if (event.key === "Escape" && !event.isComposing) {
         event.preventDefault();
@@ -9130,6 +9612,7 @@
     close(restoreFocus = false) {
       if (!this.isOpen) return;
       this.stopScan();
+      this.filterBar.closeMenus();
       this.isOpen = false;
       this.grid.close();
       this.panel.dataset.open = "false";

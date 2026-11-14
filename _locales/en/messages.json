@@ -221,10 +221,6 @@
     "message": "Watch status",
     "description": "Accessible name for the browse panel watch-status filter group."
   },
-  "browseFilterStatusAll": {
-    "message": "All",
-    "description": "Browse watch-status filter option that keeps every item."
-  },
   "browseFilterStatusUnfinished": {
     "message": "Unfinished",
     "description": "Browse watch-status filter option for unwatched and partly watched videos."
@@ -264,10 +260,6 @@
   "browseFilterAuthorAll": {
     "message": "Any uploader",
     "description": "Browse uploader filter option that keeps every uploader."
-  },
-  "browseFilterOptionCount": {
-    "message": "$1 ($2)",
-    "description": "Browse filter option with its result count; $1 is the option and $2 the count."
   },
   "browseFilterClear": {
     "message": "Clear filters",
