@@ -117,6 +117,10 @@ function railFixture(LayoutRoot, count, kind = "history") {
   document.rail = rail;
   document.body.append(rail);
   rail.clientWidth = 1000;
+  Object.defineProperty(rail, "scrollWidth", {
+    get: () => Math.max(rail.clientWidth,
+      (Number.parseFloat(rail.querySelector(".bibilili-card-row")?.style.width) || 0) + 24)
+  });
   let scrollLeft = 0;
   Object.defineProperty(rail, "scrollLeft", {
     get: () => {

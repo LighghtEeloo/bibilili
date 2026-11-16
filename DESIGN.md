@@ -1044,9 +1044,21 @@ the placement preference. Opening a native action dialog dismisses More first.
 ## Rail Locate
 
 The Locate button presents a crosshair icon with a localized tooltip and
-accessible name. It centers the current video in the displayed rail. It is
-disabled when the rail is closed or the displayed items contain no current
-video. Locate preserves the selected source and account expansion depth.
+accessible name. Activating it enables Locate mode and centers the current
+video in the displayed rail. It is disabled when the rail is closed or the
+displayed items contain no current video. Locate preserves the selected source
+and account expansion depth.
+
+Locate mode uses the action selection color and exposes `aria-pressed` on the
+button. It keeps the current card centered during reconciliation, continuation,
+resizing, and same-tab video changes. Centering is clamped to the rail's scroll
+limits without adding space at either end. The mode survives source changes and
+closing the rail; tracking resumes when the open rail contains the current card.
+It lasts for the mounted layout session and is not stored in preferences.
+
+User scrolling, keyboard card navigation, and Back to start cancel Locate mode.
+Programmatic centering and layout-induced scroll clamping preserve it. Automatic
+one-time positioning when a source opens does not enable the mode.
 
 Locate matches items by the current source match key, or by the collection's
 native current-row marker. Parts, collections, and favorites match the current
@@ -1114,7 +1126,8 @@ once per animation frame, independently of page discovery.
 
 Cards retain their logical order and fixed positions within the full row.
 Keyboard navigation reveals adjacent items across window boundaries. Resizing
-preserves the logical scroll position when card dimensions change.
+preserves the logical scroll position when card dimensions change, or recenters
+the current card while Locate mode is enabled.
 
 Account-backed favorite, history, and watch-later groups end with a card-sized
 continuation tail while additional items are available. The tail stays at the
@@ -1144,21 +1157,23 @@ continuation while it is open. Opening or closing the panel leaves the rail's
 route, open state, and scroll position unchanged. Retained items the panel adds
 remain available to the rail.
 
-Expansion preserves the rail scroll position and does not recenter the current
-video.
+Expansion preserves the rail scroll position unless Locate mode is enabled.
 
 When an origin route selects the destination source, the rail opens with that
 source's cards. The behavior applies to extension-owned bottom-rail card links;
 other card controls keep their own behavior.
 
+Same-tab navigation to an item already in the open rail preserves its scroll
+position when the selected source stays the same. Locate mode continues to
+center the destination while enabled.
+
 When the selected source is parts, the rail identifies the card whose archive
-page route matches the current watch route. It scrolls to that card once for the
-current page session and again when the parts route is opened explicitly.
+page route matches the current watch route. It positions that card when the
+parts route opens or navigation reaches a video outside the previous rail.
 
 When the selected source is a collection, the rail identifies the card whose
 archive matches the current video. A native current-row marker is equivalent to
-an archive match. The rail scrolls to that card once for the current page
-session and again when the collection route is opened explicitly.
+an archive match. It uses the same positioning rules as parts.
 
 When the selected source is watch later, the rail matches the card by archive
 identity, not by page number, because a to-view record represents one archive

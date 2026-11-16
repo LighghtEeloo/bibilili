@@ -9786,6 +9786,10 @@
       this.railStartButton = null;
       /** Logical current-video index in the displayed rail, or -1 when absent. */
       this.railLocateIndex = -1;
+      /** Session-local Locate mode; follows the current card whenever it is available. */
+      this.isRailLocated = false;
+      /** @type {{left: number, width: number, scrollWidth: number} | null} Last owned scroll position. */
+      this.railLocatedPosition = null;
       this.railRefreshButton = null;
       this.isRailRefreshing = false;
       this.onRailRefresh = null;
@@ -9939,6 +9943,7 @@
 
     /**
      * Clears per-video interaction state while keeping page-owned nodes attached.
+     * Preserves the open rail's position when it contains the destination video.
      *
      * Note: Bilibili reloads its comment component in place during navigation.
      * Reconnecting that component initializes it from its original data-params
@@ -9955,8 +9960,18 @@
       this.pendingSourceMore = null;
       this.railAutoLoadKey = null;
       this.railAutoLoadStalledKey = null;
-      this.renderedSourceKey = null;
+      const source = this.isRailOpen ? this.railSource : null;
+      const matchKey = source
+        ? SourceAdapter.matchKeyForUrl(source.kind, window.location.href) : null;
+      // Note: Native current-row markers can still identify the previous video.
+      const retainRailPosition = Boolean(matchKey && this.railEntries.some(({ item }) =>
+        SourceAdapter.matchKeyForUrl(source.kind, item.targetUrl) === matchKey
+      ));
+      this.renderedSourceKey = retainRailPosition ? LayoutRoot.sourceKey(source) : null;
       this.locatedCurrentRouteKeys.clear();
+      if (retainRailPosition) {
+        this.locatedCurrentRouteKeys.set(this.renderedSourceKey, matchKey);
+      }
       this.completedWatchLaterAddKeys.clear();
 
       if (this.commentPane) {
@@ -11328,6 +11343,7 @@
         this.railSource = null;
         this.railEntries = [];
         this.railLocateIndex = -1;
+        this.railLocatedPosition = null;
         this.renderRailLocate();
         this.railEntryIndexes.clear();
         this.railPointerCard = null;
@@ -11585,6 +11601,7 @@
       this.railLocateButton.append(UiControl.icon(this.document, RailActionKind.LOCATE));
       this.railLocateButton.setAttribute("aria-controls", LIST_RAIL_ID);
       this.railLocateButton.disabled = true;
+      this.railLocateButton.setAttribute("aria-pressed", "false");
       this.railLocateButton.addEventListener("click", () => this.locateCurrentRailItem());
     }
 
@@ -11594,12 +11611,23 @@
       const label = UiStrings.message(UiMessage.RAIL_LOCATE_LABEL, this.language);
       UiControl.setLabel(this.railLocateButton, label);
       this.railLocateButton.disabled = !this.isRailOpen || this.railLocateIndex === -1;
+      this.railLocateButton.setAttribute("aria-pressed", String(this.isRailLocated));
     }
 
-    /** Centers the cached target and renders only its destination rail window. */
+    /** Enables current-card tracking and renders only its destination rail window. */
     locateCurrentRailItem() {
       if (!this.isRailOpen || !this.railSource || this.railLocateIndex === -1) return;
+      this.isRailLocated = true;
+      this.renderRailLocate();
       this.renderRailWindow({ centerIndex: this.railLocateIndex });
+    }
+
+    /** Releases current-card tracking when the user chooses another rail position. */
+    cancelRailLocate() {
+      if (!this.isRailLocated) return;
+      this.isRailLocated = false;
+      this.railLocatedPosition = null;
+      this.renderRailLocate();
     }
 
     /** Creates the return-to-start icon immediately after Locate. */
@@ -11616,6 +11644,7 @@
     /** Returns to the first rail window and refreshes its source when enabled. */
     scrollRailToStart() {
       if (!this.isRailOpen || !this.railSource) return;
+      this.cancelRailLocate();
       this.renderRailWindow({ resetScroll: true });
       if (this.preferences.features.refreshRailOnStart) return this.refreshCurrentRail();
     }
@@ -13328,7 +13357,7 @@
      */
     observeRailWindow() {
       const schedule = () => this.scheduleRailRender();
-      this.rail.addEventListener("scroll", schedule, { passive: true });
+      this.rail.addEventListener("scroll", () => this.handleRailScroll(), { passive: true });
       this.rail.addEventListener("wheel", (event) => {
         this.handleRailWheel(event);
       }, { passive: false });
@@ -13371,11 +13400,30 @@
     }
 
     /**
+     * Releases Locate for native scrolling, including touch and scrollbar input.
+     * Owned writes retain their clamped position. Geometry changes schedule a new
+     * center instead of treating browser scroll clamping as user input.
+     */
+    handleRailScroll() {
+      const position = this.railLocatedPosition;
+      if (position && this.rail.clientWidth === position.width &&
+          this.rail.scrollWidth === position.scrollWidth &&
+          this.rail.scrollLeft !== position.left) {
+        this.cancelRailLocate();
+      }
+      this.scheduleRailRender();
+    }
+
+    /**
      * Maps unmodified vertical wheel input to the rail's horizontal scroll surface.
      *
      * @param {WheelEvent} event
      */
     handleRailWheel(event) {
+      if (!event.defaultPrevented && !event.ctrlKey && !event.metaKey && !event.altKey &&
+          (event.deltaX !== 0 || event.deltaY !== 0)) {
+        this.cancelRailLocate();
+      }
       if (event.defaultPrevented || !event.cancelable || event.ctrlKey ||
           event.metaKey || event.altKey || event.shiftKey || event.deltaX !== 0 ||
           event.deltaY === 0) {
@@ -13433,6 +13481,7 @@
      * Releases viewport observers and pending demand when layout ownership ends.
      */
     stopRailWindow() {
+      this.cancelRailLocate();
       if (this.railRenderFrame !== null) {
         cancelAnimationFrame(this.railRenderFrame);
         this.railRenderFrame = null;
@@ -13631,6 +13680,11 @@
         return;
       }
 
+      if (revealFocus) this.cancelRailLocate();
+      if (this.isRailLocated && this.isRailOpen && this.railLocateIndex !== -1) {
+        centerIndex = this.railLocateIndex;
+      }
+
       const preservedScrollLeft = this.rail.scrollLeft;
       const style = getComputedStyle(row);
       const geometry = new RailWindow(
@@ -13725,6 +13779,11 @@
       if (trailingControl) {
         trailingControl.style.left = `${this.railEntries.length * geometry.stride}px`;
       }
+      this.railLocatedPosition = this.isRailLocated ? {
+        left: this.rail.scrollLeft,
+        width: this.rail.clientWidth,
+        scrollWidth: this.rail.scrollWidth
+      } : null;
       this.requestSilentSourceLoad(source, visibleRange);
     }
 

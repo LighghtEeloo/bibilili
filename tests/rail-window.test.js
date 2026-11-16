@@ -454,6 +454,138 @@ test("Locate jumps to a cached current item in a large rail without rebuilding e
   }
 });
 
+/** Enables Locate on a middle card and runs scheduled windows synchronously. */
+function locatedRailFixture() {
+  const fixture = railFixture(LayoutRoot, 100, SourceKind.HISTORY);
+  const { layout, source } = fixture;
+  layout.createRailLocate();
+  source.items[40].targetUrl = global.location.href;
+  layout.scheduleRailRender = () => layout.renderRailWindow();
+  layout.renderRail(source, true);
+  assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
+  layout.railLocateButton.dispatch("click");
+  return fixture;
+}
+
+test("Locate retains pressed state through owned scroll events and reconciliation", () => {
+  const { layout, source, rail } = locatedRailFixture();
+  const left = rail.scrollLeft;
+  layout.handleRailScroll();
+  layout.renderRail(source, false);
+  layout.handleRailScroll();
+  assert.equal(layout.isRailLocated, true);
+  assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "true");
+  assert.equal(rail.scrollLeft, left);
+});
+
+test("Locate recenters after viewport and card resizing without treating clamping as input", () => {
+  const { layout, rail, document } = locatedRailFixture();
+  rail.clientWidth = 1400;
+  layout.handleRailScroll();
+  assert.equal(rail.scrollLeft, 12 + 40 * 200 + 95 - 700);
+  document.cardWidth = 230;
+  layout.handleRailResize();
+  assert.equal(rail.scrollLeft, 12 + 40 * 240 + 115 - 700);
+  layout.handleRailScroll();
+  assert.equal(layout.isRailLocated, true);
+});
+
+test("Locate follows reordered entries and same-tab current-video changes", () => {
+  const { layout, source, rail } = locatedRailFixture();
+  const current = source.items.splice(40, 1)[0];
+  source.items.splice(60, 0, current);
+  layout.renderRail(source, false);
+  assert.equal(rail.scrollLeft, 12 + 60 * 200 + 95 - 500);
+  const previousHref = global.location.href;
+  try {
+    global.location.href = source.items[20].targetUrl;
+    layout.document.querySelectorAll = (selector) => layout.document.body.querySelectorAll(selector);
+    layout.resetPageSession();
+    layout.renderRail(source, false);
+    assert.equal(layout.railLocateIndex, 20);
+    assert.equal(rail.scrollLeft, 12 + 20 * 200 + 95 - 500);
+    assert.equal(layout.isRailLocated, true);
+  } finally {
+    global.location.href = previousHref;
+  }
+});
+
+test("native user scrolling cancels Locate and keeps the chosen position", () => {
+  for (const delta of [-250, 0.5, 250]) {
+    const { layout, source, rail } = locatedRailFixture();
+    rail.scrollLeft += delta;
+    const left = rail.scrollLeft;
+    layout.handleRailScroll();
+    layout.renderRail(source, false);
+    assert.equal(layout.isRailLocated, false);
+    assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
+    assert.equal(rail.scrollLeft, left);
+  }
+});
+
+test("vertical and native horizontal wheel gestures cancel Locate before rendering", () => {
+  for (const overrides of [{}, { deltaX: 100, deltaY: 0 }, { shiftKey: true }]) {
+    const { layout } = locatedRailFixture();
+    layout.handleRailWheel(wheelEvent(overrides));
+    assert.equal(layout.isRailLocated, false);
+  }
+  for (const overrides of [{ ctrlKey: true }, { metaKey: true }, { defaultPrevented: true }]) {
+    const { layout } = locatedRailFixture();
+    layout.handleRailWheel(wheelEvent(overrides));
+    assert.equal(layout.isRailLocated, true);
+  }
+});
+
+test("Start and keyboard card navigation release Locate", () => {
+  const { layout, rail, card } = locatedRailFixture();
+  layout.preferences.features.refreshRailOnStart = false;
+  layout.scrollRailToStart();
+  assert.equal(layout.isRailLocated, false);
+  assert.equal(rail.scrollLeft, 0);
+  layout.locateCurrentRailItem();
+  layout.renderRailWindow({ focusIndex: 70, revealFocus: true });
+  assert.equal(layout.isRailLocated, false);
+  assert.equal(card(70).firstChild, layout.document.activeElement);
+  assert.ok(rail.scrollLeft > 12000);
+});
+
+test("Locate clamps at both ends and stays enabled through resize and expansion", () => {
+  for (const index of [0, 99]) {
+    const { layout, source, rail } = locatedRailFixture();
+    [source.items[40], source.items[index]] = [source.items[index], source.items[40]];
+    source.pagination.hasMore = false;
+    layout.renderRail(source, false);
+    assert.equal(rail.scrollLeft, index === 0 ? 0 : rail.scrollWidth - rail.clientWidth);
+    rail.clientWidth = 2000;
+    layout.handleRailScroll();
+    assert.equal(rail.scrollLeft, index === 0 ? 0 : rail.scrollWidth - rail.clientWidth);
+    assert.equal(layout.isRailLocated, true);
+    source.items.push(...Array.from({ length: 20 }, (_, i) => ({
+      targetUrl: `https://www.bilibili.com/video/av${1000 + i}`, title: `Added ${i}`
+    })));
+    layout.renderRail(source, false);
+    assert.equal(rail.scrollLeft, index === 0 ? 0 : 12 + 99 * 200 + 95 - 1000);
+    layout.handleRailScroll();
+    assert.equal(layout.isRailLocated, true);
+  }
+});
+
+test("Locate survives closure and missing targets, and resumes when a target returns", () => {
+  const { layout, source, rail } = locatedRailFixture();
+  layout.isRailOpen = false;
+  layout.renderSourceDock([source], null);
+  assert.equal(layout.isRailLocated, true);
+  assert.equal(layout.railLocatedPosition, null);
+  layout.isRailOpen = true;
+  layout.renderRail({ ...source, items: source.items.slice(0, 20) }, true);
+  assert.equal(layout.railLocateButton.disabled, true);
+  assert.equal(layout.isRailLocated, true);
+  layout.renderRail(source, false);
+  assert.equal(rail.scrollLeft, 12 + 40 * 200 + 95 - 500);
+  layout.stopRailWindow();
+  assert.equal(layout.isRailLocated, false);
+});
+
 test("Locate disables for absent videos and closed rails", () => {
   const { layout, source, rail } = railFixture(LayoutRoot, 100, SourceKind.HISTORY);
   layout.createRailLocate();
