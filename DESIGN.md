@@ -315,7 +315,7 @@ dated days. A row shows a kind icon, the title linking to the original watch
 URL, and a detail line with the operation kind and completion time. The time's
 hover title gives the full timestamp.
 
-Favorite saves and rail removals expose Undo and Redo as curved-arrow icon
+Favorite saves and rail removals expose Undo and Redo as hooked-arrow icon
 buttons with localized hover titles and accessible labels. Undo removes a
 favorite from its original folder or adds a removed archive back to Watch
 later. Redo reapplies the original operation. Each request verifies the
