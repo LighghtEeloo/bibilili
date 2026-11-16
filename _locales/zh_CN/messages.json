@@ -339,11 +339,7 @@
   },
   "operationHistorySize": {
     "message": "历史记录条数",
-    "description": "Label for the retained operation count slider."
-  },
-  "operationHistorySizeHint": {
-    "message": "滑块失去焦点后生效。",
-    "description": "Explains when a draft history size takes effect."
+    "description": "Label for the retained operation count choices."
   },
   "operationHistoryClear": {
     "message": "清空",
@@ -352,6 +348,30 @@
   "operationHistoryEmpty": {
     "message": "暂无操作记录。",
     "description": "Empty operation history."
+  },
+  "operationHistoryFilterLabel": {
+    "message": "按操作筛选",
+    "description": "Accessible name for the operation history filter buttons."
+  },
+  "operationHistoryFilterAll": {
+    "message": "全部",
+    "description": "Shows every recorded operation."
+  },
+  "operationHistoryFilterVisit": {
+    "message": "访问",
+    "description": "Shows only video visits."
+  },
+  "operationHistoryFilterFavorite": {
+    "message": "收藏",
+    "description": "Shows only direct favorite saves."
+  },
+  "operationHistoryFilterRemove": {
+    "message": "移除",
+    "description": "Shows only Watch later rail removals."
+  },
+  "operationHistoryFilterEmpty": {
+    "message": "没有符合条件的操作。",
+    "description": "Operation history has records, but none match the selected filter."
   },
   "operationHistoryVisit": {
     "message": "已访问",

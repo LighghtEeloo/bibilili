@@ -11,7 +11,7 @@
   const COMMENT_PANE_WIDTH_STORAGE_KEY = "bibilili:comment-pane-width";
   const SETTINGS_STORAGE_KEY = "bibilili:settings";
   const SETTINGS_TAB_STORAGE_KEY = "bibilili:settings-tab";
-  /** Supported operation history capacities, ordered by slider position. */
+  /** Supported operation history capacities in display order. */
   const OPERATION_HISTORY_LIMITS = Object.freeze([10, 20, 100, 500]);
   const DEFAULT_OPERATION_HISTORY_LIMIT = 100;
   /** Closed settings tabs shared by the view and its persisted navigation state. */

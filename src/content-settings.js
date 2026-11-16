@@ -412,6 +412,8 @@
         panel.setAttribute("aria-labelledby", button.id);
         this.panels.set(key, panel);
       }
+      // History scrolls its own list so the popup header, tabs, and footer stay in view.
+      this.panels.get(SettingsTab.OPERATION_HISTORY).className += " bibilili-settings-body-fill";
       const features = this.panels.get(SettingsTab.FEATURES);
       features.append(this.viewModeRow(), this.languageRow());
       features.append(this.text("h3", UiMessage.SETTINGS_WATCH_PAGE_LABEL));

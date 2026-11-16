@@ -339,11 +339,7 @@
   },
   "operationHistorySize": {
     "message": "History size",
-    "description": "Label for the retained operation count slider."
-  },
-  "operationHistorySizeHint": {
-    "message": "Applies when the slider loses focus.",
-    "description": "Explains when a draft history size takes effect."
+    "description": "Label for the retained operation count choices."
   },
   "operationHistoryClear": {
     "message": "Clear",
@@ -352,6 +348,30 @@
   "operationHistoryEmpty": {
     "message": "No operations recorded yet.",
     "description": "Empty operation history."
+  },
+  "operationHistoryFilterLabel": {
+    "message": "Filter by operation",
+    "description": "Accessible name for the operation history filter buttons."
+  },
+  "operationHistoryFilterAll": {
+    "message": "All",
+    "description": "Shows every recorded operation."
+  },
+  "operationHistoryFilterVisit": {
+    "message": "Visits",
+    "description": "Shows only video visits."
+  },
+  "operationHistoryFilterFavorite": {
+    "message": "Favorites",
+    "description": "Shows only direct favorite saves."
+  },
+  "operationHistoryFilterRemove": {
+    "message": "Removals",
+    "description": "Shows only Watch later rail removals."
+  },
+  "operationHistoryFilterEmpty": {
+    "message": "No matching operations.",
+    "description": "Operation history has records, but none match the selected filter."
   },
   "operationHistoryVisit": {
     "message": "Visited",

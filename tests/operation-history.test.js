@@ -3,7 +3,7 @@ const test = require("node:test");
 const { FakeStorage, ThrowingStorage, loadContentRuntime } = require("./helpers/content-runtime.js");
 const { railFixture } = require("./helpers/rail-dom.js");
 const { AccountSourceStore, BibililiController, LayoutRoot, SourceKind, WatchActionKind } = loadContentRuntime();
-const { OperationHistory, OperationKind } = global.__bibililiOperationHistory;
+const { OperationHistory, OperationKind, OperationFilter } = global.__bibililiOperationHistory;
 const { SettingsPreference, SettingsTab, SettingsTabPreference } = global.__bibililiStorageState;
 const { UiStrings, UiMessage, UiLanguage } = global.__bibililiI18n;
 const TARGET = "https://www.bilibili.com/video/av123";
@@ -139,40 +139,65 @@ test("history capacity accepts only its four choices and restores the saved limi
   assert.equal(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")).length, 20);
 });
 
-test("size drafts survive input, change, and reconciliation and only trim and persist on blur", (t) => {
-  const { controller, store, view, document, enable } = fixture(t);
+test("capacity choices apply on click, trim the oldest records, and keep focus", (t) => {
+  const { controller, store, document, enable } = fixture(t);
   const history = enable();
   for (let i = 0; i < 30; i += 1) store.visit(`https://www.bilibili.com/video/av${i + 1}`, `Video ${i}`);
-  const slider = history.sizeInput;
-  assert.equal(slider.type, "range");
-  assert.equal(slider.value, "2");
-  assert.equal(slider.getAttribute("aria-valuetext"), "100");
-  slider.focus();
-  for (const [position, limit] of [[0, 10], [3, 500], [1, 20]]) {
-    slider.value = String(position);
-    slider.dispatch("input");
-    slider.dispatch("change");
-    view.render();
-    assert.equal(history.sizeValue.textContent, String(limit));
-    assert.equal(slider.getAttribute("aria-valuetext"), String(limit));
-    assert.equal(store.limit, 100);
-    assert.equal(store.entries.length, 30);
-    assert.equal(SettingsPreference.read().operationHistoryLimit, 100);
-    assert.equal(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")).length, 30);
-  }
-  store.visit("https://www.bilibili.com/video/av31", "New while editing");
-  assert.equal(slider.value, "1");
-  assert.equal(store.entries.length, 31);
-  document.body.focus();
-  slider.dispatch("blur");
+  assert.deepEqual([...history.sizeButtons.keys()], [10, 20, 100, 500]);
+  assert.equal(history.sizeButtons.get(100).getAttribute("aria-pressed"), "true");
+  assert.equal(history.sizeLabel.textContent, "History size");
+  const choice = history.sizeButtons.get(20);
+  choice.focus();
+  choice.dispatch("click");
   assert.equal(store.limit, 20);
   assert.equal(store.entries.length, 20);
-  assert.equal(store.entries[0].title, "New while editing");
+  assert.equal(store.entries[0].title, "Video 29");
   assert.equal(history.rows.size, 20);
-  assert.equal(history.sizeInput, slider);
+  assert.equal(history.sizeButtons.get(20), choice);
+  assert.equal(choice.getAttribute("aria-pressed"), "true");
+  assert.equal(history.sizeButtons.get(100).getAttribute("aria-pressed"), "false");
+  assert.equal(document.activeElement, choice);
   assert.equal(SettingsPreference.read().operationHistoryLimit, 20);
+  assert.equal(JSON.parse(global.sessionStorage.getItem("bibilili:operation-history")).length, 20);
   assert.equal(controller.refreshAccountSources.mock.callCount(), 0);
   assert.equal(controller.scheduleReconcile.mock.callCount(), 0);
+});
+
+test("filters and day groups reconcile keyed rows and show the matching empty state", (t) => {
+  const { store, enable } = fixture(t);
+  const view = enable();
+  const days = () => view.list.children.map((day) => [day.firstChild.textContent, day.lastChild.children.length]);
+  store.record(OperationKind.FAVORITE, details);
+  view.filterButtons.get(OperationFilter.VISIT).button.dispatch("click");
+  assert.equal(view.empty.hidden, false);
+  assert.equal(view.emptyTitle.textContent, "No matching operations.");
+  assert.equal(view.emptyHint.hidden, true);
+  assert.deepEqual(days(), []);
+  store.clear();
+  assert.equal(view.emptyTitle.textContent, "No operations recorded yet.");
+  assert.equal(view.emptyHint.hidden, false);
+
+  view.filterButtons.get(OperationFilter.ALL).button.dispatch("click");
+  store.visit(TARGET, "Yesterday visit");
+  const now = new Date();
+  store.entries[0].createdAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12).getTime();
+  store.record(OperationKind.FAVORITE, details);
+  store.record(OperationKind.REMOVE, details);
+  assert.equal(view.empty.hidden, true);
+  assert.deepEqual(days(), [["Today", 2], ["Yesterday", 1]]);
+  assert.equal(view.filterButtons.get(OperationFilter.ALL).count.textContent, "3");
+  assert.equal(view.filterButtons.get(OperationFilter.VISIT).button.getAttribute("aria-label"), "Visits (1)");
+  const favoriteRow = view.rows.get(store.entries[1].id).row;
+  const favorites = view.filterButtons.get(OperationFilter.FAVORITE).button;
+  favorites.dispatch("click");
+  assert.equal(favorites.getAttribute("aria-pressed"), "true");
+  assert.equal(view.filterButtons.get(OperationFilter.ALL).button.getAttribute("aria-pressed"), "false");
+  assert.deepEqual(days(), [["Today", 1]]);
+  assert.equal(view.list.children[0].lastChild.children[0], favoriteRow);
+  view.filterButtons.get(OperationFilter.ALL).button.dispatch("click");
+  assert.deepEqual(days(), [["Today", 2], ["Yesterday", 1]]);
+  assert.equal(view.rows.get(store.entries[1].id).row, favoriteRow);
+  assert.equal(view.rows.get(store.entries[2].id).button, null);
 });
 
 test("clear empties and persists history without repeating the current visit or changing account data", (t) => {
@@ -228,9 +253,7 @@ test("history size survives blocked storage for the page and clear remains usabl
   store.visit(TARGET, "Current video");
   global.localStorage = new ThrowingStorage();
   global.sessionStorage = new ThrowingStorage();
-  history.sizeInput.value = "0";
-  history.sizeInput.dispatch("input");
-  history.sizeInput.dispatch("blur");
+  history.sizeButtons.get(10).dispatch("click");
   assert.equal(store.limit, 10);
   assert.equal(controller.settingsView.statusKey, UiMessage.SETTINGS_PAGE_ONLY_LABEL);
   history.clearButton.dispatch("click");
@@ -273,7 +296,14 @@ test("undo uses the shared loading bar, serializes clicks, then shows a check an
   view.render();
   assert.equal(historyView.rows.get(entry.id).button, parts.button);
   assert.equal(new OperationHistory(() => {}).entries[0].undone, true);
+  entry.result = null;
+  view.render();
+  assert.equal(parts.row.dataset.undone, "true");
+  assert.equal(parts.feedback.dataset.state, "undone");
+  assert.equal(parts.message.textContent, "Undone");
+  assert.equal(parts.check.style.display, "none");
   await store.toggle(entry.id, async (_entry, undo) => assert.equal(undo, false));
+  assert.equal(parts.row.dataset.undone, "false");
   assert.equal(parts.button.getAttribute("aria-label"), "Undo");
   assert.equal(parts.button.firstChild.firstChild.getAttribute("d"), undoPath);
   assert.equal(parts.message.textContent, "Redone");
@@ -367,7 +397,7 @@ test("visits have no undo, and disabling history during account verification pre
   const view = enable();
   store.visit(TARGET, "Visit");
   const visited = store.entries[0];
-  assert.equal(view.rows.get(visited.id).actions.hidden, true);
+  assert.equal(view.rows.get(visited.id).button, null);
   const unexpected = t.mock.fn();
   await store.toggle(visited.id, unexpected);
   assert.equal(unexpected.mock.callCount(), 0);

@@ -263,10 +263,9 @@ placement.
 Preferences use a validated record of settings view mode, UI language, history
 capacity, rail opening, configured source order, and feature, source, and action
 booleans in Bilibili origin-local storage. Changes persist across videos and
-reloads and propagate through storage events to other Bilibili tabs. History
-capacity applies when its slider loses focus; other preferences apply
-immediately. Unavailable storage leaves the current page's choices active and
-displays a save-failure status. Restore defaults resets language, history
+reloads and propagate through storage events to other Bilibili tabs.
+Preferences apply immediately. Unavailable storage leaves the current page's
+choices active and displays a save-failure status. Restore defaults resets language, history
 capacity, rail opening, source order, feature, source, and placement preferences
 while retaining the settings view mode, available selected tab, activation
 state, and pane dimensions.
@@ -291,31 +290,46 @@ completion time. Account mutations also retain the account and archive ids;
 favorite saves retain the destination folder id.
 
 The history retains records in tab-local session storage across page loads.
-Its capacity defaults to 100 and supports 10, 20, 100, or 500 records. A discrete
-slider previews the selected capacity and applies it on losing focus. Reducing
-capacity removes the oldest records while retaining any pending operation.
-Clear removes the recorded history and is unavailable during an undo or redo.
-Clearing keeps the current visit deduplicated and leaves account data unchanged.
+Its capacity defaults to 100 and supports 10, 20, 100, or 500 records.
+Selecting a capacity applies it immediately. Reducing capacity removes the
+oldest records while retaining any pending operation. Clear removes the
+recorded history and is unavailable during an undo or redo. Clearing keeps the
+current visit deduplicated and leaves account data unchanged.
 
-Records appear newest first. Visits are recorded after navigation settles and a
-watch title is available; ordinary reconciliation does not repeat them. Failed
-operations and attempts to favorite an already saved archive do not create
-records. Disabling the feature stops capture, hides its tab, and retains existing
-records. Disabling a selected history tab returns Settings to Features.
+Visits are recorded after navigation settles and a watch title is available;
+ordinary reconciliation does not repeat them. Failed operations and attempts to
+favorite an already saved archive do not create records. Disabling the feature
+stops capture, hides its tab, and retains existing records. Disabling a
+selected history tab returns Settings to Features.
+
+The tab stacks a kind filter, the record list, and a footer holding the
+capacity choices and Clear. The list scrolls inside a fixed height that shrinks
+with the viewport, so the popup header, tabs, and footer stay in view. The
+filters are All, Visits, Favorites, and Removals, each with its record count.
+The selected filter belongs to the open page and starts at All. An empty
+history shows the feature description; a filter without matches states that
+instead.
+
+Records appear newest first under sticky day headings: Today, Yesterday, then
+dated days. A row shows a kind icon, the title linking to the original watch
+URL, and a detail line with the operation kind and completion time. The time's
+hover title gives the full timestamp.
 
 Favorite saves and rail removals expose Undo and Redo as curved-arrow icon
 buttons with localized hover titles and accessible labels. Undo removes a
-favorite from its original folder or adds a removed archive back to Watch later. Redo reapplies
-the original operation. Each request verifies the original account before
-submitting a mutation. Undo and redo update the same history record and refresh
-the affected account source. Restoring a Watch later item uses Bilibili's normal
-add order.
+favorite from its original folder or adds a removed archive back to Watch
+later. Redo reapplies the original operation. Each request verifies the
+original account before submitting a mutation. Undo and redo update the same
+history record and refresh the affected account source. Restoring a Watch later
+item uses Bilibili's normal add order. An undone record strikes through its
+title and carries an Undone label until it is redone.
 
-One history mutation runs at a time. Its row uses the shared loading bar and
-disables mutation buttons while pending. Success shows a green checkmark and
-switches Undo to Redo or Redo to Undo. Failure shows the request error beside the
-unchanged retry button. A submitted mutation finishes if the history view closes
-or the feature is disabled. Its completed state remains available when history
+One history mutation runs at a time. Its detail line shows the shared loading
+bar, and mutation buttons are disabled while it is pending. Success shows a
+green checkmark with the result and switches Undo to Redo or Redo to Undo.
+Failure shows the request error in the detail line and keeps the retry button
+unchanged. A submitted mutation finishes if the history view closes or the
+feature is disabled. Its completed state remains available when history
 reopens.
 
 ## Runtime Measurements

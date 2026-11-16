@@ -165,75 +165,97 @@
     }
   }
 
-  /** Renders stable history rows with inline loading, success, and retry feedback. */
+  /** Leading row icons; removals use the Watch later clock. */
+  const OPERATION_ICONS = Object.freeze({
+    [OperationKind.VISIT]: "play",
+    [OperationKind.FAVORITE]: "star",
+    [OperationKind.REMOVE]: "clock"
+  });
+  /** History list filters in display order; each kind filter shares its OperationKind value. */
+  const OperationFilter = Object.freeze({ ALL: "all", ...OperationKind });
+  const FILTER_MESSAGES = Object.freeze({
+    [OperationFilter.ALL]: UiMessage.OPERATION_HISTORY_FILTER_ALL,
+    [OperationFilter.VISIT]: UiMessage.OPERATION_HISTORY_FILTER_VISIT,
+    [OperationFilter.FAVORITE]: UiMessage.OPERATION_HISTORY_FILTER_FAVORITE,
+    [OperationFilter.REMOVE]: UiMessage.OPERATION_HISTORY_FILTER_REMOVE
+  });
+  /** Row feedback states; the persistent undone state shows only without a fresher result. */
+  const FeedbackState = Object.freeze({
+    NONE: "", PENDING: "pending", SUCCESS: "success", ERROR: "error", UNDONE: "undone"
+  });
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /**
+   * Renders history as a kind filter, a scrolling day-grouped list, and capacity controls.
+   * Rows are keyed by entry id and survive filter, day, and result changes so focus stays put.
+   */
   class OperationHistoryView {
     /** @param {Document} document @param {OperationHistoryViewOptions} options */
     constructor(document, options) {
       this.document = document;
       this.options = options;
       this.root = null;
+      this.language = "en";
+      this.filter = OperationFilter.ALL;
+      /** @type {Map<string, OperationHistoryRow>} */
       this.rows = new Map();
-      this.draftLimit = null;
+      /** @type {Map<string, OperationHistoryDay>} */
+      this.days = new Map();
+      /** @type {Map<string, OperationHistoryFilterButton>} */
+      this.filterButtons = new Map();
+      /** @type {Map<number, HTMLButtonElement>} */
+      this.sizeButtons = new Map();
     }
 
     /** Allocates history DOM only when its settings tab is first selected. */
     mount(parent) {
       if (this.root) return;
       this.root = this.element("div", "bibilili-operation-history");
-      this.hint = this.element("p", "bibilili-settings-hint");
-      const toolbar = this.element("div", "bibilili-operation-history-toolbar");
-      const size = this.element("div", "bibilili-operation-history-size");
-      const label = this.element("label", "bibilili-operation-history-size-label");
-      this.sizeLabel = this.element("span", "");
-      this.sizeValue = this.element("span", "");
-      this.sizeValue.setAttribute("aria-hidden", "true");
-      this.sizeInput = this.element("input", "bibilili-operation-history-size-input");
-      this.sizeInput.id = "bibilili-operation-history-size";
-      this.sizeInput.type = "range";
-      this.sizeInput.min = "0";
-      this.sizeInput.max = String(OPERATION_HISTORY_LIMITS.length - 1);
-      this.sizeInput.step = "1";
-      label.setAttribute("for", this.sizeInput.id);
-      label.append(this.sizeLabel, this.sizeValue);
-      const ticks = this.element("div", "bibilili-operation-history-size-ticks");
-      ticks.setAttribute("aria-hidden", "true");
-      for (const limit of OPERATION_HISTORY_LIMITS) {
-        const tick = this.element("span", "");
-        tick.textContent = String(limit);
-        ticks.append(tick);
+      this.filters = this.element("div", "bibilili-operation-history-filters");
+      this.filters.setAttribute("role", "group");
+      for (const filter of Object.values(OperationFilter)) {
+        const button = UiControl.button(this.document, "bibilili-operation-history-filter", () => this.selectFilter(filter));
+        const label = this.element("span", "");
+        const count = this.element("span", "bibilili-operation-history-filter-count");
+        button.append(label, count);
+        this.filterButtons.set(filter, { button, label, count });
+        this.filters.append(button);
       }
-      this.sizeHint = this.element("p", "bibilili-settings-hint");
-      this.sizeHint.id = "bibilili-operation-history-size-hint";
-      this.sizeInput.setAttribute("aria-describedby", this.sizeHint.id);
-      this.sizeInput.addEventListener("input", () => {
-        this.draftLimit = OPERATION_HISTORY_LIMITS[Number(this.sizeInput.value)];
-        this.renderLimit();
-      });
-      this.sizeInput.addEventListener("blur", () => this.commitLimit());
+      this.scroller = this.element("div", "bibilili-operation-history-scroll");
+      this.empty = this.element("div", "bibilili-operation-history-empty");
+      this.emptyTitle = this.element("p", "bibilili-operation-history-empty-title");
+      this.emptyHint = this.element("p", "bibilili-operation-history-empty-hint");
+      this.empty.append(this.emptyTitle, this.emptyHint);
+      this.list = this.element("div", "bibilili-operation-history-days");
+      this.scroller.append(this.empty, this.list);
+      const footer = this.element("div", "bibilili-operation-history-footer");
+      const size = this.element("div", "bibilili-operation-history-size");
+      size.setAttribute("role", "group");
+      this.sizeLabel = this.element("span", "bibilili-operation-history-size-label");
+      this.sizeLabel.id = "bibilili-operation-history-size-label";
+      size.setAttribute("aria-labelledby", this.sizeLabel.id);
+      const choices = this.element("div", "bibilili-operation-history-size-choices");
+      for (const limit of OPERATION_HISTORY_LIMITS) {
+        const button = UiControl.button(this.document, "bibilili-operation-history-size-choice", () => {
+          if (limit !== this.options.store.limit) this.options.onLimitChange(limit);
+        });
+        button.textContent = String(limit);
+        this.sizeButtons.set(limit, button);
+        choices.append(button);
+      }
+      size.append(this.sizeLabel, choices);
       this.clearButton = UiControl.button(this.document, "bibilili-operation-history-clear", () => this.options.store.clear());
-      size.append(label, this.sizeInput, ticks);
-      toolbar.append(size, this.clearButton);
-      this.empty = this.element("p", "bibilili-operation-history-empty");
-      this.list = this.element("ol", "bibilili-operation-history-list");
-      this.root.append(this.hint, toolbar, this.sizeHint, this.empty, this.list);
+      footer.append(size, this.clearButton);
+      this.root.append(this.filters, this.scroller, footer);
       parent.append(this.root);
     }
 
-    /** Publishes a slider draft only after focus leaves the input. */
-    commitLimit() {
-      const limit = this.draftLimit;
-      this.draftLimit = null;
-      if (limit !== null && limit !== this.options.store.limit) this.options.onLimitChange(limit);
-      this.renderLimit();
-    }
-
-    /** Preserves an uncommitted slider choice through history and settings refreshes. */
-    renderLimit() {
-      const limit = this.draftLimit ?? this.options.store.limit;
-      const position = String(OPERATION_HISTORY_LIMITS.indexOf(limit));
-      if (this.sizeInput.value !== position) this.sizeInput.value = position;
-      this.sizeInput.setAttribute("aria-valuetext", String(limit));
-      this.sizeValue.textContent = String(limit);
+    /** Shows one operation kind, or every kind, from the top of the list. @param {string} filter */
+    selectFilter(filter) {
+      if (this.filter === filter) return;
+      this.filter = filter;
+      this.scroller.scrollTop = 0;
+      this.render(this.language);
     }
 
     /** @param {string} tag @param {string} className @returns {HTMLElement} */
@@ -243,64 +265,162 @@
       return element;
     }
 
-    /** @param {OperationHistoryEntry} entry Creates one keyed row without rebuilding its button. */
+    /** @param {Date} date @returns {string} Local calendar day key. */
+    static dayKey(date) {
+      return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    }
+
+    /**
+     * Names today and yesterday relatively and older days by date; the year appears outside the current year.
+     * @param {Date} date @param {Date} now @param {string} language @returns {string}
+     */
+    static dayLabel(date, now, language) {
+      const start = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+      const days = Math.round((start(now) - start(date)) / DAY_MS);
+      if (days === 0 || days === 1) {
+        const label = new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(-days, "day");
+        return label.charAt(0).toLocaleUpperCase(language) + label.slice(1);
+      }
+      return new Intl.DateTimeFormat(language, {
+        weekday: "short", month: "short", day: "numeric",
+        year: date.getFullYear() === now.getFullYear() ? undefined : "numeric"
+      }).format(date);
+    }
+
+    /** @param {string} key @returns {OperationHistoryDay} One labeled day section. */
+    createDay(key) {
+      const section = this.element("section", "bibilili-operation-history-day");
+      const heading = this.element("h4", "bibilili-operation-history-day-label");
+      heading.id = `bibilili-operation-history-day-${key}`;
+      section.setAttribute("aria-labelledby", heading.id);
+      const list = this.element("ol", "bibilili-operation-history-list");
+      section.append(heading, list);
+      return { section, heading, list };
+    }
+
+    /** @param {OperationHistoryEntry} entry @returns {OperationHistoryRow} One keyed row. */
     createRow(entry) {
       const row = this.element("li", "bibilili-operation-history-row");
+      row.dataset.kind = entry.kind;
+      const icon = this.element("span", "bibilili-operation-history-icon");
+      icon.append(UiControl.icon(this.document, OPERATION_ICONS[entry.kind]));
       const summary = this.element("div", "bibilili-operation-history-summary");
       const title = this.element("a", "bibilili-operation-history-title");
       const detail = this.element("div", "bibilili-operation-history-detail");
       const kind = this.element("span", "bibilili-operation-history-kind");
       const time = this.element("time", "bibilili-operation-history-time");
-      detail.append(kind, time);
-      summary.append(title, detail);
-      const actions = this.element("div", "bibilili-operation-history-actions");
       const feedback = this.element("span", "bibilili-operation-history-feedback");
       feedback.setAttribute("role", "status");
       const loading = this.options.createLoading();
       const check = UiControl.icon(this.document, "check");
       const message = this.element("span", "bibilili-operation-history-message");
       feedback.append(loading, check, message);
-      const button = UiControl.button(this.document, "bibilili-operation-history-button", () => {
-        void this.options.store.toggle(entry.id, this.options.onApply);
-      });
-      actions.append(feedback, button);
-      row.append(summary, actions);
-      return { row, title, kind, time, feedback, loading, check, message, button, actions };
+      detail.append(kind, time, feedback);
+      summary.append(title, detail);
+      row.append(icon, summary);
+      let button = null;
+      if (entry.kind !== OperationKind.VISIT) {
+        button = UiControl.button(this.document, "bibilili-operation-history-button", () => {
+          void this.options.store.toggle(entry.id, this.options.onApply);
+        });
+        row.append(button);
+      }
+      return { row, title, kind, time, feedback, loading, check, message, button };
     }
 
-    /** Reconciles new records and operation results while preserving keyboard focus. */
+    /** Reconciles filters, day groups, rows, and capacity while preserving keyboard focus. */
     render(language) {
       if (!this.root) return;
+      this.language = language;
       const { store } = this.options;
       const message = (key) => UiStrings.message(key, language);
-      const dateFormat = new Intl.DateTimeFormat(language, { dateStyle: "short", timeStyle: "medium" });
-      this.hint.textContent = message(UiMessage.OPERATION_HISTORY_HINT);
+      const counts = new Map(Object.values(OperationFilter).map((filter) => [filter, 0]));
+      for (const entry of store.entries) counts.set(entry.kind, counts.get(entry.kind) + 1);
+      counts.set(OperationFilter.ALL, store.entries.length);
+      this.filters.setAttribute("aria-label", message(UiMessage.OPERATION_HISTORY_FILTER_LABEL));
+      for (const [filter, { button, label, count }] of this.filterButtons) {
+        const text = message(FILTER_MESSAGES[filter]);
+        label.textContent = text;
+        count.textContent = String(counts.get(filter));
+        button.setAttribute("aria-label", `${text} (${counts.get(filter)})`);
+        button.setAttribute("aria-pressed", String(filter === this.filter));
+      }
       this.sizeLabel.textContent = message(UiMessage.OPERATION_HISTORY_SIZE);
-      this.sizeHint.textContent = message(UiMessage.OPERATION_HISTORY_SIZE_HINT);
-      this.renderLimit();
+      for (const [limit, button] of this.sizeButtons) button.setAttribute("aria-pressed", String(limit === store.limit));
       UiControl.setTextButtonLabel(this.clearButton, message(UiMessage.OPERATION_HISTORY_CLEAR));
       this.clearButton.disabled = !store.entries.length || Boolean(store.pendingId);
-      this.empty.textContent = message(UiMessage.OPERATION_HISTORY_EMPTY);
-      this.empty.hidden = store.entries.length > 0;
-      const available = new Set();
-      let previous = null;
-      for (const entry of store.entries) {
+
+      const visible = this.filter === OperationFilter.ALL ? store.entries
+        : store.entries.filter((entry) => entry.kind === this.filter);
+      this.empty.hidden = visible.length > 0;
+      this.emptyTitle.textContent = message(store.entries.length
+        ? UiMessage.OPERATION_HISTORY_FILTER_EMPTY : UiMessage.OPERATION_HISTORY_EMPTY);
+      this.emptyHint.textContent = message(UiMessage.OPERATION_HISTORY_HINT);
+      this.emptyHint.hidden = store.entries.length > 0;
+
+      const now = new Date();
+      const formats = {
+        time: new Intl.DateTimeFormat(language, { timeStyle: "short" }),
+        full: new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "medium" })
+      };
+      /** @type {Map<string, HTMLElement | null>} Last placed row per day in this pass. */
+      const placedDays = new Map();
+      const placedRows = new Set();
+      let previousDay = null;
+      for (const entry of visible) {
+        const date = new Date(entry.createdAt);
+        const key = OperationHistoryView.dayKey(date);
+        let day = this.days.get(key);
+        if (!day) {
+          day = this.createDay(key);
+          this.days.set(key, day);
+        }
+        if (!placedDays.has(key)) {
+          UiControl.place(this.list, day.section, previousDay);
+          previousDay = day.section;
+          placedDays.set(key, null);
+          day.heading.textContent = OperationHistoryView.dayLabel(date, now, language);
+        }
         let parts = this.rows.get(entry.id);
         if (!parts) {
           parts = this.createRow(entry);
           this.rows.set(entry.id, parts);
         }
-        available.add(entry.id);
-        UiControl.place(this.list, parts.row, previous);
-        previous = parts.row;
-        parts.title.textContent = entry.title;
-        parts.title.href = entry.targetUrl;
-        parts.title.title = entry.title;
-        parts.kind.textContent = message(OPERATION_MESSAGES[entry.kind]);
-        const date = new Date(entry.createdAt);
-        parts.time.dateTime = date.toISOString();
-        parts.time.textContent = dateFormat.format(date);
-        parts.actions.hidden = entry.kind === OperationKind.VISIT;
+        UiControl.place(day.list, parts.row, placedDays.get(key));
+        placedDays.set(key, parts.row);
+        placedRows.add(entry.id);
+        this.renderRow(parts, entry, date, formats, message);
+      }
+      const retained = new Set(store.entries.map((entry) => entry.id));
+      for (const [id, parts] of this.rows) {
+        if (placedRows.has(id)) continue;
+        parts.row.remove();
+        if (!retained.has(id)) this.rows.delete(id);
+      }
+      for (const [key, day] of this.days) {
+        if (placedDays.has(key)) continue;
+        day.section.remove();
+        this.days.delete(key);
+      }
+    }
+
+    /**
+     * Updates one row's text, undo control, and feedback line.
+     * @param {OperationHistoryRow} parts @param {OperationHistoryEntry} entry @param {Date} date
+     * @param {{ time: Intl.DateTimeFormat, full: Intl.DateTimeFormat }} formats
+     * @param {(key: string) => string} message
+     */
+    renderRow(parts, entry, date, formats, message) {
+      const { store } = this.options;
+      parts.row.dataset.undone = String(entry.undone);
+      parts.title.textContent = entry.title;
+      parts.title.href = entry.targetUrl;
+      parts.title.title = entry.title;
+      parts.kind.textContent = message(OPERATION_MESSAGES[entry.kind]);
+      parts.time.dateTime = date.toISOString();
+      parts.time.textContent = formats.time.format(date);
+      parts.time.title = formats.full.format(date);
+      if (parts.button) {
         parts.button.disabled = Boolean(store.pendingId) || !store.enabled;
         parts.button.setAttribute("aria-busy", String(entry.pending));
         const iconKind = entry.undone ? "redo" : "undo";
@@ -310,19 +430,18 @@
         }
         UiControl.setLabel(parts.button,
           message(entry.undone ? UiMessage.OPERATION_HISTORY_REDO : UiMessage.OPERATION_HISTORY_UNDO));
-        parts.loading.hidden = !entry.pending;
-        const failed = entry.result === UiMessage.OPERATION_HISTORY_FAILED;
-        parts.feedback.dataset.state = entry.pending ? "pending" : failed ? "error" : entry.result ? "success" : "";
-        parts.check.hidden = !entry.result || failed;
-        parts.check.style.display = parts.check.hidden ? "none" : "";
-        parts.message.textContent = entry.pending ? message(UiMessage.SOURCE_MORE_LOADING_LABEL)
-          : failed ? entry.error || message(entry.result) : entry.result ? message(entry.result) : "";
       }
-      for (const [id, parts] of this.rows) {
-        if (available.has(id)) continue;
-        parts.row.remove();
-        this.rows.delete(id);
-      }
+      const failed = entry.result === UiMessage.OPERATION_HISTORY_FAILED;
+      const state = entry.pending ? FeedbackState.PENDING : failed ? FeedbackState.ERROR
+        : entry.result ? FeedbackState.SUCCESS : entry.undone ? FeedbackState.UNDONE : FeedbackState.NONE;
+      parts.feedback.dataset.state = state;
+      parts.loading.hidden = state !== FeedbackState.PENDING;
+      parts.check.hidden = state !== FeedbackState.SUCCESS;
+      parts.check.style.display = parts.check.hidden ? "none" : "";
+      parts.message.textContent = state === FeedbackState.PENDING ? message(UiMessage.SOURCE_MORE_LOADING_LABEL)
+        : state === FeedbackState.ERROR ? entry.error || message(entry.result)
+          : state === FeedbackState.SUCCESS ? message(entry.result)
+            : state === FeedbackState.UNDONE ? message(UiMessage.OPERATION_HISTORY_UNDONE) : "";
     }
   }
 
@@ -346,9 +465,39 @@
    * @typedef {object} OperationHistoryViewOptions
    * @property {OperationHistory} store Tab-local operations and mutation state.
    * @property {(entry: OperationHistoryEntry, undo: boolean) => Promise<void>} onApply Account operation executor.
-   * @property {(limit: number) => void} onLimitChange Applies and persists the selected capacity after blur.
+   * @property {(limit: number) => void} onLimitChange Applies and persists a selected capacity.
    * @property {() => HTMLElement} createLoading Shared loading view factory.
    */
 
-  window.__bibililiOperationHistory = Object.freeze({ OperationHistory, OperationHistoryView, OperationKind });
+  /**
+   * @typedef {object} OperationHistoryRow
+   * @property {HTMLLIElement} row Keyed list item carrying kind and undone state.
+   * @property {HTMLAnchorElement} title Link to the original watch route.
+   * @property {HTMLElement} kind Localized operation kind.
+   * @property {HTMLTimeElement} time Completion time; the full timestamp is its hover title.
+   * @property {HTMLElement} feedback Status region for pending, success, error, and undone states.
+   * @property {HTMLElement} loading Shared loading bar.
+   * @property {SVGSVGElement} check Success mark.
+   * @property {HTMLElement} message Feedback text.
+   * @property {HTMLButtonElement | null} button Undo or redo control; visits have none.
+   * @property {string} [iconKind] Rendered button icon.
+   */
+
+  /**
+   * @typedef {object} OperationHistoryDay
+   * @property {HTMLElement} section Day group labeled by its heading.
+   * @property {HTMLElement} heading Sticky day label.
+   * @property {HTMLOListElement} list Rows completed on that day, newest first.
+   */
+
+  /**
+   * @typedef {object} OperationHistoryFilterButton
+   * @property {HTMLButtonElement} button Pressed while its filter is selected.
+   * @property {HTMLElement} label Localized filter name.
+   * @property {HTMLElement} count Matching record count.
+   */
+
+  window.__bibililiOperationHistory = Object.freeze({
+    OperationHistory, OperationHistoryView, OperationKind, OperationFilter
+  });
 })();
