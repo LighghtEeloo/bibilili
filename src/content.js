@@ -4186,9 +4186,10 @@
      * Deletes an archive from the account and the retained watch-later items.
      *
      * @param {string} aid
+     * @param {() => void} [onRemoved] Runs after removal, before source reconciliation.
      * @returns {Promise<void>}
      */
-    async deleteWatchLaterItem(aid) {
+    async deleteWatchLaterItem(aid, onRemoved) {
       const normalizedAid = AccountSourceStore.normalizeAid(aid);
 
       if (!normalizedAid) {
@@ -4208,6 +4209,7 @@
       record.status = AccountSourceStatus.READY;
       const didRemove = this.removeWatchLaterItem(normalizedAid);
       const didDecrement = this.decrementWatchLaterCount();
+      onRemoved?.();
 
       if (didRemove || didDecrement || wasRefreshing) {
         this.onChange();
@@ -9860,7 +9862,6 @@
       this.hasUserInteractedWithSources = false;
       /** Whether the selected route was chosen automatically rather than restored or clicked. */
       this.isDefaultSourceRoute = true;
-      this.locatedCurrentRouteKeys = new Map();
       this.language = DEFAULT_UI_LANGUAGE;
     }
 
@@ -9968,10 +9969,6 @@
         SourceAdapter.matchKeyForUrl(source.kind, item.targetUrl) === matchKey
       ));
       this.renderedSourceKey = retainRailPosition ? LayoutRoot.sourceKey(source) : null;
-      this.locatedCurrentRouteKeys.clear();
-      if (retainRailPosition) {
-        this.locatedCurrentRouteKeys.set(this.renderedSourceKey, matchKey);
-      }
       this.completedWatchLaterAddKeys.clear();
 
       if (this.commentPane) {
@@ -11619,10 +11616,10 @@
       if (!this.isRailOpen || !this.railSource || this.railLocateIndex === -1) return;
       this.isRailLocated = true;
       this.renderRailLocate();
-      this.renderRailWindow({ centerIndex: this.railLocateIndex });
+      this.renderRailWindow();
     }
 
-    /** Releases current-card tracking when the user chooses another rail position. */
+    /** Releases current-card tracking without moving the rail. */
     cancelRailLocate() {
       if (!this.isRailLocated) return;
       this.isRailLocated = false;
@@ -13531,7 +13528,7 @@
       this.renderFavoriteRailState(source, title);
       const watchRouteKey = SourceAdapter.currentWatchRouteKey();
       const locateKey = watchRouteKey ? `route:${watchRouteKey}` : null;
-      const currentMatchKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+      const currentMatchKey = LayoutRoot.sourceHighlightsCurrentCard(source.kind)
         ? SourceAdapter.matchKeyForUrl(source.kind, window.location.href)
         : null;
       const keyCounts = new Map();
@@ -13573,22 +13570,9 @@
         this.pendingSourceMore = null;
       }
 
-      const currentIndex = this.railEntries.findIndex((entry) => entry.isCurrent);
-      let centerIndex = -1;
-      if (currentIndex !== -1 && currentMatchKey) {
-        if (!moreInteraction && (
-          resetScroll || this.locatedCurrentRouteKeys.get(sourceKey) !== currentMatchKey
-        )) {
-          centerIndex = currentIndex;
-        }
-        this.locatedCurrentRouteKeys.set(sourceKey, currentMatchKey);
-      }
       const saved = source.kind === SourceKind.FAVORITES
         ? this.favoriteRailPositions.get(source.folderId) : undefined;
-      if (resetScroll && saved !== undefined) {
-        centerIndex = -1;
-      }
-      this.renderRailWindow({ resetScroll, centerIndex, focusIndex,
+      this.renderRailWindow({ resetScroll, focusIndex,
         restoredScrollLeft: resetScroll ? saved : undefined });
     }
 
@@ -13650,7 +13634,6 @@
      *
      * @param {object} [options]
      * @param {boolean} [options.resetScroll]
-     * @param {number} [options.centerIndex] Current item to center before rendering.
      * @param {number} [options.focusIndex] Logical card receiving keyboard focus.
      * @param {boolean} [options.revealFocus] Scroll a keyboard target into view.
      * @param {boolean} [options.focusLastControl] Focus the target's last control.
@@ -13668,7 +13651,6 @@
     /** Applies a virtual rail window while preserving native scrolling and focus. */
     updateRailWindow({
       resetScroll = false,
-      centerIndex = -1,
       focusIndex = -1,
       revealFocus = false,
       focusLastControl = false,
@@ -13681,9 +13663,6 @@
       }
 
       if (revealFocus) this.cancelRailLocate();
-      if (this.isRailLocated && this.isRailOpen && this.railLocateIndex !== -1) {
-        centerIndex = this.railLocateIndex;
-      }
 
       const preservedScrollLeft = this.rail.scrollLeft;
       const style = getComputedStyle(row);
@@ -13703,8 +13682,8 @@
         scrollLeft = rowStart +
           (scrollLeft - rowStart) / this.railStride * geometry.stride;
       }
-      if (centerIndex !== -1) {
-        scrollLeft = rowStart + geometry.centeredOffset(centerIndex, viewportWidth);
+      if (this.isRailLocated && this.isRailOpen && this.railLocateIndex !== -1) {
+        scrollLeft = rowStart + geometry.centeredOffset(this.railLocateIndex, viewportWidth);
       } else if (revealFocus && focusIndex !== -1) {
         scrollLeft = rowStart + geometry.revealedOffset(
           focusIndex, scrollLeft - rowStart, viewportWidth
@@ -14141,12 +14120,12 @@
     }
 
     /**
-     * Returns true when the source can scroll to the current watch target.
+     * Returns true when the source highlights its current watch target.
      *
      * @param {string} sourceKind
      * @returns {boolean}
      */
-    static sourceLocatesCurrentCard(sourceKind) {
+    static sourceHighlightsCurrentCard(sourceKind) {
       return (
         sourceKind === SourceKind.PARTS ||
         sourceKind === SourceKind.COLLECTION ||
@@ -14328,7 +14307,7 @@
       }
 
       if (
-        LayoutRoot.sourceLocatesCurrentCard(sourceKind) &&
+        LayoutRoot.sourceHighlightsCurrentCard(sourceKind) &&
         currentMatchKey &&
         itemMatchKey === currentMatchKey
       ) {
@@ -14346,7 +14325,7 @@
      * @returns {boolean}
      */
     browseCardIsCurrent(source, item) {
-      const currentMatchKey = LayoutRoot.sourceLocatesCurrentCard(source.kind)
+      const currentMatchKey = LayoutRoot.sourceHighlightsCurrentCard(source.kind)
         ? SourceAdapter.matchKeyForUrl(source.kind, window.location.href)
         : null;
       const itemMatchKey = currentMatchKey
@@ -16346,17 +16325,25 @@
      * Deletes one watch-later item without changing the current watch page.
      *
      * @param {string} aid
+     * @param {OperationHistoryEntry | null} [redoEntry] Reapply a verified removal without recording it again.
      * @returns {Promise<void>}
      */
-    async deleteWatchLaterItem(aid) {
-      const recording = this.operationHistory.enabled;
+    async deleteWatchLaterItem(aid, redoEntry = null) {
+      const recording = this.operationHistory.enabled && !redoEntry;
       const item = this.accountSources.records.get(SourceKind.WATCH_LATER).items
         .find((candidate) => candidate.watchLaterAid === aid);
+      const targetUrl = item?.targetUrl ?? redoEntry?.targetUrl ?? BilibiliRoute.videoUrl({ aid });
       const accountId = recording ? await this.operationAccountId() : null;
-      await this.accountSources.deleteWatchLaterItem(aid);
+      await this.accountSources.deleteWatchLaterItem(aid, () => {
+        if (!this.layout.isRailLocated) return;
+        const current = SourceAdapter.archiveIdentityForUrl(window.location.href);
+        if (current && (current.key === SourceAdapter.archiveIdentityForUrl(targetUrl)?.key ||
+            (current.queryName === "aid" && current.queryValue === aid))) {
+          this.layout.cancelRailLocate();
+        }
+      });
       if (recording) this.operationHistory.record(OperationKind.REMOVE, {
-        aid, accountId, targetUrl: item?.targetUrl || BilibiliRoute.videoUrl({ aid }),
-        title: item?.title || `av${aid}`
+        aid, accountId, targetUrl, title: item?.title || `av${aid}`
       });
       this.scheduleReconcile(false, ReconcilePriority.URGENT);
     }
@@ -16389,7 +16376,7 @@
         if (undo) {
           await this.accountSources.addWatchLaterItem(BilibiliRoute.videoUrl({ aid: entry.aid }), this.uiLanguage);
         } else {
-          await this.accountSources.deleteWatchLaterItem(entry.aid);
+          return this.deleteWatchLaterItem(entry.aid, entry);
         }
       } else {
         throw new Error("Unknown reversible operation");

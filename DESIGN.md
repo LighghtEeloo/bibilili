@@ -1066,21 +1066,21 @@ and account expansion depth.
 Locate mode uses the action selection color and exposes `aria-pressed` on the
 button. It keeps the current card centered during reconciliation, continuation,
 resizing, and same-tab video changes. Centering is clamped to the rail's scroll
-limits without adding space at either end. The mode survives source changes and
-closing the rail; tracking resumes when the open rail contains the current card.
-It lasts for the mounted layout session and is not stored in preferences.
+limits. The rail centers the current card only in Locate mode.
+
+The mode survives source changes and closing the rail. Tracking resumes when
+the open rail contains the current card. The mode lasts for the mounted layout
+session and is not stored in preferences.
 
 User scrolling, keyboard card navigation, and Back to start cancel Locate mode.
-Programmatic centering and layout-induced scroll clamping preserve it. Automatic
-one-time positioning when a source opens does not enable the mode.
+Successfully removing the current archive from Watch later also cancels it.
+Programmatic centering and layout-induced scroll clamping preserve the mode.
 
-Locate matches items by the current source match key, or by the collection's
-native current-row marker. Parts, collections, and favorites match the current
-watch route, including its page number. Watch later matches the current archive
-identity because one to-view record represents one archive, not one part.
-Reconciliation records the first matching item's logical index while building
-rail entries. Activation uses that index to render the destination window
-through the existing rail positioning path.
+Locate matches the current watch route, including its page number. A
+collection's native current-row marker also identifies the current card. Watch
+later matches by archive identity because each record represents one archive.
+Reconciliation records the first matching item's logical index and uses it to
+render the centered window directly while Locate mode is enabled.
 
 ## Rail Start
 
@@ -1171,34 +1171,18 @@ continuation while it is open. Opening or closing the panel leaves the rail's
 route, open state, and scroll position unchanged. Retained items the panel adds
 remain available to the rail.
 
-Expansion preserves the rail scroll position unless Locate mode is enabled.
-
 When an origin route selects the destination source, the rail opens with that
 source's cards. The behavior applies to extension-owned bottom-rail card links;
 other card controls keep their own behavior.
 
-Same-tab navigation to an item already in the open rail preserves its scroll
-position when the selected source stays the same. Locate mode continues to
-center the destination while enabled.
+With Locate mode off, expansion preserves the scroll position. Same-tab
+navigation to an item already in the open rail also preserves the position
+when the source stays the same. A new rail starts at the beginning or restores
+a visited Favorites folder's position.
 
-When the selected source is parts, the rail identifies the card whose archive
-page route matches the current watch route. It positions that card when the
-parts route opens or navigation reaches a video outside the previous rail.
-
-When the selected source is a collection, the rail identifies the card whose
-archive matches the current video. A native current-row marker is equivalent to
-an archive match. It uses the same positioning rules as parts.
-
-When the selected source is watch later, the rail matches the card by archive
-identity, not by page number, because a to-view record represents one archive
-and carries at most one part. It uses the same positioning and highlight path as
-collection. Selecting or reopening the route searches all retained account items
-and reveals the batch containing the current archive before rendering. The rail
-scrolls to that card when present. Subsequent reconciliation preserves manual
-scrolling.
-
-Current-card positioning uses the item's logical index and renders the
-destination window directly.
+Selecting or reopening Watch later reveals the cached batch containing the
+current archive before rendering. The card for that archive is highlighted
+across parts.
 
 ## Video Card
 
@@ -1281,8 +1265,8 @@ A source instance first opens the panel at the top. It retains its panel scroll
 position, query, and filters while the page session and layout session continue,
 and a reopened panel restores the first visible card by key when it still exists
 and otherwise opens at the top. A new page session starts at the top. The
-panel's open state does not survive a document load. The panel does not move to
-the current video; the rail retains that positioning behavior.
+panel's open state does not survive a document load. Locate mode applies only
+to the rail.
 
 The panel header titles the source and shows a second line with the visible date
 group and a count of renderable items. While a query or filter is active, the

@@ -371,7 +371,9 @@ test("a rail removal is recorded after success, restored by undo, and removed ag
   record.watchLaterCount = 1;
   t.mock.method(AccountSourceStore, "fetchSourceRecord", async () =>
     ({ source: { items: [item] }, watchLaterCount: 1, cursor: null }));
+  controller.layout.isRailLocated = true;
   await controller.deleteWatchLaterItem("123");
+  assert.equal(controller.layout.isRailLocated, false);
   assert.equal(record.items.length, 0);
   assert.equal(store.entries.length, 1);
   const entry = store.entries[0];
@@ -383,13 +385,58 @@ test("a rail removal is recorded after success, restored by undo, and removed ag
   assert.equal(record.items.length, 1);
   assert.ok(post.mock.calls[1].arguments[0].endsWith("/toview/add"));
   assert.equal(post.mock.calls[1].arguments[1].get("aid"), "123");
+  controller.layout.isRailLocated = true;
   await store.toggle(entry.id, apply);
+  assert.equal(controller.layout.isRailLocated, false);
   assert.equal(entry.undone, false);
   assert.equal(record.items.length, 0);
   assert.equal(store.entries.length, 1);
   post.mock.mockImplementation(async () => ({ code: -400, message: "Request denied" }));
   await assert.rejects(controller.deleteWatchLaterItem("456"));
   assert.equal(store.entries.length, 1);
+});
+
+test("only a successful removal of the current archive releases Locate", async (t) => {
+  const { controller, post } = fixture(t);
+  const { layout, accountSources } = controller;
+  const record = accountSources.records.get(SourceKind.WATCH_LATER);
+  const target = "https://www.bilibili.com/video/BV1aa411c7mD";
+  global.location.href = `${target}?p=2`;
+  record.items = [
+    { targetUrl: `${target}?p=3`, title: "Current archive", watchLaterAid: "123" },
+    { targetUrl: "https://www.bilibili.com/video/av456", title: "Other archive", watchLaterAid: "456" }
+  ];
+  layout.createRailLocate();
+  layout.isRailLocated = true;
+  layout.renderRailLocate();
+
+  await controller.deleteWatchLaterItem("456");
+  assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "true");
+
+  post.mock.mockImplementation(async () => ({ code: -400, message: "Request denied" }));
+  await assert.rejects(controller.deleteWatchLaterItem("123"));
+  assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "true");
+
+  post.mock.mockImplementation(async () => ({ code: 0 }));
+  record.controller = new AbortController();
+  const refresh = t.mock.method(accountSources, "refreshSource", async () => {
+    assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
+  });
+  await controller.deleteWatchLaterItem("123");
+  assert.equal(refresh.mock.callCount(), 1);
+  assert.equal(global.location.href, `${target}?p=2`);
+});
+
+test("a removal completing after navigation does not release Locate on another video", async (t) => {
+  const { controller, post } = fixture(t);
+  controller.layout.isRailLocated = true;
+  let finish;
+  post.mock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const removal = controller.deleteWatchLaterItem("123");
+  global.location.href = "https://www.bilibili.com/video/av456";
+  finish({ code: 0 });
+  await removal;
+  assert.equal(controller.layout.isRailLocated, true);
 });
 
 test("visits have no undo, and disabling history during account verification prevents a new write", async (t) => {

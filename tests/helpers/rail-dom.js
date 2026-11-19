@@ -102,6 +102,7 @@ function railFixture(LayoutRoot, count, kind = "history") {
     addEventListener() {}, removeEventListener() {},
     createElement: (tagName) => new RailElement(document, tagName),
     createElementNS: (_namespace, tagName) => new RailElement(document, tagName),
+    querySelectorAll: (selector) => document.body.querySelectorAll(selector),
     cardWidth: 190
   };
   document.body = document.createElement("body");

@@ -363,18 +363,28 @@ test("silent watch-later continuation reveals cached items without a request", a
   assert.equal(requests.length, 2);
 });
 
-test("current-video positioning renders the destination without intermediate cards", () => {
-  const fixture = railFixture(LayoutRoot, 10000, SourceKind.WATCH_LATER);
-  fixture.source.items[9000].targetUrl = global.location.href;
-  fixture.layout.renderRail(fixture.source, true);
-  assert.equal(fixture.card(9000).isCurrent, true);
-  assert.equal(fixture.rail.scrollLeft, 1799607);
-  assert.ok(fixture.created.length <= 12);
-  assert.ok(fixture.created.every((card) => Number(card.dataset.bibililiCardIndex) > 8990));
+test("navigation outside the previous rail centers the destination only in Locate mode", (t) => {
+  const previousHref = global.location.href;
+  t.after(() => { global.location.href = previousHref; });
+  for (const tracking of [false, true]) {
+    global.location.href = previousHref;
+    const { layout, source, rail, card } = railFixture(LayoutRoot, 100, SourceKind.PARTS);
+    source.items[40].targetUrl = previousHref;
+    layout.renderSourceDock([source], null);
+    assert.equal(rail.scrollLeft, 0);
+    if (tracking) layout.locateCurrentRailItem();
 
-  fixture.rail.scrollLeft = 0;
-  fixture.layout.renderRail(fixture.source, false);
-  assert.equal(fixture.rail.scrollLeft, 0);
+    const targetUrl = "https://www.bilibili.com/video/av200?p=2";
+    const items = source.items.slice();
+    items[60] = { targetUrl, title: "Part two" };
+    global.location.href = targetUrl;
+    layout.resetPageSession();
+    layout.renderSourceDock([{ ...source, items }], null);
+
+    assert.equal(layout.railLocateIndex, 60);
+    assert.equal(rail.scrollLeft, tracking ? 12 + 60 * 200 + 95 - 500 : 0);
+    assert.equal(card(60)?.isCurrent, tracking ? true : undefined);
+  }
 });
 
 test("Locate matches watch-later cards by archive across parts", () => {
@@ -394,10 +404,8 @@ test("Locate matches watch-later cards by archive across parts", () => {
 
       assert.equal(layout.railLocateIndex, 40);
       assert.equal(layout.railLocateButton.disabled, false);
-      assert.ok(rail.scrollLeft > 0);
+      assert.equal(rail.scrollLeft, 0);
 
-      rail.scrollLeft = 0;
-      layout.renderRailWindow();
       layout.locateCurrentRailItem();
       assert.ok(rail.scrollLeft > 0);
     }
@@ -433,14 +441,13 @@ test("Locate keeps parts matching exact to the page", () => {
 });
 
 test("Locate jumps to a cached current item in a large rail without rebuilding entries", () => {
-  for (const kind of [SourceKind.PARTS, SourceKind.COLLECTION, SourceKind.WATCH_LATER, SourceKind.HISTORY]) {
+  for (const kind of [SourceKind.PARTS, SourceKind.COLLECTION, SourceKind.FAVORITES,
+    SourceKind.WATCH_LATER, SourceKind.HISTORY]) {
     const { layout, source, rail, created, card } = railFixture(LayoutRoot, 10000, kind);
     layout.createRailLocate();
     source.items[9000].targetUrl = global.location.href;
     layout.renderRail(source, true);
-    if (kind === SourceKind.HISTORY) assert.equal(rail.scrollLeft, 0);
-    rail.scrollLeft = 0;
-    layout.renderRailWindow();
+    assert.equal(rail.scrollLeft, 0);
     const entries = layout.railEntries;
     created.length = 0;
 
@@ -456,12 +463,12 @@ test("Locate jumps to a cached current item in a large rail without rebuilding e
 
 /** Enables Locate on a middle card and runs scheduled windows synchronously. */
 function locatedRailFixture() {
-  const fixture = railFixture(LayoutRoot, 100, SourceKind.HISTORY);
+  const fixture = railFixture(LayoutRoot, 100, SourceKind.WATCH_LATER);
   const { layout, source } = fixture;
   layout.createRailLocate();
   source.items[40].targetUrl = global.location.href;
   layout.scheduleRailRender = () => layout.renderRailWindow();
-  layout.renderRail(source, true);
+  layout.renderSourceDock([source], null);
   assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
   layout.railLocateButton.dispatch("click");
   return fixture;
@@ -499,9 +506,8 @@ test("Locate follows reordered entries and same-tab current-video changes", () =
   const previousHref = global.location.href;
   try {
     global.location.href = source.items[20].targetUrl;
-    layout.document.querySelectorAll = (selector) => layout.document.body.querySelectorAll(selector);
     layout.resetPageSession();
-    layout.renderRail(source, false);
+    layout.renderSourceDock([source], null);
     assert.equal(layout.railLocateIndex, 20);
     assert.equal(rail.scrollLeft, 12 + 20 * 200 + 95 - 500);
     assert.equal(layout.isRailLocated, true);
@@ -510,8 +516,11 @@ test("Locate follows reordered entries and same-tab current-video changes", () =
   }
 });
 
-test("native user scrolling cancels Locate and keeps the chosen position", () => {
+test("native user scrolling cancels Locate and preserves the position through navigation", (t) => {
+  const previousHref = global.location.href;
+  t.after(() => { global.location.href = previousHref; });
   for (const delta of [-250, 0.5, 250]) {
+    global.location.href = previousHref;
     const { layout, source, rail } = locatedRailFixture();
     rail.scrollLeft += delta;
     const left = rail.scrollLeft;
@@ -519,6 +528,12 @@ test("native user scrolling cancels Locate and keeps the chosen position", () =>
     layout.renderRail(source, false);
     assert.equal(layout.isRailLocated, false);
     assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
+    assert.equal(rail.scrollLeft, left);
+
+    global.location.href = source.items[60].targetUrl;
+    layout.resetPageSession();
+    layout.renderSourceDock([source], null);
+    assert.equal(layout.railLocateIndex, 60);
     assert.equal(rail.scrollLeft, left);
   }
 });
@@ -811,9 +826,10 @@ test("Back to start only scrolls when refresh is disabled and ignores a closed r
   assert.equal(requests, 0);
 });
 
-test("opening and reopening watch later reveals the cached current batch before rendering", async (t) => {
+test("opening watch later reveals the cached current batch without centering", async (t) => {
   const fixture = await watchLaterRailFixture(t);
   const { layout, store, rail, card, cards, created, demands, requests, reveals } = fixture;
+  layout.createRailLocate();
   layout.renderSourceDock(layout.currentSources, {});
   assert.equal(reveals(), 0);
   assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 80);
@@ -823,17 +839,21 @@ test("opening and reopening watch later reveals the cached current batch before 
   layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
   assert.equal(store.currentSource(SourceKind.WATCH_LATER).items.length, 200);
   assert.equal(layout.railSource.items.length, 200);
-  assert.equal(card(190).isCurrent, true);
-  const centeredScrollLeft = rail.scrollLeft;
-  assert.ok(centeredScrollLeft > 37000);
+  assert.equal(layout.railLocateIndex, 190);
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(card(190), undefined);
   assert.ok(cards().length <= 12);
-  assert.ok(created.every((card) => Number(card.dataset.bibililiCardIndex) > 180));
-  assert.ok(demands.flat().every((item) => Number(item.watchLaterAid) > 180));
+  assert.ok(created.every((card) => Number(card.dataset.bibililiCardIndex) < 12));
+  assert.ok(demands.flat().every((item) => Number(item.watchLaterAid) <= 12));
   assert.equal(reveals(), 1);
   assert.equal(requests.length, 2);
 
+  layout.railLocateButton.dispatch("click");
+  assert.equal(card(190).isCurrent, true);
+  assert.ok(rail.scrollLeft > 37000);
   rail.scrollLeft = 2012;
-  layout.renderRailWindow();
+  layout.scheduleRailRender = () => layout.renderRailWindow();
+  layout.handleRailScroll();
   const retainedCard = card(10);
   layout.setSources(store.currentSources(), false, {}, null);
   assert.equal(rail.scrollLeft, 2012);
@@ -845,8 +865,8 @@ test("opening and reopening watch later reveals the cached current batch before 
   assert.deepEqual(demands.at(-1), []);
   assert.equal(reveals(), 1);
   layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
-  assert.equal(rail.scrollLeft, centeredScrollLeft);
-  assert.equal(card(190).isCurrent, true);
+  assert.equal(rail.scrollLeft, 0);
+  assert.equal(layout.railLocateButton.getAttribute("aria-pressed"), "false");
   assert.equal(reveals(), 2);
   assert.equal(requests.length, 2);
 });
@@ -862,7 +882,7 @@ test("opening watch later with no cached match keeps its initial batch", async (
 
 test("account-source arrival reveals the target while preserving earlier manual scrolling", async (t) => {
   const fixture = await watchLaterRailFixture(t);
-  const { layout, store, document, rail, card, requests, reveals } = fixture;
+  const { layout, store, document, rail, requests, reveals } = fixture;
   const nativeSource = {
     ...fixture.source,
     root: document.createElement("section"),
@@ -882,8 +902,8 @@ test("account-source arrival reveals the target while preserving earlier manual 
   assert.equal(reveals(), 1);
   layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
   layout.handleSourceButtonClick(SourceKind.WATCH_LATER);
-  assert.equal(card(190).isCurrent, true);
-  assert.ok(rail.scrollLeft > 37000);
+  assert.equal(layout.railLocateIndex, 190);
+  assert.equal(rail.scrollLeft, 0);
   assert.equal(requests.length, 2);
 });
 
