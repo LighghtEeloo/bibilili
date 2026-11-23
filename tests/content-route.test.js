@@ -8,6 +8,52 @@ require("../src/content-route.js");
 const { BILIBILI_WEB_ORIGIN, BilibiliRoute } = globalThis.__bibililiRoute;
 const BASE_HREF = "https://www.bilibili.com/video/BV1aa411c7mD";
 
+test("recognizes Bilibili watch documents with an optional language segment", () => {
+  for (const path of [
+    "/video/BV1hr4E63Eo1/",
+    "/zh-Hans/video/BV1hr4E63Eo1/?share_medium=android_i&share_source=GENERIC",
+    "/zh-Hant/video/BV1hr4E63Eo1",
+    "/en/video/BV1hr4E63Eo1",
+    "/ja/video/av123",
+    "/en-US/video/BV1hr4E63Eo1",
+    "/list/watchlater",
+    "/zh-Hans/list/watchlater/?bvid=BV1hr4E63Eo1"
+  ]) {
+    assert.equal(BilibiliRoute.isWatchPage(new URL(path, BASE_HREF)), true, path);
+  }
+
+  for (const path of [
+    "https://space.bilibili.com/zh-Hans/video/BV1hr4E63Eo1",
+    "/read/cv1?next=/zh-Hans/video/BV1hr4E63Eo1/",
+    "/account/settings/video/BV1hr4E63Eo1",
+    "/zh-Hans/en/video/BV1hr4E63Eo1",
+    "/zh-Hans/video/",
+    "/zh-Hans/video/BV1hr4E63Eo1/other",
+    "/zh-Hans/list/watchlater-settings"
+  ]) {
+    assert.equal(BilibiliRoute.isWatchPage(new URL(path, BASE_HREF)), false, path);
+  }
+});
+
+test("preserves archive and part identity across localized URLs", () => {
+  const url = new URL("/zh-Hans/video/BV1hr4E63Eo1/?p=2&share_source=GENERIC#reply", BASE_HREF);
+  assert.equal(BilibiliRoute.normalizedVideoUrl(url.href), url.href);
+  assert.deepEqual(BilibiliRoute.archiveIdentityForUrl(url), {
+    key: "bvid:BV1hr4E63Eo1",
+    queryName: "bvid",
+    queryValue: "BV1hr4E63Eo1"
+  });
+  assert.equal(BilibiliRoute.watchRouteKeyForUrl(url), "video:BV1hr4E63Eo1:p2");
+  assert.equal(
+    BilibiliRoute.watchRouteKeyForUrl("/video/BV1hr4E63Eo1?p=2", BASE_HREF),
+    BilibiliRoute.watchRouteKeyForUrl(url)
+  );
+  assert.equal(
+    BilibiliRoute.shareUrlFor(url),
+    "https://www.bilibili.com/zh-Hans/video/BV1hr4E63Eo1/?p=2"
+  );
+});
+
 test("normalizes playable Bilibili watch URLs", () => {
   assert.equal(BILIBILI_WEB_ORIGIN, "https://www.bilibili.com");
   assert.equal(

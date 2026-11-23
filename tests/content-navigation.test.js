@@ -395,6 +395,27 @@ function commentsFixture(f) {
   return comments;
 }
 
+test("localized archive routes support native switching and comment readiness", async (t) => {
+  const f = navigationFixture(t);
+  global.location.pathname = `/zh-Hans${global.location.pathname}/`;
+  assert.equal(f.controller.isWatchPage(), true);
+  const comments = commentsFixture(f);
+  assert.equal(f.navigation.commentsReady(comments), true);
+
+  const reload = f.player.reload;
+  f.player.reload = (target) => {
+    const result = reload(target);
+    global.location.pathname = `/zh-Hant${global.location.pathname}/`;
+    return result;
+  };
+  const targetUrl = "https://www.bilibili.com/zh-Hant/video/BV1xx411c7mD/?p=2";
+  const results = [];
+  assert.equal(f.navigation.navigate(targetUrl, (...args) => results.push(args)), true);
+  await f.settle();
+  assert.deepEqual(f.requests, [{ bvid: "BV1xx411c7mD", p: 2 }]);
+  assert.deepEqual(results, [[true, targetUrl, null]]);
+});
+
 test("comment readiness requires the live destination identity and committed shadow content", (t) => {
   const f = navigationFixture(t);
   const comments = commentsFixture(f);

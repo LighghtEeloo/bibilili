@@ -45,6 +45,11 @@ The watch page is the Bilibili document for one visible video. Bibilili
 discovers its player, comments, account control, watch title, video
 description, tags, uploader, and page video-list sources.
 
+The layout mounts on `https://www.bilibili.com` at `/video/<BV or AV ID>`
+and `/list/watchlater`. Each path accepts one leading language tag, such as
+`zh-Hans`, `en`, or `ja`. The controller validates the pathname before
+startup.
+
 The player region contains the video player and immediate playback controls.
 Bibilili moves its surrounding layout context while preserving playback logic.
 The video title, video description, tags, and uploader metadata remain
@@ -1566,8 +1571,9 @@ player arrives by the deadline, the controller restores the native page and
 leaves the activation control available for retry.
 
 The page session key is the stable watch route when the URL identifies a
-playable video. Tracking query changes on the same video do not start a new
-page session.
+playable video. The archive key contains the video identifier and the part
+number from `p`. The key is independent of the language tag and tracking
+parameters.
 
 Reconciliation is the controller's idempotent update pass over the current watch
 page. Requests carry a priority and a source-reset flag. The reset flag clears

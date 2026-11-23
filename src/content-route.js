@@ -2,6 +2,10 @@
   "use strict";
 
   const BILIBILI_WEB_ORIGIN = "https://www.bilibili.com";
+  // Note: Bilibili serves localized watch pages under a leading language tag.
+  const WATCH_LOCALE_PREFIX = /^\/[a-z]{2,3}(?:-[a-z]{4})?(?:-(?:[a-z]{2}|\d{3}))?(?=\/)/iu;
+  const ARCHIVE_PATH_PATTERN = /^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu;
+  const WATCH_LATER_PATH = "/list/watchlater";
 
   /**
    * Resolves Bilibili watch routes into stable extension route records.
@@ -132,6 +136,31 @@
     }
 
     /**
+     * Returns true for Bilibili documents that can host the extension layout.
+     *
+     * @param {URL | Location} url
+     * @returns {boolean}
+     */
+    static isWatchPage(url) {
+      if (url.hostname !== "www.bilibili.com") {
+        return false;
+      }
+
+      const path = BilibiliRoute.watchPath(url.pathname);
+      return ARCHIVE_PATH_PATTERN.test(path) || path === WATCH_LATER_PATH;
+    }
+
+    /**
+     * Removes the optional locale and trailing slashes for watch route matching.
+     *
+     * @param {string} pathname
+     * @returns {string}
+     */
+    static watchPath(pathname) {
+      return pathname.replace(WATCH_LOCALE_PREFIX, "").replace(/\/+$/u, "");
+    }
+
+    /**
      * Returns true for Bilibili routes that open a playable watch target.
      *
      * @param {URL} url
@@ -159,17 +188,16 @@
         return null;
       }
 
-      const path = url.pathname.replace(/\/+$/u, "");
-      const videoMatch = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
+      const videoId = BilibiliRoute.watchPath(url.pathname).match(ARCHIVE_PATH_PATTERN)?.[1];
 
-      if (videoMatch) {
-        const videoId = videoMatch[1];
+      if (videoId) {
         const normalizedId =
           /^av/iu.test(videoId) ? videoId.toLowerCase() : videoId;
 
         return `video:${normalizedId}`;
       }
 
+      const path = url.pathname.replace(/\/+$/u, "");
       const bangumiMatch = path.match(
         /^\/bangumi\/play\/((?:ep|ss|md)\d+)$/iu
       );
@@ -195,14 +223,12 @@
         return null;
       }
 
-      const path = url.pathname.replace(/\/+$/u, "");
-      const match = path.match(/^\/video\/(BV[0-9A-Za-z]+|av\d+)$/iu);
+      const videoId = BilibiliRoute.watchPath(url.pathname).match(ARCHIVE_PATH_PATTERN)?.[1];
 
-      if (!match) {
+      if (!videoId) {
         return null;
       }
 
-      const videoId = match[1];
       const bvid = BilibiliRoute.cleanBvid(videoId);
 
       if (bvid) {

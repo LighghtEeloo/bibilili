@@ -4,7 +4,9 @@
   const REQUEST_EVENT = "bibilili:video-navigation-request";
   const RESULT_EVENT = "bibilili:video-navigation-result";
   const COMMENTS_READY_EVENT = "bibilili:comments-ready-check";
-  const WATCH_PATH_PATTERN = /^\/video\/(BV[0-9A-Za-z]+|av\d+)\/?$/u;
+  // Note: The page-world bridge follows the localized archive paths in BilibiliRoute.
+  const WATCH_PATH_PATTERN =
+    /^\/(?:[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|\d{3}))?\/)?video\/(BV[0-9A-Za-z]+|av\d+)\/?$/u;
 
   /**
    * Invokes the page-owned player's archive reload API in the page world.

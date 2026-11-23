@@ -16454,11 +16454,7 @@
      * @returns {boolean}
      */
     isWatchPage() {
-      return (
-        window.location.hostname === "www.bilibili.com" &&
-        (window.location.pathname.startsWith("/video/") ||
-          window.location.pathname.startsWith("/list/watchlater"))
-      );
+      return BilibiliRoute.isWatchPage(window.location);
     }
 
     /**
@@ -16732,6 +16728,10 @@
       VideoPreviewStore,
       WatchState
     });
+  }
+
+  if (!BilibiliRoute.isWatchPage(window.location)) {
+    return;
   }
 
   const previousController = window.__bibililiController;
