@@ -1,0 +1,115 @@
+name: Publish browser extensions
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Store submission target
+        type: choice
+        required: true
+        default: package
+        options:
+          - package
+          - chrome
+          - firefox
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-store-release-${{ inputs.target == 'package' && github.run_id || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.manifest.outputs.version }}
+      gecko-id: ${{ steps.manifest.outputs.gecko-id }}
+    steps:
+      - name: Check release ref
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [[ "$TARGET" != package && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Store submissions must run from main.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Read release metadata
+        id: manifest
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const { version, browser_specific_settings } = require('./manifest.json');
+          const id = browser_specific_settings.gecko.id;
+          if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version) || !/^[A-Za-z0-9@._+{}-]+$/.test(id)) {
+            throw new Error('Invalid release metadata in manifest.json');
+          }
+          console.log('version=' + version);
+          console.log('gecko-id=' + id);
+          NODE
+      - name: Validate and package both extensions
+        run: make test-package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bibilili-store-zips-${{ steps.manifest.outputs.version }}
+          path: |
+            dist/bibilili-chrome-${{ steps.manifest.outputs.version }}.zip
+            dist/bibilili-firefox-${{ steps.manifest.outputs.version }}.zip
+          if-no-files-found: error
+
+  chrome:
+    if: inputs.target == 'chrome' || inputs.target == 'both'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: chrome-web-store
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: bibilili-store-zips-${{ needs.package.outputs.version }}
+          path: dist
+      - name: Submit to Chrome Web Store
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/publish-chrome.mjs "dist/bibilili-chrome-$VERSION.zip" "$VERSION"
+
+  firefox:
+    if: inputs.target == 'firefox' || inputs.target == 'both'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: firefox-add-ons
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: bibilili-store-zips-${{ needs.package.outputs.version }}
+          path: dist
+      - name: Submit to Firefox Add-ons
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+          GECKO_ID: ${{ needs.package.outputs.gecko-id }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: node scripts/publish-firefox.mjs "dist/bibilili-firefox-$VERSION.zip" "$VERSION" "$GECKO_ID"

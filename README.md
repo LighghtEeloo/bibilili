@@ -25,3 +25,5 @@ make package
 ```
 
 The Chrome package is written to `dist/bibilili-chrome-<version>.zip` with Firefox-only manifest keys removed. The Firefox package is written to `dist/bibilili-firefox-<version>.zip` with Gecko signing metadata retained.
+
+See [Store releases](CONTRIBUTING.md#store-releases) for the GitHub Actions workflow and credential setup.
